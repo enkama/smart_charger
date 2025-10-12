@@ -20,11 +20,9 @@ This integration can be added to HACS as a custom repository.
 
 **Warning**
 
-Not all repositories will work in HACS, since HACS still needs the repository to have a known structure.
-
 If you want to add this custom repository to HACS, do the following:
 
-overview_menu
+HACS Menu
 
 1. Click on the 3 dots in the top right corner.
 2. Select "Custom repositories".

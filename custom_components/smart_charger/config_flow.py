@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from copy import deepcopy
-from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, cast
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, cast
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -73,6 +74,14 @@ PRESENCE_SELECTOR = EntitySelector(
 ALARM_SELECTOR = EntitySelector(
     EntitySelectorConfig(domain=["sensor", "input_datetime"])
 )
+ALARM_MODE_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=[ALARM_MODE_SINGLE, ALARM_MODE_PER_DAY],
+        translation_key="alarm_mode",
+        multiple=False,
+        mode=SelectSelectorMode.DROPDOWN,
+    )
+)
 
 OPTIONAL_ENTITY_FIELDS: tuple[str, ...] = (
     CONF_CHARGING_SENSOR,
@@ -80,6 +89,110 @@ OPTIONAL_ENTITY_FIELDS: tuple[str, ...] = (
     CONF_PRESENCE_SENSOR,
     CONF_ALARM_ENTITY,
     *WEEKDAY_ALARM_FIELDS,
+)
+
+
+MISSING = object()
+
+
+@dataclass(frozen=True)
+class SchemaField:
+    """Definition for a single schema field."""
+
+    key: str
+    required: bool = False
+    validator: Any | None = None
+    selector: Any | None = None
+    selector_factory: Callable[["SmartChargerFlowMixin"], Any] | None = None
+    default: Any = MISSING
+    default_factory: Callable[[], Any] | None = None
+    existing_only: bool = False
+
+    def build(
+        self,
+        flow: "SmartChargerFlowMixin",
+        defaults: Optional[Mapping[str, Any]],
+    ) -> tuple[Any, Any]:
+        value = MISSING
+        if defaults and self.key in defaults:
+            candidate = defaults[self.key]
+            if self.existing_only and not candidate:
+                value = MISSING
+            else:
+                value = candidate
+        elif not self.existing_only:
+            if self.default_factory is not None:
+                value = self.default_factory()
+            elif self.default is not MISSING:
+                value = self.default
+
+        field_cls = vol.Required if self.required else vol.Optional
+        field = field_cls(self.key, default=value) if value is not MISSING else field_cls(self.key)
+
+        validator = self.selector or self.validator
+        if self.selector_factory is not None:
+            validator = self.selector_factory(flow)
+        if validator is None:
+            raise ValueError(f"No validator configured for field '{self.key}'")
+        return field, validator
+
+
+def _notify_selector_from_flow(flow: "SmartChargerFlowMixin") -> SelectSelector:
+    return _notify_selector(flow.hass)
+
+
+NAME_FIELD = SchemaField("name", required=True, validator=str)
+BASIC_DEVICE_FIELDS: tuple[SchemaField, ...] = (
+    SchemaField(CONF_BATTERY_SENSOR, required=True, selector=SENSOR_SELECTOR),
+    SchemaField(CONF_CHARGER_SWITCH, required=True, selector=SWITCH_SELECTOR),
+    SchemaField(CONF_CHARGING_SENSOR, selector=CHARGING_SELECTOR, existing_only=True),
+    SchemaField(CONF_PRESENCE_SENSOR, selector=PRESENCE_SELECTOR, existing_only=True),
+)
+TARGET_FIELDS: tuple[SchemaField, ...] = (
+    SchemaField(
+        CONF_TARGET_LEVEL,
+        validator=vol.Coerce(float),
+        default=DEFAULT_TARGET_LEVEL,
+    ),
+    SchemaField(CONF_MIN_LEVEL, validator=vol.Coerce(float), default=30),
+    SchemaField(
+        CONF_PRECHARGE_LEVEL,
+        validator=vol.Coerce(float),
+        default=50,
+    ),
+    SchemaField(CONF_AVG_SPEED_SENSOR, selector=SENSOR_SELECTOR, existing_only=True),
+    SchemaField(CONF_USE_PREDICTIVE_MODE, validator=bool, default=True),
+)
+ALARM_FIELDS: tuple[SchemaField, ...] = (
+    SchemaField(
+        CONF_ALARM_MODE,
+        required=True,
+        selector=ALARM_MODE_SELECTOR,
+        default=ALARM_MODE_SINGLE,
+    ),
+    SchemaField(CONF_ALARM_ENTITY, selector=ALARM_SELECTOR, existing_only=True),
+    *(
+        SchemaField(field, selector=ALARM_SELECTOR, existing_only=True)
+        for field in WEEKDAY_ALARM_FIELDS
+    ),
+    SchemaField(CONF_NOTIFY_ENABLED, validator=bool, default=False),
+    SchemaField(
+        CONF_NOTIFY_TARGETS,
+        selector_factory=_notify_selector_from_flow,
+        default_factory=list,
+    ),
+    SchemaField(
+        CONF_SUGGESTION_THRESHOLD,
+        selector=NumberSelector(NumberSelectorConfig(min=1, max=10, step=1)),
+        default=DEFAULT_SUGGESTION_THRESHOLD,
+    ),
+    SchemaField(
+        CONF_SENSOR_STALE_SECONDS,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=60, max=3600, step=60, unit_of_measurement="s")
+        ),
+        default=DEFAULT_SENSOR_STALE_SECONDS,
+    ),
 )
 
 
@@ -105,6 +218,17 @@ class SmartChargerFlowMixin:
     """Shared helpers for config and options flows."""
 
     hass: Any
+
+    def _schema_from_fields(
+        self,
+        fields: Iterable[SchemaField],
+        defaults: Optional[Mapping[str, Any]] = None,
+    ) -> vol.Schema:
+        schema_fields: dict[Any, Any] = {}
+        for field in fields:
+            field_key, validator = field.build(self, defaults)
+            schema_fields[field_key] = validator
+        return vol.Schema(schema_fields)
 
     @staticmethod
     def _list_devices(devices: Iterable[Mapping[str, Any]]) -> str:
@@ -156,22 +280,6 @@ class SmartChargerFlowMixin:
         return errors
 
     @staticmethod
-    def _optional_with_default(key: str, data: Mapping[str, Any], default: Any) -> Any:
-        return vol.Optional(key, default=data.get(key, default))
-
-    @staticmethod
-    def _required_with_default(key: str, data: Optional[Mapping[str, Any]]) -> Any:
-        if data and key in data:
-            return vol.Required(key, default=data[key])
-        return vol.Required(key)
-
-    @staticmethod
-    def _optional_selector(key: str, defaults: Optional[Mapping[str, Any]]) -> Any:
-        if defaults and defaults.get(key):
-            return vol.Optional(key, default=defaults[key])
-        return vol.Optional(key)
-
-    @staticmethod
     def _sanitize_optional_entities(data: Dict[str, Any]) -> Dict[str, Any]:
         cleaned = dict(data)
         for key in OPTIONAL_ENTITY_FIELDS:
@@ -182,90 +290,25 @@ class SmartChargerFlowMixin:
     def _build_basic_schema(
         self, device: Optional[Mapping[str, Any]] = None, *, include_name: bool = True
     ) -> vol.Schema:
-        fields: dict[Any, Any] = {}
+        fields: tuple[SchemaField, ...]
+        fields = BASIC_DEVICE_FIELDS
         if include_name:
-            key = self._required_with_default("name", device)
-            fields[key] = str
-        key = self._required_with_default(CONF_BATTERY_SENSOR, device)
-        fields[key] = SENSOR_SELECTOR
-        key = self._required_with_default(CONF_CHARGER_SWITCH, device)
-        fields[key] = SWITCH_SELECTOR
-        key = self._optional_selector(CONF_CHARGING_SENSOR, device)
-        fields[key] = CHARGING_SELECTOR
-        key = self._optional_selector(CONF_PRESENCE_SENSOR, device)
-        fields[key] = PRESENCE_SELECTOR
-        return vol.Schema(fields)
+            fields = (NAME_FIELD, *fields)
+        return self._schema_from_fields(fields, device)
 
     def _build_target_schema(
         self, device: Optional[Mapping[str, Any]] = None
     ) -> vol.Schema:
-        defaults = device or {}
-        return vol.Schema(
-            {
-                self._optional_with_default(
-                    CONF_TARGET_LEVEL, defaults, DEFAULT_TARGET_LEVEL
-                ): vol.Coerce(float),
-                self._optional_with_default(CONF_MIN_LEVEL, defaults, 30): vol.Coerce(
-                    float
-                ),
-                self._optional_with_default(
-                    CONF_PRECHARGE_LEVEL, defaults, 50
-                ): vol.Coerce(float),
-                self._optional_selector(
-                    CONF_AVG_SPEED_SENSOR, defaults
-                ): SENSOR_SELECTOR,
-                vol.Optional(
-                    CONF_USE_PREDICTIVE_MODE,
-                    default=defaults.get(CONF_USE_PREDICTIVE_MODE, True),
-                ): bool,
-            }
-        )
+        return self._schema_from_fields(TARGET_FIELDS, device)
 
     def _build_alarm_schema(
         self, device: Optional[Mapping[str, Any]] = None
     ) -> vol.Schema:
-        defaults = device or {}
-        notify_selector = _notify_selector(self.hass)
-        fields: dict[Any, Any] = {
-            vol.Required(
-                CONF_ALARM_MODE,
-                default=defaults.get(CONF_ALARM_MODE, ALARM_MODE_SINGLE),
-            ): SelectSelector(
-                SelectSelectorConfig(
-                    options=[ALARM_MODE_SINGLE, ALARM_MODE_PER_DAY],
-                    translation_key="alarm_mode",
-                    multiple=False,
-                    mode=SelectSelectorMode.DROPDOWN,
-                )
-            ),
-            self._optional_selector(CONF_ALARM_ENTITY, defaults): ALARM_SELECTOR,
-        }
-        for field in WEEKDAY_ALARM_FIELDS:
-            fields[self._optional_selector(field, defaults)] = ALARM_SELECTOR
-        fields[self._optional_with_default(CONF_NOTIFY_ENABLED, defaults, False)] = bool
-        fields[self._optional_with_default(CONF_NOTIFY_TARGETS, defaults, [])] = (
-            notify_selector
-        )
-        fields[
-            self._optional_with_default(
-                CONF_SUGGESTION_THRESHOLD, defaults, DEFAULT_SUGGESTION_THRESHOLD
-            )
-        ] = NumberSelector(NumberSelectorConfig(min=1, max=10, step=1))
-        fields[
-            self._optional_with_default(
-                CONF_SENSOR_STALE_SECONDS, defaults, DEFAULT_SENSOR_STALE_SECONDS
-            )
-        ] = NumberSelector(
-            NumberSelectorConfig(min=60, max=3600, step=60, unit_of_measurement="s")
-        )
-        return vol.Schema(fields)
+        return self._schema_from_fields(ALARM_FIELDS, device)
 
     def _build_full_schema(self, device: Mapping[str, Any]) -> vol.Schema:
-        schema = {}
-        schema.update(self._build_basic_schema(device).schema)
-        schema.update(self._build_target_schema(device).schema)
-        schema.update(self._build_alarm_schema(device).schema)
-        return vol.Schema(schema)
+        fields = (NAME_FIELD, *BASIC_DEVICE_FIELDS, *TARGET_FIELDS, *ALARM_FIELDS)
+        return self._schema_from_fields(fields, device)
 
     async def _async_remove_from_registry(self, name: str) -> None:
         try:
