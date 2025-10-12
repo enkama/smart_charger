@@ -4,33 +4,33 @@ import inspect
 import logging
 from typing import Any, Callable
 
-from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers import device_registry as dr
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
-    DOMAIN,
-    PLATFORMS,
-    SERVICE_FORCE_REFRESH,
-    SERVICE_START_CHARGING,
-    SERVICE_STOP_CHARGING,
-    SERVICE_AUTO_MANAGE,
-    SERVICE_LOAD_MODEL,
     CONF_BATTERY_SENSOR,
     CONF_CHARGING_SENSOR,
+    DOMAIN,
+    PLATFORMS,
+    SERVICE_AUTO_MANAGE,
+    SERVICE_FORCE_REFRESH,
+    SERVICE_LOAD_MODEL,
+    SERVICE_START_CHARGING,
+    SERVICE_STOP_CHARGING,
 )
 from .coordinator import SmartChargerCoordinator
+from .learning import SmartChargerLearning
 from .services import (
     SmartChargerStateMachine,
+    handle_auto_manage,
     handle_force_refresh,
+    handle_load_model,
     handle_start_charging,
     handle_stop_charging,
-    handle_auto_manage,
-    handle_load_model,
 )
-from .learning import SmartChargerLearning
 
 _LOGGER = logging.getLogger(__name__)
 

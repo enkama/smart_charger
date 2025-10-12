@@ -4,9 +4,8 @@ import inspect
 import logging
 from typing import Any, Dict, Iterable, Optional
 
-from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.const import STATE_ON
-
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.util import dt as dt_util
 
 from .const import (

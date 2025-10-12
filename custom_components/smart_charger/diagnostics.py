@@ -3,18 +3,18 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
-from homeassistant.core import HomeAssistant, State
+
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    DOMAIN,
     CONF_BATTERY_SENSOR,
     CONF_CHARGER_SWITCH,
     CONF_CHARGING_SENSOR,
     CONF_PRESENCE_SENSOR,
+    DOMAIN,
 )
-
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, time
-from typing import Any, Dict, Iterable, Mapping, Optional
 import logging
+from dataclasses import dataclass, field
+from datetime import datetime, time, timedelta
+from typing import Any, Dict, Iterable, Mapping, Optional
 
 from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant
@@ -11,33 +11,33 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    DOMAIN,
-    UPDATE_INTERVAL,
-    CONF_BATTERY_SENSOR,
-    CONF_CHARGING_SENSOR,
-    CONF_ALARM_ENTITY,
-    CONF_AVG_SPEED_SENSOR,
-    CONF_PRESENCE_SENSOR,
-    CONF_CHARGER_SWITCH,
-    CONF_TARGET_LEVEL,
-    CONF_MIN_LEVEL,
-    CONF_PRECHARGE_LEVEL,
-    CONF_USE_PREDICTIVE_MODE,
-    DEFAULT_TARGET_LEVEL,
-    CONF_ALARM_MODE,
-    ALARM_MODE_SINGLE,
     ALARM_MODE_PER_DAY,
-    CONF_ALARM_MONDAY,
-    CONF_ALARM_TUESDAY,
-    CONF_ALARM_WEDNESDAY,
-    CONF_ALARM_THURSDAY,
+    ALARM_MODE_SINGLE,
+    CHARGING_STATES,
+    CONF_ALARM_ENTITY,
     CONF_ALARM_FRIDAY,
+    CONF_ALARM_MODE,
+    CONF_ALARM_MONDAY,
     CONF_ALARM_SATURDAY,
     CONF_ALARM_SUNDAY,
-    UNKNOWN_STATES,
-    CHARGING_STATES,
+    CONF_ALARM_THURSDAY,
+    CONF_ALARM_TUESDAY,
+    CONF_ALARM_WEDNESDAY,
+    CONF_AVG_SPEED_SENSOR,
+    CONF_BATTERY_SENSOR,
+    CONF_CHARGER_SWITCH,
+    CONF_CHARGING_SENSOR,
+    CONF_MIN_LEVEL,
+    CONF_PRECHARGE_LEVEL,
+    CONF_PRESENCE_SENSOR,
+    CONF_TARGET_LEVEL,
+    CONF_USE_PREDICTIVE_MODE,
+    DEFAULT_TARGET_LEVEL,
     DISCHARGING_STATES,
+    DOMAIN,
     FULL_STATES,
+    UNKNOWN_STATES,
+    UPDATE_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)

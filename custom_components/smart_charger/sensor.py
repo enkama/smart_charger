@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, Dict
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import STATE_UNKNOWN
-from homeassistant.util import dt as dt_util
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 
@@ -47,7 +48,9 @@ class SmartChargerNextStartSensor(SensorEntity):
         self.state_machine = state_machine
         self._attr_unique_id = f"{DOMAIN}_next_start"
         self._attr_native_value = STATE_UNKNOWN
-        self._attr_extra_state_attributes = {"info": "No profiles available"}
+        self._attr_extra_state_attributes: Dict[str, Any] = {
+            "info": "No profiles available"
+        }
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -75,7 +78,7 @@ class SmartChargerNextStartSensor(SensorEntity):
         ]
         self._attr_native_value = min(start_times) if start_times else STATE_UNKNOWN
 
-        device_data = {}
+        device_data: Dict[str, Dict[str, Any]] = {}
         for pid, data in profiles.items():
             device_data[pid] = {
                 "battery": data.get("battery"),
@@ -95,7 +98,7 @@ class SmartChargerNextStartSensor(SensorEntity):
                 "last_update": data.get("last_update"),
             }
 
-        self._attr_extra_state_attributes = {
+        extra: Dict[str, Any] = {
             "devices": device_data,
             "device_count": len(device_data),
             "smart_start_active_count": sum(
@@ -104,6 +107,7 @@ class SmartChargerNextStartSensor(SensorEntity):
             "last_update": dt_util.now().isoformat(),
             "state_machine": sm.as_dict() if sm else {},
         }
+        self._attr_extra_state_attributes = extra
         self.async_write_ha_state()
 
 
@@ -118,7 +122,7 @@ class SmartChargerLearningSensor(SensorEntity):
         self.learning = learning
         self._attr_unique_id = f"{DOMAIN}_learning_stats"
         self._attr_native_value = 1.0
-        self._attr_extra_state_attributes = {
+        self._attr_extra_state_attributes: Dict[str, Any] = {
             "profile_count": 0,
             "sample_count": 0,
             "profiles": [],
@@ -133,12 +137,13 @@ class SmartChargerLearningSensor(SensorEntity):
 
         profiles = getattr(self.learning, "_data", {})
         total_samples = sum(len(p.get("samples", [])) for p in profiles.values())
-        self._attr_extra_state_attributes = {
+        extra: Dict[str, Any] = {
             "profile_count": len(profiles),
             "sample_count": total_samples,
             "profiles": list(profiles.keys()),
             "last_update": dt_util.now().isoformat(),
         }
+        self._attr_extra_state_attributes = extra
 
         _LOGGER.debug("Smart Charger Learning Sensor: manual refresh completed.")
 
@@ -165,7 +170,9 @@ class SmartChargerDeviceSensor(SensorEntity):
             configuration_url="https://my.home-assistant.io/redirect/integrations/",
         )
         self._attr_native_value = STATE_UNKNOWN
-        self._attr_extra_state_attributes = {"info": "No data available"}
+        self._attr_extra_state_attributes: Dict[str, Any] = {
+            "info": "No data available"
+        }
         self._attr_icon = "mdi:battery-question"
 
     async def async_added_to_hass(self) -> None:
@@ -211,7 +218,7 @@ class SmartChargerDeviceSensor(SensorEntity):
 
         self._attr_native_value = status
         self._attr_icon = icon_map.get(status, "mdi:battery")
-        self._attr_extra_state_attributes = {
+        extra: Dict[str, Any] = {
             "battery": data.get("battery"),
             "target": data.get("target"),
             "avg_speed": data.get("avg_speed"),
@@ -228,6 +235,7 @@ class SmartChargerDeviceSensor(SensorEntity):
             "skipped": data.get("skipped", False),
             "last_update": data.get("last_update"),
         }
+        self._attr_extra_state_attributes = extra
         self.async_write_ha_state()
 
     async def async_update(self) -> None:

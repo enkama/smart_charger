@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import logging
+from copy import deepcopy
 from typing import Any, Dict, Iterable, Mapping, Optional, Sequence, cast
 
 import voluptuous as vol
@@ -23,9 +23,9 @@ from .const import (
     ALARM_MODE_PER_DAY,
     ALARM_MODE_SINGLE,
     CONF_ALARM_ENTITY,
+    CONF_ALARM_FRIDAY,
     CONF_ALARM_MODE,
     CONF_ALARM_MONDAY,
-    CONF_ALARM_FRIDAY,
     CONF_ALARM_SATURDAY,
     CONF_ALARM_SUNDAY,
     CONF_ALARM_THURSDAY,
@@ -38,8 +38,8 @@ from .const import (
     CONF_MIN_LEVEL,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_TARGETS,
-    CONF_PRESENCE_SENSOR,
     CONF_PRECHARGE_LEVEL,
+    CONF_PRESENCE_SENSOR,
     CONF_SENSOR_STALE_SECONDS,
     CONF_SUGGESTION_THRESHOLD,
     CONF_TARGET_LEVEL,
@@ -278,12 +278,11 @@ class SmartChargerFlowMixin:
             _LOGGER.warning("Could not remove device '%s' from registry: %s", name, err)
 
 
-class SmartChargerConfigFlow(
-    SmartChargerFlowMixin, config_entries.ConfigFlow, domain=DOMAIN
-):
+class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow):
     """Handle Smart Charger config flow."""
 
     VERSION = 1
+    domain = DOMAIN
 
     def __init__(self) -> None:
         self._devices: list[Dict[str, Any]] = []

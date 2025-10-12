@@ -2,7 +2,6 @@
 
 from homeassistant.const import Platform
 
-
 DOMAIN = "smart_charger"
 PLATFORMS = [Platform.SENSOR]
 
