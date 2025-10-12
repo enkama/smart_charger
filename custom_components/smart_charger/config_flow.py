@@ -278,11 +278,12 @@ class SmartChargerFlowMixin:
             _LOGGER.warning("Could not remove device '%s' from registry: %s", name, err)
 
 
-class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow):
+class SmartChargerConfigFlow(
+    SmartChargerFlowMixin, config_entries.ConfigFlow, domain=DOMAIN
+):
     """Handle Smart Charger config flow."""
 
     VERSION = 1
-    domain = DOMAIN
 
     def __init__(self) -> None:
         self._devices: list[Dict[str, Any]] = []
