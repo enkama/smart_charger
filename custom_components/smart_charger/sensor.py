@@ -34,6 +34,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     async_add_entities(entities, True)
 
+
 class SmartChargerNextStartSensor(SensorEntity):
     """Provide the earliest scheduled start across all devices."""
 
@@ -51,7 +52,9 @@ class SmartChargerNextStartSensor(SensorEntity):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         if hasattr(self.coordinator, "async_add_listener"):
-            self.async_on_remove(self.coordinator.async_add_listener(self._handle_coordinator_update))
+            self.async_on_remove(
+                self.coordinator.async_add_listener(self._handle_coordinator_update)
+            )
         self._handle_coordinator_update()
         await self.coordinator.async_request_refresh()
 
@@ -95,7 +98,9 @@ class SmartChargerNextStartSensor(SensorEntity):
         self._attr_extra_state_attributes = {
             "devices": device_data,
             "device_count": len(device_data),
-            "smart_start_active_count": sum(1 for d in device_data.values() if d.get("smart_start_active")),
+            "smart_start_active_count": sum(
+                1 for d in device_data.values() if d.get("smart_start_active")
+            ),
             "last_update": dt_util.now().isoformat(),
             "state_machine": sm.as_dict() if sm else {},
         }
@@ -137,6 +142,7 @@ class SmartChargerLearningSensor(SensorEntity):
 
         _LOGGER.debug("Smart Charger Learning Sensor: manual refresh completed.")
 
+
 class SmartChargerDeviceSensor(SensorEntity):
     """Expose per-device status with a dynamic icon."""
 
@@ -146,7 +152,9 @@ class SmartChargerDeviceSensor(SensorEntity):
         self.device_name = device_name
         self.coordinator = coordinator
         self._attr_name = f"Smart Charger {device_name} Status"
-        self._attr_unique_id = f"{DOMAIN}_{device_name.lower().replace(' ', '_')}_status"
+        self._attr_unique_id = (
+            f"{DOMAIN}_{device_name.lower().replace(' ', '_')}_status"
+        )
 
         """Associate the sensor with the device registry entry."""
         self._attr_device_info = DeviceInfo(
@@ -163,7 +171,9 @@ class SmartChargerDeviceSensor(SensorEntity):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         if hasattr(self.coordinator, "async_add_listener"):
-            self.async_on_remove(self.coordinator.async_add_listener(self._handle_coordinator_update))
+            self.async_on_remove(
+                self.coordinator.async_add_listener(self._handle_coordinator_update)
+            )
         self._handle_coordinator_update()
         await self.coordinator.async_request_refresh()
 

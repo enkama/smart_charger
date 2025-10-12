@@ -47,8 +47,12 @@ def _coordinator_meta(coordinator) -> Dict[str, Any]:
     update_interval = getattr(coordinator, "update_interval", None)
     interval_seconds = update_interval.total_seconds() if update_interval else None
 
-    last_success: Optional[datetime] = getattr(coordinator, "_last_successful_update", None)
-    last_success_iso = last_success.isoformat() if isinstance(last_success, datetime) else None
+    last_success: Optional[datetime] = getattr(
+        coordinator, "_last_successful_update", None
+    )
+    last_success_iso = (
+        last_success.isoformat() if isinstance(last_success, datetime) else None
+    )
     elapsed_since_success: Optional[float] = None
     if last_success:
         elapsed_since_success = (dt_util.utcnow() - last_success).total_seconds()
@@ -97,18 +101,9 @@ def _summarize_error_history(state_machine) -> Dict[str, Any]:
     return {"recent": recent[:10], "counts": counts}
 
 
-async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry
-) -> Dict[str, Any]:
-    """Return diagnostics for a Smart Charger config entry."""
-    domain_data = hass.data[DOMAIN]
-    data = domain_data["entries"].get(entry.entry_id, {})
-    state_machine = data.get("state_machine")
-    coordinator = data.get("coordinator")
-    learning = data.get("learning")
-
-    """Compile diagnostics for each configured device."""
-    devices = entry.data.get("devices") or []
+def _collect_device_diagnostics(
+    hass: HomeAssistant, devices: list[Dict[str, Any]]
+) -> list[Dict[str, Any]]:
     sanitized_devices: list[Dict[str, Any]] = []
 
     for dev in devices:
@@ -124,22 +119,38 @@ async def async_get_config_entry_diagnostics(
                 "battery_sensor": {
                     "id": batt_ent,
                     "domain": _entity_domain(batt_ent),
-                    "state": _extract_state(hass.states.get(str(batt_ent))) if batt_ent else {},
+                    "state": (
+                        _extract_state(hass.states.get(str(batt_ent)))
+                        if batt_ent
+                        else {}
+                    ),
                 },
                 "charger_switch": {
                     "id": charger_ent,
                     "domain": _entity_domain(charger_ent),
-                    "state": _extract_state(hass.states.get(str(charger_ent))) if charger_ent else {},
+                    "state": (
+                        _extract_state(hass.states.get(str(charger_ent)))
+                        if charger_ent
+                        else {}
+                    ),
                 },
                 "charging_sensor": {
                     "id": charging_ent,
                     "domain": _entity_domain(charging_ent),
-                    "state": _extract_state(hass.states.get(str(charging_ent))) if charging_ent else {},
+                    "state": (
+                        _extract_state(hass.states.get(str(charging_ent)))
+                        if charging_ent
+                        else {}
+                    ),
                 },
                 "presence_sensor": {
                     "id": presence_ent,
                     "domain": _entity_domain(presence_ent),
-                    "state": _extract_state(hass.states.get(str(presence_ent))) if presence_ent else {},
+                    "state": (
+                        _extract_state(hass.states.get(str(presence_ent)))
+                        if presence_ent
+                        else {}
+                    ),
                 },
                 "target_level": dev.get("target_level"),
                 "min_level": dev.get("min_level"),
@@ -147,13 +158,16 @@ async def async_get_config_entry_diagnostics(
             }
         )
 
-    """Summarize the learning storage for quick inspection."""
-    learning_summary: Dict[str, Any] = {}
+    return sanitized_devices
+
+
+def _build_learning_summary(learning) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {}
     if learning and getattr(learning, "_data", None):
         profiles = getattr(learning, "_data", {})
-        learning_summary["profile_count"] = len(profiles)
-        learning_summary["profiles"] = list(profiles.keys())
-        learning_summary["stats"] = {
+        summary["profile_count"] = len(profiles)
+        summary["profiles"] = list(profiles.keys())
+        summary["stats"] = {
             pid: {
                 "sample_count": len(pdata.get("samples", [])),
                 "cycle_count": len(pdata.get("cycles", [])),
@@ -164,9 +178,13 @@ async def async_get_config_entry_diagnostics(
             for pid, pdata in profiles.items()
         }
 
-    """Build hour-bucketed heatmaps of recorded errors."""
+    return summary
+
+
+def _build_error_heatmaps(state_machine) -> tuple[Dict[str, Any], Dict[str, Any]]:
     error_heatmap: Dict[str, Any] = {}
     global_heatmap: Dict[str, Any] = {}
+
     if state_machine and getattr(state_machine, "error_history", None):
         for key, timestamps in state_machine.error_history.items():
             try:
@@ -192,7 +210,12 @@ async def async_get_config_entry_diagnostics(
                 error_heatmap[pid][etype][hour] += 1
                 global_heatmap[etype][hour] += 1
 
-    """Capture the coordinator live state and derived insights."""
+    return error_heatmap, global_heatmap
+
+
+def _capture_coordinator_state(
+    coordinator,
+) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     coordinator_state: Dict[str, Any] = {}
     coordinator_plans: Dict[str, Any] = {}
     coordinator_insights: Dict[str, Any] = {}
@@ -246,9 +269,26 @@ async def async_get_config_entry_diagnostics(
             "smart_start_active": smart_active,
         }
 
-    coordinator_meta = _coordinator_meta(coordinator)
+    return coordinator_state, coordinator_plans, coordinator_insights
 
-    """Assemble the final diagnostics payload."""
+
+async def async_get_config_entry_diagnostics(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> Dict[str, Any]:
+    """Return diagnostics for a Smart Charger config entry."""
+    domain_data = hass.data[DOMAIN]
+    data = domain_data["entries"].get(entry.entry_id, {})
+    state_machine = data.get("state_machine")
+    coordinator = data.get("coordinator")
+    learning = data.get("learning")
+    devices = entry.data.get("devices") or []
+    sanitized_devices = _collect_device_diagnostics(hass, devices)
+    learning_summary = _build_learning_summary(learning)
+    error_heatmap, global_heatmap = _build_error_heatmaps(state_machine)
+    coordinator_state, coordinator_plans, coordinator_insights = (
+        _capture_coordinator_state(coordinator)
+    )
+    coordinator_meta = _coordinator_meta(coordinator)
     state_machine_summary = state_machine.as_dict() if state_machine else {}
     error_summary = _summarize_error_history(state_machine)
 

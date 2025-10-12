@@ -63,10 +63,16 @@ WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
 )
 
 SENSOR_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["sensor"]))
-CHARGING_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["binary_sensor", "sensor"]))
+CHARGING_SELECTOR = EntitySelector(
+    EntitySelectorConfig(domain=["binary_sensor", "sensor"])
+)
 SWITCH_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["switch"]))
-PRESENCE_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["person", "device_tracker"]))
-ALARM_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["sensor", "input_datetime"]))
+PRESENCE_SELECTOR = EntitySelector(
+    EntitySelectorConfig(domain=["person", "device_tracker"])
+)
+ALARM_SELECTOR = EntitySelector(
+    EntitySelectorConfig(domain=["sensor", "input_datetime"])
+)
 
 OPTIONAL_ENTITY_FIELDS: tuple[str, ...] = (
     CONF_CHARGING_SENSOR,
@@ -106,7 +112,12 @@ class SmartChargerFlowMixin:
         return "\n".join(f"• {name}" for name in names) if names else "-"
 
     @staticmethod
-    def _duplicate_name(devices: Sequence[Mapping[str, Any]], name: str, *, skip_idx: Optional[int] = None) -> bool:
+    def _duplicate_name(
+        devices: Sequence[Mapping[str, Any]],
+        name: str,
+        *,
+        skip_idx: Optional[int] = None,
+    ) -> bool:
         for idx, device in enumerate(devices):
             if skip_idx is not None and idx == skip_idx:
                 continue
@@ -168,7 +179,9 @@ class SmartChargerFlowMixin:
                 cleaned.pop(key, None)
         return cleaned
 
-    def _build_basic_schema(self, device: Optional[Mapping[str, Any]] = None, *, include_name: bool = True) -> vol.Schema:
+    def _build_basic_schema(
+        self, device: Optional[Mapping[str, Any]] = None, *, include_name: bool = True
+    ) -> vol.Schema:
         fields: dict[Any, Any] = {}
         if include_name:
             key = self._required_with_default("name", device)
@@ -183,23 +196,41 @@ class SmartChargerFlowMixin:
         fields[key] = PRESENCE_SELECTOR
         return vol.Schema(fields)
 
-    def _build_target_schema(self, device: Optional[Mapping[str, Any]] = None) -> vol.Schema:
+    def _build_target_schema(
+        self, device: Optional[Mapping[str, Any]] = None
+    ) -> vol.Schema:
         defaults = device or {}
         return vol.Schema(
             {
-                self._optional_with_default(CONF_TARGET_LEVEL, defaults, DEFAULT_TARGET_LEVEL): vol.Coerce(float),
-                self._optional_with_default(CONF_MIN_LEVEL, defaults, 30): vol.Coerce(float),
-                self._optional_with_default(CONF_PRECHARGE_LEVEL, defaults, 50): vol.Coerce(float),
-                self._optional_selector(CONF_AVG_SPEED_SENSOR, defaults): SENSOR_SELECTOR,
-                vol.Optional(CONF_USE_PREDICTIVE_MODE, default=defaults.get(CONF_USE_PREDICTIVE_MODE, True)): bool,
+                self._optional_with_default(
+                    CONF_TARGET_LEVEL, defaults, DEFAULT_TARGET_LEVEL
+                ): vol.Coerce(float),
+                self._optional_with_default(CONF_MIN_LEVEL, defaults, 30): vol.Coerce(
+                    float
+                ),
+                self._optional_with_default(
+                    CONF_PRECHARGE_LEVEL, defaults, 50
+                ): vol.Coerce(float),
+                self._optional_selector(
+                    CONF_AVG_SPEED_SENSOR, defaults
+                ): SENSOR_SELECTOR,
+                vol.Optional(
+                    CONF_USE_PREDICTIVE_MODE,
+                    default=defaults.get(CONF_USE_PREDICTIVE_MODE, True),
+                ): bool,
             }
         )
 
-    def _build_alarm_schema(self, device: Optional[Mapping[str, Any]] = None) -> vol.Schema:
+    def _build_alarm_schema(
+        self, device: Optional[Mapping[str, Any]] = None
+    ) -> vol.Schema:
         defaults = device or {}
         notify_selector = _notify_selector(self.hass)
         fields: dict[Any, Any] = {
-            vol.Required(CONF_ALARM_MODE, default=defaults.get(CONF_ALARM_MODE, ALARM_MODE_SINGLE)): SelectSelector(
+            vol.Required(
+                CONF_ALARM_MODE,
+                default=defaults.get(CONF_ALARM_MODE, ALARM_MODE_SINGLE),
+            ): SelectSelector(
                 SelectSelectorConfig(
                     options=[ALARM_MODE_SINGLE, ALARM_MODE_PER_DAY],
                     translation_key="alarm_mode",
@@ -212,11 +243,19 @@ class SmartChargerFlowMixin:
         for field in WEEKDAY_ALARM_FIELDS:
             fields[self._optional_selector(field, defaults)] = ALARM_SELECTOR
         fields[self._optional_with_default(CONF_NOTIFY_ENABLED, defaults, False)] = bool
-        fields[self._optional_with_default(CONF_NOTIFY_TARGETS, defaults, [])] = notify_selector
-        fields[self._optional_with_default(CONF_SUGGESTION_THRESHOLD, defaults, DEFAULT_SUGGESTION_THRESHOLD)] = NumberSelector(
-            NumberSelectorConfig(min=1, max=10, step=1)
+        fields[self._optional_with_default(CONF_NOTIFY_TARGETS, defaults, [])] = (
+            notify_selector
         )
-        fields[self._optional_with_default(CONF_SENSOR_STALE_SECONDS, defaults, DEFAULT_SENSOR_STALE_SECONDS)] = NumberSelector(
+        fields[
+            self._optional_with_default(
+                CONF_SUGGESTION_THRESHOLD, defaults, DEFAULT_SUGGESTION_THRESHOLD
+            )
+        ] = NumberSelector(NumberSelectorConfig(min=1, max=10, step=1))
+        fields[
+            self._optional_with_default(
+                CONF_SENSOR_STALE_SECONDS, defaults, DEFAULT_SENSOR_STALE_SECONDS
+            )
+        ] = NumberSelector(
             NumberSelectorConfig(min=60, max=3600, step=60, unit_of_measurement="s")
         )
         return vol.Schema(fields)
@@ -239,7 +278,9 @@ class SmartChargerFlowMixin:
             _LOGGER.warning("Could not remove device '%s' from registry: %s", name, err)
 
 
-class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow, domain=DOMAIN):
+class SmartChargerConfigFlow(
+    SmartChargerFlowMixin, config_entries.ConfigFlow, domain=DOMAIN
+):
     """Handle Smart Charger config flow."""
 
     VERSION = 1
@@ -261,16 +302,24 @@ class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow, d
         self._devices = devices
         self.hass.data.setdefault(DOMAIN, {})["flow_devices"] = deepcopy(devices)
 
-    async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_user(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
-        menu = ["add_device"] if not devices else ["add_device", "edit_device", "delete_device"]
+        menu = (
+            ["add_device"]
+            if not devices
+            else ["add_device", "edit_device", "delete_device"]
+        )
         return self.async_show_menu(
             step_id="user",
             menu_options=menu,
             description_placeholders={"devices": self._list_devices(devices)},
         )
 
-    async def async_step_add_device(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_add_device(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         schema = self._build_basic_schema(include_name=True)
         errors: dict[str, str] = {}
@@ -286,9 +335,13 @@ class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow, d
                 self._new_device = self._sanitize_optional_entities(dict(user_input))
                 return await self.async_step_add_device_page_2()
 
-        return self.async_show_form(step_id="add_device", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="add_device", data_schema=schema, errors=errors
+        )
 
-    async def async_step_add_device_page_2(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_add_device_page_2(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         schema = self._build_target_schema(self._new_device)
         errors: dict[str, str] = {}
 
@@ -299,16 +352,22 @@ class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow, d
                 self._new_device = self._sanitize_optional_entities(self._new_device)
                 return await self.async_step_add_device_page_3()
 
-        return self.async_show_form(step_id="add_device_page_2", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="add_device_page_2", data_schema=schema, errors=errors
+        )
 
-    async def async_step_add_device_page_3(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_add_device_page_3(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         schema = self._build_alarm_schema(self._new_device)
         errors: dict[str, str] = {}
 
         if user_input:
             errors = self._alarm_errors(user_input)
             if not errors:
-                device = self._sanitize_optional_entities({**self._new_device, **user_input})
+                device = self._sanitize_optional_entities(
+                    {**self._new_device, **user_input}
+                )
                 devices = self._get_devices()
                 devices.append(device)
                 self._save_devices(devices)
@@ -324,18 +383,24 @@ class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow, d
             description_placeholders={"info": "Configure alarms and notifications"},
         )
 
-    async def async_step_edit_device(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_edit_device(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         if not devices:
             return await self.async_step_user()
 
-        schema = vol.Schema({vol.Required("idx"): vol.In({i: d["name"] for i, d in enumerate(devices)})})
+        schema = vol.Schema(
+            {vol.Required("idx"): vol.In({i: d["name"] for i, d in enumerate(devices)})}
+        )
         if user_input is not None:
             return await self.async_step_edit_device_details(user_input)
 
         return self.async_show_form(step_id="edit_device", data_schema=schema)
 
-    async def async_step_edit_device_details(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_edit_device_details(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         if not user_input or "idx" not in user_input:
             return await self.async_step_user()
@@ -371,12 +436,16 @@ class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow, d
             description_placeholders={"device_name": device.get("name", "")},
         )
 
-    async def async_step_delete_device(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_delete_device(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         if not devices:
             return await self.async_step_user()
 
-        schema = vol.Schema({vol.Required("idx"): vol.In({i: d["name"] for i, d in enumerate(devices)})})
+        schema = vol.Schema(
+            {vol.Required("idx"): vol.In({i: d["name"] for i, d in enumerate(devices)})}
+        )
         if user_input and "idx" in user_input:
             idx = int(user_input["idx"])
             if 0 <= idx < len(devices):
@@ -385,7 +454,9 @@ class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow, d
 
         return self.async_show_form(step_id="delete_device", data_schema=schema)
 
-    async def async_step_confirm_delete(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_confirm_delete(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         idx = getattr(self, "_idx_to_delete", None)
         if idx is None or idx >= len(devices):
@@ -405,7 +476,9 @@ class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow, d
             description_placeholders={"device_name": devices[idx]["name"]},
         )
 
-    async def async_step_finish(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_finish(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         return self.async_create_entry(
             title="Smart Charger",
@@ -415,7 +488,9 @@ class SmartChargerConfigFlow(SmartChargerFlowMixin, config_entries.ConfigFlow, d
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
         return SmartChargerOptionsFlowHandler(config_entry)
 
 
@@ -424,9 +499,13 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self.config_entry = config_entry
-        self.devices: list[Dict[str, Any]] = deepcopy(config_entry.data.get("devices", []))
+        self.devices: list[Dict[str, Any]] = deepcopy(
+            config_entry.data.get("devices", [])
+        )
 
-    async def async_step_init(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_init(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         if user_input:
             action = user_input.get("action")
             if action == "edit_device":
@@ -442,16 +521,26 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             description_placeholders={"info": info},
         )
 
-    async def async_step_edit_device(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_edit_device(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         if not self.devices:
             return self.async_abort(reason="no_devices")
 
-        schema = vol.Schema({vol.Required("idx"): vol.In({i: d["name"] for i, d in enumerate(self.devices)})})
+        schema = vol.Schema(
+            {
+                vol.Required("idx"): vol.In(
+                    {i: d["name"] for i, d in enumerate(self.devices)}
+                )
+            }
+        )
         if user_input:
             return await self.async_step_edit_device_details(user_input)
         return self.async_show_form(step_id="edit_device", data_schema=schema)
 
-    async def async_step_edit_device_details(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_edit_device_details(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         if not user_input or "idx" not in user_input:
             return self.async_abort(reason="invalid_device")
 
@@ -487,11 +576,19 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             description_placeholders={"device_name": device.get("name", "")},
         )
 
-    async def async_step_delete_device(self, user_input: Optional[Dict[str, Any]] = None) -> config_entries.ConfigFlowResult:
+    async def async_step_delete_device(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         if not self.devices:
             return self.async_abort(reason="no_devices")
 
-        schema = vol.Schema({vol.Required("idx"): vol.In({i: d["name"] for i, d in enumerate(self.devices)})})
+        schema = vol.Schema(
+            {
+                vol.Required("idx"): vol.In(
+                    {i: d["name"] for i, d in enumerate(self.devices)}
+                )
+            }
+        )
         if user_input and "idx" in user_input:
             idx = int(user_input["idx"])
             if 0 <= idx < len(self.devices):

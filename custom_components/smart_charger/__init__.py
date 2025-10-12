@@ -42,7 +42,9 @@ def _get_domain_data(hass: HomeAssistant) -> dict[str, Any]:
     return data
 
 
-def _resolve_entry_context(hass: HomeAssistant, call: ServiceCall) -> tuple[ConfigEntry, dict[str, Any]]:
+def _resolve_entry_context(
+    hass: HomeAssistant, call: ServiceCall
+) -> tuple[ConfigEntry, dict[str, Any]]:
     domain_data = _get_domain_data(hass)
     entries: dict[str, dict[str, Any]] = domain_data["entries"]
     entry_id = call.data.get("entry_id")
@@ -63,7 +65,9 @@ def _resolve_entry_context(hass: HomeAssistant, call: ServiceCall) -> tuple[Conf
             raise HomeAssistantError(f"Entry context missing for '{entry_id}'")
         return entry, entry_data
 
-    raise HomeAssistantError("Specify 'entry_id' in service data when multiple Smart Charger entries are configured")
+    raise HomeAssistantError(
+        "Specify 'entry_id' in service data when multiple Smart Charger entries are configured"
+    )
 
 
 def _register_services(hass: HomeAssistant) -> None:
@@ -197,7 +201,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for key in (CONF_BATTERY_SENSOR, CONF_CHARGING_SENSOR):
             ent = device.get(key)
             if ent:
-                listeners.append(async_track_state_change_event(hass, ent, _on_entity_change))
+                listeners.append(
+                    async_track_state_change_event(hass, ent, _on_entity_change)
+                )
 
         for key in (
             "alarm_entity",
@@ -211,16 +217,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ):
             ent = device.get(key)
             if ent:
-                listeners.append(async_track_state_change_event(hass, ent, _on_entity_change))
+                listeners.append(
+                    async_track_state_change_event(hass, ent, _on_entity_change)
+                )
 
-    presence_entities = [d.get("presence_sensor") for d in devices if d.get("presence_sensor")]
+    presence_entities = [
+        d.get("presence_sensor") for d in devices if d.get("presence_sensor")
+    ]
 
     async def _on_presence_change(event: Any) -> None:
         new_state = event.data.get("new_state")
         if not new_state or new_state.entity_id not in presence_entities:
             return
         if str(new_state.state).lower() in ("home", "on", "present", "true"):
-            _LOGGER.debug("Smart Charger: %s became home -> triggering refresh", new_state.entity_id)
+            _LOGGER.debug(
+                "Smart Charger: %s became home -> triggering refresh",
+                new_state.entity_id,
+            )
             refresh = getattr(coordinator, "async_throttled_refresh", None)
             if callable(refresh):
                 result = refresh()
@@ -280,4 +293,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.info("Removing Smart Charger device: %s", name)
             device_registry.async_remove_device(device_entry.id)
     return unload_ok
-

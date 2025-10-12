@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 import logging
-from datetime import datetime
 from typing import Any, Dict, Iterable, Optional
 
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -11,7 +10,6 @@ from homeassistant.const import STATE_ON
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    DOMAIN,
     CONF_BATTERY_SENSOR,
     CONF_CHARGER_SWITCH,
     CONF_CHARGING_SENSOR,
@@ -20,6 +18,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class SmartChargerStateMachine:
     """Simple state management for charging cycles."""
@@ -66,6 +65,7 @@ class SmartChargerStateMachine:
             ]
         return [key.split(":", 1)[1] for key in self.error_history.keys()]
 
+
 def _get_state(hass: HomeAssistant, entity_id: Optional[str]) -> Optional[str]:
     if not entity_id:
         return None
@@ -90,7 +90,9 @@ def _normalize_entity_ids(value: Any) -> set[str]:
         return {str(value)}
 
 
-def _iter_target_devices(cfg: Dict[str, Any], entity_ids: Any) -> Iterable[Dict[str, Any]]:
+def _iter_target_devices(
+    cfg: Dict[str, Any], entity_ids: Any
+) -> Iterable[Dict[str, Any]]:
     devices: list[Dict[str, Any]] = cfg.get("devices") or []
     target_ids = _normalize_entity_ids(entity_ids)
 
@@ -126,7 +128,12 @@ async def handle_force_refresh(hass: HomeAssistant, coordinator) -> None:
     await coordinator.async_request_refresh()
 
 
-async def handle_start_charging(hass: HomeAssistant, cfg: Dict[str, Any], call: ServiceCall, sm: SmartChargerStateMachine) -> None:
+async def handle_start_charging(
+    hass: HomeAssistant,
+    cfg: Dict[str, Any],
+    call: ServiceCall,
+    sm: SmartChargerStateMachine,
+) -> None:
     """Manually start charging for targeted devices."""
     for device in _iter_target_devices(cfg, call.data.get("entity_id")):
         name = device.get("name")
@@ -142,7 +149,9 @@ async def handle_start_charging(hass: HomeAssistant, cfg: Dict[str, Any], call: 
                 blocking=True,
             )
         except Exception as err:
-            _LOGGER.error("Failed to start manual charge for %s (%s): %s", name, charger_ent, err)
+            _LOGGER.error(
+                "Failed to start manual charge for %s (%s): %s", name, charger_ent, err
+            )
             sm.add_error(name, f"start_failed:{err}")
             continue
 
@@ -150,7 +159,12 @@ async def handle_start_charging(hass: HomeAssistant, cfg: Dict[str, Any], call: 
         _LOGGER.info("Starting manual charge for %s", name)
 
 
-async def handle_stop_charging(hass: HomeAssistant, cfg: Dict[str, Any], call: ServiceCall, sm: SmartChargerStateMachine) -> None:
+async def handle_stop_charging(
+    hass: HomeAssistant,
+    cfg: Dict[str, Any],
+    call: ServiceCall,
+    sm: SmartChargerStateMachine,
+) -> None:
     """Manually stop charging for targeted devices."""
     for device in _iter_target_devices(cfg, call.data.get("entity_id")):
         name = device.get("name")
@@ -166,7 +180,9 @@ async def handle_stop_charging(hass: HomeAssistant, cfg: Dict[str, Any], call: S
                 blocking=True,
             )
         except Exception as err:
-            _LOGGER.error("Failed to stop manual charge for %s (%s): %s", name, charger_ent, err)
+            _LOGGER.error(
+                "Failed to stop manual charge for %s (%s): %s", name, charger_ent, err
+            )
             sm.add_error(name, f"stop_failed:{err}")
             continue
 
@@ -219,9 +235,13 @@ async def handle_auto_manage(
         if battery >= target and charger_ent:
             charger_state = _get_state(hass, charger_ent)
             if charger_state == STATE_ON:
-                await hass.services.async_call("switch", "turn_off", {"entity_id": charger_ent})
+                await hass.services.async_call(
+                    "switch", "turn_off", {"entity_id": charger_ent}
+                )
                 sm.set_state(pid, "completed")
-                _LOGGER.info("Auto-stop: %s reached %.1f%% (target %.1f%%)", pid, battery, target)
+                _LOGGER.info(
+                    "Auto-stop: %s reached %.1f%% (target %.1f%%)", pid, battery, target
+                )
 
     refresh = getattr(coordinator, "async_throttled_refresh", None)
     if callable(refresh):
@@ -232,7 +252,9 @@ async def handle_auto_manage(
     await coordinator.async_request_refresh()
 
 
-async def handle_load_model(hass: HomeAssistant, cfg: Dict[str, Any], call: ServiceCall, learning) -> None:
+async def handle_load_model(
+    hass: HomeAssistant, cfg: Dict[str, Any], call: ServiceCall, learning
+) -> None:
     """Load or reset the predictive learning model on demand."""
     action = call.data.get("action", "load")
     pid = call.data.get("profile_id")

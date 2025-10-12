@@ -29,13 +29,17 @@ def _time_bucket(hour: int) -> str:
     return "evening"
 
 
-def _ema_update(previous: Optional[float], value: float, alpha: float = EMA_ALPHA) -> float:
+def _ema_update(
+    previous: Optional[float], value: float, alpha: float = EMA_ALPHA
+) -> float:
     if previous is None:
         return value
     return alpha * value + (1 - alpha) * previous
 
 
-def _decay_to_baseline(value: float, hours_old: Optional[float], baseline: float = 1.0) -> float:
+def _decay_to_baseline(
+    value: float, hours_old: Optional[float], baseline: float = 1.0
+) -> float:
     if hours_old is None or hours_old <= 0:
         return value
     factor = 0.5 ** (hours_old / DECAY_HALF_LIFE_HOURS)
@@ -237,9 +241,10 @@ class SmartChargerLearning:
 
         self._update_stats(p, speed, timestamp, start_time)
         self._schedule_save()
+
     def cleanup_old_data(self, max_samples: int = 200, max_cycles: int = 100) -> None:
         """Keep only a bounded number of stored samples and cycles."""
-        for pid, pdata in self._data.items():
+        for pdata in self._data.values():
             if "samples" in pdata:
                 pdata["samples"] = pdata["samples"][-max_samples:]
             if "cycles" in pdata:
@@ -248,7 +253,11 @@ class SmartChargerLearning:
                 for bucket, entry in list(pdata["bucket_stats"].items()):
                     if not entry.get("ema"):
                         pdata["bucket_stats"].pop(bucket, None)
-        _LOGGER.debug("Cleaned up learning data (max %d samples, %d cycles)", max_samples, max_cycles)
+        _LOGGER.debug(
+            "Cleaned up learning data (max %d samples, %d cycles)",
+            max_samples,
+            max_cycles,
+        )
         self._schedule_save()
 
     def _default_profile(self) -> Dict[str, Any]:
@@ -267,8 +276,16 @@ class SmartChargerLearning:
         pdata.setdefault("bucket_stats", {})
         return pdata
 
-    def _update_stats(self, profile: Dict[str, Any], speed: float, timestamp: str, start_time: datetime) -> None:
-        stats = profile.setdefault("stats", {"ema": None, "count": 0, "last_sample": None})
+    def _update_stats(
+        self,
+        profile: Dict[str, Any],
+        speed: float,
+        timestamp: str,
+        start_time: datetime,
+    ) -> None:
+        stats = profile.setdefault(
+            "stats", {"ema": None, "count": 0, "last_sample": None}
+        )
         stats["ema"] = _ema_update(stats.get("ema"), speed)
         stats["count"] = int(stats.get("count", 0)) + 1
         stats["last_sample"] = timestamp
@@ -276,8 +293,12 @@ class SmartChargerLearning:
         bucket_map = profile.setdefault("bucket_stats", {})
         local_start = dt_util.as_local(start_time)
         bucket_key = _time_bucket(local_start.hour)
-        bucket_entry = bucket_map.setdefault(bucket_key, {"ema": None, "count": 0, "last_sample": None})
-        bucket_entry["ema"] = _ema_update(bucket_entry.get("ema"), speed, alpha=EMA_ALPHA)
+        bucket_entry = bucket_map.setdefault(
+            bucket_key, {"ema": None, "count": 0, "last_sample": None}
+        )
+        bucket_entry["ema"] = _ema_update(
+            bucket_entry.get("ema"), speed, alpha=EMA_ALPHA
+        )
         bucket_entry["count"] = int(bucket_entry.get("count", 0)) + 1
         bucket_entry["last_sample"] = timestamp
 

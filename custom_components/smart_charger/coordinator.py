@@ -132,7 +132,11 @@ class SmartChargePlan:
             "avg_speed": round(self.avg_speed, 3),
             "duration_min": round(self.duration_min, 1),
             "alarm_time": dt_util.as_local(self.alarm_time).isoformat(),
-            "start_time": dt_util.as_local(self.start_time).isoformat() if self.start_time else None,
+            "start_time": (
+                dt_util.as_local(self.start_time).isoformat()
+                if self.start_time
+                else None
+            ),
             "predicted_drain": round(self.predicted_drain, 2),
             "predicted_level_at_alarm": round(self.predicted_level_at_alarm, 1),
             "smart_start_active": self.smart_start_active,
@@ -176,7 +180,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             try:
                 yield DeviceConfig.from_dict(raw)
             except Exception as err:
-                _LOGGER.warning("Skipping invalid device configuration %s: %s", raw, err)
+                _LOGGER.warning(
+                    "Skipping invalid device configuration %s: %s", raw, err
+                )
 
     async def _async_update_data(self) -> Dict[str, Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
@@ -207,7 +213,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 self.update_interval = timedelta(seconds=60)
                 return
 
-            avg_batt = sum(v.get("battery", 50) for v in self._state.values()) / len(self._state)
+            avg_batt = sum(v.get("battery", 50) for v in self._state.values()) / len(
+                self._state
+            )
             if avg_batt < 30:
                 new_interval = 120
             elif avg_batt < 60:
@@ -215,7 +223,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             else:
                 new_interval = 30
 
-            current_interval = self.update_interval.total_seconds() if self.update_interval else 60
+            current_interval = (
+                self.update_interval.total_seconds() if self.update_interval else 60
+            )
             if current_interval != new_interval:
                 _LOGGER.debug(
                     "Adaptive update interval changed: %.0fs -> %.0fs (avg_batt=%.1f)",
@@ -227,10 +237,15 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         except Exception as err:
             _LOGGER.debug("Adaptive interval calculation failed: %s", err)
+
     async def async_throttled_refresh(self) -> None:
         """Request an update only when the interval threshold is respected."""
         try:
-            min_interval = self.update_interval.total_seconds() if self.update_interval else UPDATE_INTERVAL
+            min_interval = (
+                self.update_interval.total_seconds()
+                if self.update_interval
+                else UPDATE_INTERVAL
+            )
         except Exception:
             min_interval = UPDATE_INTERVAL
 
@@ -303,7 +318,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         """Fallback: default to an alarm tomorrow morning."""
         fallback_time = self._parse_alarm_time(None)
-        return dt_util.as_local(datetime.combine(today + timedelta(days=1), fallback_time))
+        return dt_util.as_local(
+            datetime.combine(today + timedelta(days=1), fallback_time)
+        )
 
     @staticmethod
     def _parse_alarm_time(value: Optional[str]) -> time:
@@ -325,7 +342,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 continue
         return time(hour=6, minute=30)
 
-    def _avg_speed(self, device: DeviceConfig, learning, fallback: float = 1.0) -> float:
+    def _avg_speed(
+        self, device: DeviceConfig, learning, fallback: float = 1.0
+    ) -> float:
         if device.use_predictive_mode and learning and hasattr(learning, "avg_speed"):
             try:
                 speed = learning.avg_speed(device.name)
@@ -368,7 +387,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         duration_min = min(diff / avg_speed, 24 * 60)
         hours_until_alarm = max(0.0, (alarm_dt - now_local).total_seconds() / 3600)
 
-        base_drain = 0.2 if now_local.hour < 6 else (0.4 if now_local.hour < 22 else 0.3)
+        base_drain = (
+            0.2 if now_local.hour < 6 else (0.4 if now_local.hour < 22 else 0.3)
+        )
         if not is_home:
             base_drain += 0.2
         if battery < 20:
@@ -388,7 +409,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             duration_min = 0.0
 
         charger_state = self.hass.states.get(device.charger_switch)
-        charger_is_on = charger_state and str(charger_state.state).lower() in ("on", "charging", STATE_ON)
+        charger_is_on = charger_state and str(charger_state.state).lower() in (
+            "on",
+            "charging",
+            STATE_ON,
+        )
 
         precharge_margin = 0.5
         precharge_required = (
@@ -411,14 +436,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             precharge_required=precharge_required,
         )
 
-        precharge_active = (
-            (precharge_required and charger_expected_on)
-            or (
-                charger_expected_on
-                and smart_start_active
-                and start_time is not None
-                and now_local < start_time
-            )
+        precharge_active = (precharge_required and charger_expected_on) or (
+            charger_expected_on
+            and smart_start_active
+            and start_time is not None
+            and now_local < start_time
         )
 
         return SmartChargePlan(
@@ -465,7 +487,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 device.min_level,
                 charger_ent,
             )
-            await self.hass.services.async_call("switch", "turn_on", service_data, blocking=False)
+            await self.hass.services.async_call(
+                "switch", "turn_on", service_data, blocking=False
+            )
             return True
 
         if precharge_required and not charger_is_on:
@@ -478,7 +502,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 battery,
                 charger_ent,
             )
-            await self.hass.services.async_call("switch", "turn_on", service_data, blocking=False)
+            await self.hass.services.async_call(
+                "switch", "turn_on", service_data, blocking=False
+            )
             return True
 
         if not is_home and charger_is_on:
@@ -489,7 +515,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 device_name,
                 charger_ent,
             )
-            await self.hass.services.async_call("switch", "turn_off", service_data, blocking=False)
+            await self.hass.services.async_call(
+                "switch", "turn_off", service_data, blocking=False
+            )
             return False
 
         if (
@@ -506,7 +534,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 device_name,
                 charger_ent,
             )
-            await self.hass.services.async_call("switch", "turn_on", service_data, blocking=False)
+            await self.hass.services.async_call(
+                "switch", "turn_on", service_data, blocking=False
+            )
             return True
 
         if charger_is_on and battery >= device.target_level:
@@ -518,7 +548,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 battery,
                 charger_ent,
             )
-            await self.hass.services.async_call("switch", "turn_off", service_data, blocking=False)
+            await self.hass.services.async_call(
+                "switch", "turn_off", service_data, blocking=False
+            )
             return False
 
         if (
@@ -536,15 +568,21 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self.hass.services.async_call("switch", "turn_off", service_data, blocking=False)
+            await self.hass.services.async_call(
+                "switch", "turn_off", service_data, blocking=False
+            )
             return False
 
         return expected_on
 
-    def _log_action(self, device_name: str, level: int, message: str, *args: Any) -> None:
+    def _log_action(
+        self, device_name: str, level: int, message: str, *args: Any
+    ) -> None:
         rendered = message % args if args else message
         if self._last_action_log.get(device_name) == rendered:
-            _LOGGER.debug("Skipping duplicate action log for %s: %s", device_name, rendered)
+            _LOGGER.debug(
+                "Skipping duplicate action log for %s: %s", device_name, rendered
+            )
             return
         self._last_action_log[device_name] = rendered
         _LOGGER.log(level, rendered)
