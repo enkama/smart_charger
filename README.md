@@ -1,5 +1,7 @@
 # Smart Charger for Home Assistant
 
+	<img alt="Smart Charger logo" src="https://raw.githubusercontent.com/enkama/smart_charger/main/logo/icon.png" width="200">
+
 Smart Charger is a custom integration for Home Assistant that orchestrates predictive charging for battery powered devices. It monitors battery levels, presence, alarms, and historical charge performance to trigger just-in-time charging cycles. The integration exposes rich diagnostics, helper sensors, and a set of services that can be automated from Home Assistant automations and scripts.
 
 ## Features

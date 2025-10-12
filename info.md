@@ -1,5 +1,7 @@
 ## Smart Charger
 
+<img alt="Smart Charger logo" src="https://raw.githubusercontent.com/enkama/smart_charger/main/logo/icon.png" width="200">
+
 Smart Charger predicts when your devices need to be charged and drives a charger switch so that everything is ready when you are. It combines battery sensors, alarm entities, and historical performance data to maintain optimal charge levels without wasting energy.
 
 ### Highlights
