@@ -1,8 +1,13 @@
 {
   "domain": "smart_charger",
   "name": "Smart Charger",
-  "after_dependencies": ["sensor", "switch"],
-  "codeowners": ["@enkama"],
+  "after_dependencies": [
+    "sensor",
+    "switch"
+  ],
+  "codeowners": [
+    "@enkama"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/enkama/smart_charger",
