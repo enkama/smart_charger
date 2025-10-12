@@ -1,72 +1,72 @@
 force_refresh:
   name: Force Refresh
-  description: Berechnet die Startzeit sofort neu.
+  description: Recompute the charging plan immediately.
   fields:
     entry_id:
       name: Entry ID
-      description: Optional – falls mehrere Smart-Charger-Konfigurationen aktiv sind.
+      description: Optional – required only when multiple Smart Charger entries exist.
       example: 1234567890abcdef1234567890abcdef
       selector:
         text:
 
 start_charging:
   name: Start Charging
-  description: Schaltet den angegebenen Charger ein, unabhängig vom Zeitplan.
+  description: Turn the selected charger on regardless of the current schedule.
   fields:
     entry_id:
       name: Entry ID
-      description: Optional – falls mehrere Smart-Charger-Konfigurationen aktiv sind.
+      description: Optional - required only when multiple Smart Charger entries exist.
       example: 1234567890abcdef1234567890abcdef
       selector:
         text:
     entity_id:
-      description: Switch-Entity des Ladegeräts (leer lassen, um alle zu starten)
-      example: switch.schlafzimmer_handy_ladegeraet
+      description: Charger switch entity (leave empty to start all chargers).
+      example: switch.bedroom_phone_charger
       selector:
         entity:
           domain: switch
 
 stop_charging:
   name: Stop Charging
-  description: Schaltet den Charger aus.
+  description: Turn the selected charger off.
   fields:
     entry_id:
       name: Entry ID
-      description: Optional – falls mehrere Smart-Charger-Konfigurationen aktiv sind.
+      description: Optional – required only when multiple Smart Charger entries exist.
       example: 1234567890abcdef1234567890abcdef
       selector:
         text:
     entity_id:
-      description: Switch-Entity des Ladegeräts (leer lassen, um alle zu stoppen)
-      example: switch.schlafzimmer_handy_ladegeraet
+      description: Charger switch entity (leave empty to stop all chargers).
+      example: switch.bedroom_phone_charger
       selector:
         entity:
           domain: switch
 
 auto_manage:
   name: Auto Manage
-  description: Prüft Ladezustand und steuert Charger automatisch nach aktuellem Plan.
+  description: Evaluate the current status and control chargers according to the active plan.
   fields:
     entry_id:
       name: Entry ID
-      description: Optional – falls mehrere Smart-Charger-Konfigurationen aktiv sind.
+      description: Optional – required only when multiple Smart Charger entries exist.
       example: 1234567890abcdef1234567890abcdef
       selector:
         text:
 
 load_model:
   name: Load / Reset Learning Model
-  description: Lädt oder setzt das gespeicherte Smart-Charger-Lernmodell zurück.
+  description: Load or reset the persisted Smart Charger learning model.
   fields:
     entry_id:
       name: Entry ID
-      description: Optional – falls mehrere Smart-Charger-Konfigurationen aktiv sind.
+      description: Optional – required only when multiple Smart Charger entries exist.
       example: 1234567890abcdef1234567890abcdef
       selector:
         text:
     action:
       name: Action
-      description: load (Standard) oder reset, um Daten zu löschen.
+      description: Use `load` (default) or `reset` to clear stored data.
       example: reset
       selector:
         select:
@@ -75,5 +75,5 @@ load_model:
             - reset
     profile_id:
       name: Profile ID
-      description: Name des Profils (optional, bei 'reset' leer lassen, um alle zu löschen)
-      example: "Mein Handy"
+      description: Profile name (optional; leave empty with `reset` to clear all).
+      example: "My Phone"
