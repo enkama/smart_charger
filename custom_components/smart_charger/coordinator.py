@@ -145,7 +145,7 @@ class SmartChargePlan:
 
 
 class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
-    """Koordiniert Berechnung und Steuerung der Ladeplanung."""
+    """Coordinates the calculation and control of the charging plan."""
 
     _last_action_log: Dict[str, str]
 
@@ -201,7 +201,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             return self._state or {}
 
     async def _async_update_interval(self) -> None:
-        """Passe das Update-Intervall dynamisch an den Ladezustand an."""
+        """Adjust the update interval dynamically based on the battery state."""
         try:
             if not self._state:
                 self.update_interval = timedelta(seconds=60)
@@ -218,7 +218,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             current_interval = self.update_interval.total_seconds() if self.update_interval else 60
             if current_interval != new_interval:
                 _LOGGER.debug(
-                    "⏱ Adaptive Update-Intervall geändert: %.0fs → %.0fs (avg_batt=%.1f)",
+                    "Adaptive update interval changed: %.0fs -> %.0fs (avg_batt=%.1f)",
                     current_interval,
                     new_interval,
                     avg_batt,
@@ -226,9 +226,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 self.update_interval = timedelta(seconds=new_interval)
 
         except Exception as err:
-            _LOGGER.debug("Adaptive-Intervall-Berechnung fehlgeschlagen: %s", err)
+            _LOGGER.debug("Adaptive interval calculation failed: %s", err)
     async def async_throttled_refresh(self) -> None:
-        """Fordert ein Update nur an, wenn der Intervall eingehalten ist."""
+        """Request an update only when the interval threshold is respected."""
         try:
             min_interval = self.update_interval.total_seconds() if self.update_interval else UPDATE_INTERVAL
         except Exception:
@@ -240,7 +240,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             elapsed = (dt_util.utcnow() - self._last_successful_update).total_seconds()
             if elapsed < min_interval:
                 _LOGGER.debug(
-                    "Refresh übersprungen (elapsed=%.1fs, erforderlich=%.1fs)",
+                    "Skipping refresh (elapsed=%.1fs, required=%.1fs)",
                     elapsed,
                     min_interval,
                 )
@@ -257,7 +257,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             return float(state_obj.state)
         except (TypeError, ValueError):
-            _LOGGER.debug("Kann Zustand %s nicht in float umwandeln", state_obj.state)
+            _LOGGER.debug("Cannot convert state %s to float", state_obj.state)
             return None
 
     def _text_state(self, entity_id: Optional[str]) -> Optional[str]:
@@ -301,7 +301,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             if alarm_dt > now_local:
                 return alarm_dt
 
-        # Fallback: nothing found, return default next-day alarm
+        """Fallback: default to an alarm tomorrow morning."""
         fallback_time = self._parse_alarm_time(None)
         return dt_util.as_local(datetime.combine(today + timedelta(days=1), fallback_time))
 
@@ -332,7 +332,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 if speed:
                     return max(0.1, float(speed))
             except Exception:
-                _LOGGER.debug("Predictive avg_speed fehlgeschlagen für %s", device.name)
+                _LOGGER.debug("Predictive avg_speed failed for %s", device.name)
 
         manual_state = self._float_state(device.avg_speed_sensor)
         if manual_state and manual_state > 0:
@@ -356,7 +356,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
     ) -> Optional[SmartChargePlan]:
         battery = self._float_state(device.battery_sensor)
         if battery is None:
-            _LOGGER.debug("Kein gültiger Batteriewert für %s", device.name)
+            _LOGGER.debug("No valid battery value for %s", device.name)
             return None
 
         charging_state = self._charging_state(device.charging_sensor)
@@ -460,7 +460,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._log_action(
                 device_name,
                 logging.WARNING,
-                "[EmergencyCharge] %s unter Mindestlevel %.1f%% → sofortiges Laden gestartet (%s)",
+                "[EmergencyCharge] %s below minimum level %.1f%% -> starting charging immediately (%s)",
                 device_name,
                 device.min_level,
                 charger_ent,
@@ -472,7 +472,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._log_action(
                 device_name,
                 logging.INFO,
-                "[Precharge] %s unter Vorladelevel %.1f%% (aktuell %.1f%%) → Charger wird aktiviert (%s)",
+                "[Precharge] %s below precharge level %.1f%% (current %.1f%%) -> activating charger (%s)",
                 device_name,
                 device.precharge_level,
                 battery,
@@ -485,7 +485,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._log_action(
                 device_name,
                 logging.INFO,
-                "[SmartStop] %s nicht zuhause → Charger wird deaktiviert (%s)",
+                "[SmartStop] %s not at home -> deactivating charger (%s)",
                 device_name,
                 charger_ent,
             )
@@ -502,7 +502,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._log_action(
                 device_name,
                 logging.INFO,
-                "[SmartStart] Ladezeit erreicht für %s → Charger wird aktiviert (%s)",
+                "[SmartStart] Charging start time reached for %s -> activating charger (%s)",
                 device_name,
                 charger_ent,
             )
@@ -513,7 +513,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._log_action(
                 device_name,
                 logging.INFO,
-                "[SmartStop] %s erreicht Zielwert %.1f%% → Charger wird deaktiviert (%s)",
+                "[SmartStop] %s reached target level %.1f%% -> deactivating charger (%s)",
                 device_name,
                 battery,
                 charger_ent,
@@ -531,7 +531,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._log_action(
                 device_name,
                 logging.INFO,
-                "[Precharge] %s hat Sicherheitslevel erreicht und wartet auf Start um %s → Charger wird pausiert (%s)",
+                "[Precharge] %s reached the safety level and waits for the start at %s -> pausing charger (%s)",
                 device_name,
                 start_time.isoformat(),
                 charger_ent,

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+import inspect
 import logging
+from typing import Any, Callable
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
@@ -130,7 +131,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry_data["coordinator"] = coordinator
     await coordinator.async_config_entry_first_refresh()
 
-    # Starten, damit der Coordinator auch ohne Entities zyklisch aktualisiert
+    """Ensure the coordinator keeps polling even without tracked entities."""
     polling_unsub = None
     start_polling = getattr(coordinator, "async_start_polling", None)
     if callable(start_polling):
@@ -153,20 +154,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
     )
 
-    # ---------------- Geräte-Registrierung ----------------
     device_registry = dr.async_get(hass)
 
-    # Hauptgerät für globale Sensoren
-    device_registry.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, "main_hub")},
-        manufacturer="Smart Charger System",
-        name="Smart Charger",
-        model="Predictive Charging Hub",
-        configuration_url="https://my.home-assistant.io/redirect/integrations/",
-    )
-
-    # Untergeräte für jedes konfigurierte Device
+    """Register each configured device in the registry."""
     for device in devices:
         name = device.get("name")
         if not name:
@@ -181,13 +171,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             configuration_url="https://my.home-assistant.io/redirect/integrations/",
         )
 
-    # --- Load platforms (wichtig, damit Sensoren sichtbar werden) ---
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception as err:
         _LOGGER.exception("Error forwarding platforms: %s", err)
 
-    # ---------------- Entity updates ----------------
     async def _on_entity_change(event: Any) -> None:
         """Recalculate charging plan when relevant sensor changes."""
         data = entries.get(entry.entry_id)
@@ -225,7 +213,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if ent:
                 listeners.append(async_track_state_change_event(hass, ent, _on_entity_change))
 
-    # ---------------- Presence-triggered auto-refresh ----------------
     presence_entities = [d.get("presence_sensor") for d in devices if d.get("presence_sensor")]
 
     async def _on_presence_change(event: Any) -> None:
@@ -233,12 +220,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not new_state or new_state.entity_id not in presence_entities:
             return
         if str(new_state.state).lower() in ("home", "on", "present", "true"):
-            _LOGGER.debug("Smart Charger: %s became home → triggering refresh", new_state.entity_id)
+            _LOGGER.debug("Smart Charger: %s became home -> triggering refresh", new_state.entity_id)
             refresh = getattr(coordinator, "async_throttled_refresh", None)
             if callable(refresh):
-                await refresh()  # type: ignore[func-returns-value]
-            else:
-                await coordinator.async_request_refresh()
+                result = refresh()
+                if inspect.isawaitable(result):
+                    await result
+                return
+            await coordinator.async_request_refresh()
 
     for ent in presence_entities:
         listeners.append(async_track_state_change_event(hass, ent, _on_presence_change))

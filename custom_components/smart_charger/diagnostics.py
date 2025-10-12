@@ -107,9 +107,7 @@ async def async_get_config_entry_diagnostics(
     coordinator = data.get("coordinator")
     learning = data.get("learning")
 
-    # -------------------------------------------------------------------------
-    # Per-device diagnostics
-    # -------------------------------------------------------------------------
+    """Compile diagnostics for each configured device."""
     devices = entry.data.get("devices") or []
     sanitized_devices: list[Dict[str, Any]] = []
 
@@ -149,9 +147,7 @@ async def async_get_config_entry_diagnostics(
             }
         )
 
-    # -------------------------------------------------------------------------
-    # Learning summary
-    # -------------------------------------------------------------------------
+    """Summarize the learning storage for quick inspection."""
     learning_summary: Dict[str, Any] = {}
     if learning and getattr(learning, "_data", None):
         profiles = getattr(learning, "_data", {})
@@ -168,9 +164,7 @@ async def async_get_config_entry_diagnostics(
             for pid, pdata in profiles.items()
         }
 
-    # -------------------------------------------------------------------------
-    # Error heatmaps
-    # -------------------------------------------------------------------------
+    """Build hour-bucketed heatmaps of recorded errors."""
     error_heatmap: Dict[str, Any] = {}
     global_heatmap: Dict[str, Any] = {}
     if state_machine and getattr(state_machine, "error_history", None):
@@ -198,9 +192,7 @@ async def async_get_config_entry_diagnostics(
                 error_heatmap[pid][etype][hour] += 1
                 global_heatmap[etype][hour] += 1
 
-    # -------------------------------------------------------------------------
-    # Coordinator snapshot
-    # -------------------------------------------------------------------------
+    """Capture the coordinator live state and derived insights."""
     coordinator_state: Dict[str, Any] = {}
     coordinator_plans: Dict[str, Any] = {}
     coordinator_insights: Dict[str, Any] = {}
@@ -256,9 +248,7 @@ async def async_get_config_entry_diagnostics(
 
     coordinator_meta = _coordinator_meta(coordinator)
 
-    # -------------------------------------------------------------------------
-    # Final report
-    # -------------------------------------------------------------------------
+    """Assemble the final diagnostics payload."""
     state_machine_summary = state_machine.as_dict() if state_machine else {}
     error_summary = _summarize_error_history(state_machine)
 

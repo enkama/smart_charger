@@ -12,8 +12,10 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-EMA_ALPHA = 0.35  # Gewicht für neue Messungen
-DECAY_HALF_LIFE_HOURS = 48  # Halbwertszeit für Verblassen alter Messungen
+"""Weight applied to new measurements in the EMA tracker."""
+EMA_ALPHA = 0.35
+"""Half-life (hours) used when decaying older measurements."""
+DECAY_HALF_LIFE_HOURS = 48
 SAVE_DEBOUNCE_SECONDS = 10
 
 
@@ -41,7 +43,7 @@ def _decay_to_baseline(value: float, hours_old: Optional[float], baseline: float
 
 
 class SmartChargerLearning:
-    """Persistente Lern-Engine für Ladegeschwindigkeiten und Zyklen."""
+    """Persistent learning engine tracking charge speeds and cycles."""
 
     STORAGE_VERSION = 1
     STORAGE_KEY = f"{DOMAIN}_learning"
@@ -49,13 +51,9 @@ class SmartChargerLearning:
     def __init__(self, hass) -> None:
         self.hass = hass
         self._store = Store(hass, self.STORAGE_VERSION, self.STORAGE_KEY)
-        # _data: {profile_id: {"samples": [(ts, speed)], "cycles": [...], "current_session": (ts, level)}}
         self._data: Dict[str, Dict[str, Any]] = {}
         self._save_debounce_unsub: Optional[Callable[[], None]] = None
 
-    # -------------------------------------------------------------------------
-    # Loading & Saving
-    # -------------------------------------------------------------------------
     async def async_load(self, profile_id: Optional[str] = None) -> None:
         try:
             data = await self._store.async_load()
@@ -89,11 +87,8 @@ class SmartChargerLearning:
         else:
             self._ensure_profile_schema(profile_id)
 
-    # -------------------------------------------------------------------------
-    # Statistics
-    # -------------------------------------------------------------------------
     def avg_speed(self, profile_id: Optional[str] = None) -> float:
-        """Berechne gewichteten Durchschnitt in %/min, stärker gewichtet nach Aktualität und Tageszeit."""
+        """Compute a weighted average speed that favors recent, time-matched samples."""
         try:
             now = dt_util.now()
 
@@ -124,7 +119,6 @@ class SmartChargerLearning:
                 if overall_value is not None:
                     return overall_value
 
-            # Fallback: aggregate across all profiles
             aggregated: list[float] = []
             for pid in list(self._data.keys()):
                 pdata = self._ensure_profile_schema(pid)
@@ -134,7 +128,6 @@ class SmartChargerLearning:
             if aggregated:
                 return round(sum(aggregated) / len(aggregated), 3)
 
-            # As last resort, fall back to averaging raw samples
             samples: list[tuple[str, float]] = []
             if profile_id and profile_id in self._data:
                 samples = self._data[profile_id].get("samples", [])
@@ -165,12 +158,8 @@ class SmartChargerLearning:
             _LOGGER.exception("Adaptive avg_speed calculation failed")
             return 1.0
 
-
-    # -------------------------------------------------------------------------
-    # Charging sessions
-    # -------------------------------------------------------------------------
     def start_session(self, profile_id: str, level_now: float) -> None:
-        """Starte neuen Ladevorgang (wird bei Ladebeginn aufgerufen)."""
+        """Start tracking a new charging session."""
         pdata = self._ensure_profile_schema(profile_id)
         pdata["current_session"] = (
             dt_util.now().isoformat(),
@@ -179,7 +168,7 @@ class SmartChargerLearning:
         _LOGGER.debug("Session started for %s at %.1f%%", profile_id, level_now)
 
     async def end_session(self, profile_id: str, level_end: float) -> None:
-        """Beende aktuellen Ladevorgang."""
+        """Finish tracking the active charging session."""
         p = self._ensure_profile_schema(profile_id)
         sess = p.pop("current_session", None)
         if not sess:
@@ -210,7 +199,7 @@ class SmartChargerLearning:
         reached_target: bool,
         error: Optional[str],
     ) -> None:
-        """Erfasse Ladezyklus und berechne %/min."""
+        """Persist a completed charging cycle and update derived metrics."""
         p = self._ensure_profile_schema(profile_id)
         duration_min = max(0.0, (end_time - start_time).total_seconds() / 60.0)
         try:
@@ -219,7 +208,6 @@ class SmartChargerLearning:
         except Exception:
             speed = 0.0
 
-        # Nur plausible Werte speichern
         if speed <= 0 or speed > 10:
             _LOGGER.debug("Ignoring implausible speed %.3f for %s", speed, profile_id)
             return
@@ -249,12 +237,8 @@ class SmartChargerLearning:
 
         self._update_stats(p, speed, timestamp, start_time)
         self._schedule_save()
-
-    # -------------------------------------------------------------------------
-    # Maintenance
-    # -------------------------------------------------------------------------
     def cleanup_old_data(self, max_samples: int = 200, max_cycles: int = 100) -> None:
-        """Behalte nur begrenzte Anzahl von Einträgen."""
+        """Keep only a bounded number of stored samples and cycles."""
         for pid, pdata in self._data.items():
             if "samples" in pdata:
                 pdata["samples"] = pdata["samples"][-max_samples:]
@@ -267,9 +251,6 @@ class SmartChargerLearning:
         _LOGGER.debug("Cleaned up learning data (max %d samples, %d cycles)", max_samples, max_cycles)
         self._schedule_save()
 
-    # -------------------------------------------------------------------------
-    # Internal helpers
-    # -------------------------------------------------------------------------
     def _default_profile(self) -> Dict[str, Any]:
         return {
             "samples": [],

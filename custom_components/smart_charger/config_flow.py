@@ -235,7 +235,7 @@ class SmartChargerFlowMixin:
             if device_entry := registry.async_get_device({identifier}):
                 registry.async_remove_device(device_entry.id)
                 _LOGGER.debug("Removed device '%s' from registry", name)
-        except Exception as err:  # pragma: no cover
+        except Exception as err:
             _LOGGER.warning("Could not remove device '%s' from registry: %s", name, err)
 
 

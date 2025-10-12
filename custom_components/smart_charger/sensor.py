@@ -26,7 +26,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         SmartChargerLearningSensor(learning),
     ]
 
-    # Dynamisch: ein Statussensor pro Gerät
+    """Create a dynamic status sensor for every configured device."""
     for device in devices:
         name = device.get("name")
         if name:
@@ -34,13 +34,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
     async_add_entities(entities, True)
 
-
-# ------------------------------------------------------------
-# Aggregierte Sensoren
-# ------------------------------------------------------------
-
 class SmartChargerNextStartSensor(SensorEntity):
-    """Sensor für den frühesten Ladebeginn über alle Geräte."""
+    """Provide the earliest scheduled start across all devices."""
 
     _attr_name = "Smart Charger Next Start"
     _attr_icon = "mdi:battery-clock"
@@ -108,7 +103,7 @@ class SmartChargerNextStartSensor(SensorEntity):
 
 
 class SmartChargerLearningSensor(SensorEntity):
-    """Sensor zeigt Lernstatus und Statistik."""
+    """Report aggregate learning statistics for the integration."""
 
     _attr_name = "Smart Charger Learning Stats"
     _attr_icon = "mdi:chart-line"
@@ -142,13 +137,8 @@ class SmartChargerLearningSensor(SensorEntity):
 
         _LOGGER.debug("Smart Charger Learning Sensor: manual refresh completed.")
 
-
-# ------------------------------------------------------------
-# Gerätespezifischer Sensor
-# ------------------------------------------------------------
-
 class SmartChargerDeviceSensor(SensorEntity):
-    """Ein Sensor pro Smart-Charger-Gerät mit dynamischem Icon."""
+    """Expose per-device status with a dynamic icon."""
 
     _attr_should_poll = False
 
@@ -158,7 +148,7 @@ class SmartChargerDeviceSensor(SensorEntity):
         self._attr_name = f"Smart Charger {device_name} Status"
         self._attr_unique_id = f"{DOMAIN}_{device_name.lower().replace(' ', '_')}_status"
 
-        # Device-Info → gruppiert Sensor im Gerätemanager
+        """Associate the sensor with the device registry entry."""
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device_name.lower().replace(" ", "_"))},
             name=f"Smart Charger – {device_name}",
