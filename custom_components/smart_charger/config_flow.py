@@ -127,7 +127,11 @@ class SchemaField:
                 value = self.default
 
         field_cls = vol.Required if self.required else vol.Optional
-        field = field_cls(self.key, default=value) if value is not MISSING else field_cls(self.key)
+        field = (
+            field_cls(self.key, default=value)
+            if value is not MISSING
+            else field_cls(self.key)
+        )
 
         validator = self.selector or self.validator
         if self.selector_factory is not None:
