@@ -275,8 +275,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for unsub in data.get("unsub_listeners", []):
             try:
                 unsub()
-            except Exception:
-                continue
+            except Exception as err:
+                _LOGGER.warning("Error while unsubscribing listener: %s", err)
         _LOGGER.info("Smart Charger unloaded: %s", entry.entry_id)
     device_registry = dr.async_get(hass)
     devices = entry.data.get("devices", [])

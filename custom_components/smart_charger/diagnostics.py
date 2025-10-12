@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 from homeassistant.core import HomeAssistant, State
@@ -13,6 +14,9 @@ from .const import (
     CONF_CHARGING_SENSOR,
     CONF_PRESENCE_SENSOR,
 )
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _entity_domain(entity_id: Any) -> str:
@@ -183,14 +187,16 @@ async def async_get_config_entry_diagnostics(
                 global_heatmap[etype] = [0] * 24
 
             for ts in timestamps:
+                dt = None
                 try:
                     dt = dt_util.parse_datetime(ts)
-                    if dt:
-                        hour = dt.hour
-                        error_heatmap[pid][etype][hour] += 1
-                        global_heatmap[etype][hour] += 1
-                except Exception:
+                except (ValueError, TypeError) as err:
+                    _LOGGER.debug("Failed to parse error timestamp %s: %s", ts, err)
+                if not dt:
                     continue
+                hour = dt.hour
+                error_heatmap[pid][etype][hour] += 1
+                global_heatmap[etype][hour] += 1
 
     # -------------------------------------------------------------------------
     # Coordinator snapshot

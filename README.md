@@ -16,13 +16,22 @@ Smart Charger is a custom integration for Home Assistant that orchestrates predi
 
 ### HACS (recommended)
 
-This repository is ready to be added to HACS as a custom repository once it is published at [github.com/enkama/smart_charger](https://github.com/enkama/smart_charger). Until then you can install it manually:
+This integration can be added to HACS as a custom repository.
 
-1. Copy the contents of `custom_components/smart_charger` into the same path inside your Home Assistant configuration directory.
-2. Restart Home Assistant.
-3. Add the integration from *Settings → Devices & Services → Add Integration* and search for **Smart Charger**.
+**Warning**
 
-When the repository is public you can alternatively add it as a custom repository in HACS (`Integrations` category) and install from there. The `hacs.json` file in the root of this repository contains the metadata required by HACS.
+Not all repositories will work in HACS, since HACS still needs the repository to have a known structure.
+
+If you want to add this custom repository to HACS, do the following:
+
+overview_menu
+
+1. Click on the 3 dots in the top right corner.
+2. Select "Custom repositories".
+3. Add `https://github.com/enkama/smart_charger` as the repository URL.
+4. Select the `Integrations` type.
+5. Click the "ADD" button.
+6. Install **Smart Charger** from the custom repositories list and restart Home Assistant.
 
 ### Manual updates
 
