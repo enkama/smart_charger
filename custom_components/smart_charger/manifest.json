@@ -1,0 +1,13 @@
+{
+  "domain": "smart_charger",
+  "name": "Smart Charger",
+  "after_dependencies": ["sensor", "switch"],
+  "codeowners": ["@enkama"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/enkama/smart_charger",
+  "issue_tracker": "https://github.com/enkama/smart_charger/issues",
+  "iot_class": "local_polling",
+  "requirements": [],
+  "version": "0.0.1"
+}

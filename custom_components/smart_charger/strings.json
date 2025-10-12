@@ -1,0 +1,123 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Smart Charger Device Management",
+        "description": "Configured Smart Charger devices:\n{devices}\n\nSelect an action:",
+        "menu_options": {
+          "add_device": "➕ Add new device",
+          "edit_device": "⚙️ Edit device",
+          "delete_device": "🗑️ Delete device"
+        }
+      },
+      "add_device": {
+        "title": "Add new Smart Charger device",
+        "description": "Configure basic information for your new Smart Charger device.",
+        "data": {
+          "name": "Device name",
+          "battery_sensor": "Battery level sensor (%)",
+          "charger_switch": "Charger switch",
+          "charging_sensor": "Charging state sensor (optional)",
+          "presence_sensor": "Presence sensor (optional)"
+        }
+      },
+      "add_device_page_2": {
+        "title": "Charging targets and predictive settings",
+        "description": "Set target levels, safety limits, and enable predictive mode.",
+        "data": {
+          "target_level": "Target level (%)",
+          "min_level": "Minimum safety level before charging (%)",
+          "precharge_level": "Precharge level (start early if below this)",
+          "avg_speed_sensor": "Average charging speed sensor (optional)",
+          "use_predictive_mode": "Enable predictive charging"
+        }
+      },
+      "add_device_page_3": {
+        "title": "Alarms and notifications",
+        "description": "Configure alarm times and notification options.",
+        "data": {
+          "alarm_mode": "Alarm mode",
+          "alarm_entity": "Global alarm / wake-up entity",
+          "alarm_entity_monday": "Alarm entity Monday",
+          "alarm_entity_tuesday": "Alarm entity Tuesday",
+          "alarm_entity_wednesday": "Alarm entity Wednesday",
+          "alarm_entity_thursday": "Alarm entity Thursday",
+          "alarm_entity_friday": "Alarm entity Friday",
+          "alarm_entity_saturday": "Alarm entity Saturday",
+          "alarm_entity_sunday": "Alarm entity Sunday",
+          "notify_enabled": "Enable notifications",
+          "notify_targets": "Notification targets (comma separated)",
+          "suggestion_threshold": "Suggestion threshold",
+          "sensor_stale_seconds": "Sensor timeout (seconds)"
+        }
+      }
+    },
+    "error": {
+      "invalid_level": "Invalid charge level settings",
+      "name_exists": "A device with this name already exists",
+      "name_empty": "Device name cannot be empty",
+      "alarm_required_single": "Please select a global alarm entity.",
+      "alarm_required_per_day": "Please set at least one weekday alarm entity."
+    },
+    "abort": {
+      "no_devices": "No devices configured yet.",
+      "invalid_device": "Invalid device selection",
+      "finished": "Setup finished successfully"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Smart Charger Options",
+        "description": "{info}\n\nSelect an action:",
+        "menu_options": {
+          "edit_device": "⚙️ Edit existing device",
+          "delete_device": "🗑️ Delete device"
+        }
+      },
+      "edit_device": {
+        "title": "Edit Smart Charger Device",
+        "description": "Modify charging targets or predictive settings for a specific device.",
+        "data": {
+          "idx": "Select device to edit"
+        }
+      },
+      "edit_device_details": {
+        "title": "Edit Smart Charger Device",
+        "description": "Modify sensors, charge limits, and predictive settings for {device_name}.",
+        "data": {
+          "name": "Device name",
+          "battery_sensor": "Battery level sensor (%)",
+          "charging_sensor": "Charging state sensor (optional)",
+          "charger_switch": "Charger switch",
+          "alarm_entity": "Global alarm / wake-up entity",
+          "target_level": "Target level (%)",
+          "min_level": "Minimum safety level (%)",
+          "precharge_level": "Precharge level (%)",
+          "avg_speed_sensor": "Average charging speed sensor",
+          "presence_sensor": "Presence sensor",
+          "use_predictive_mode": "Enable predictive charging",
+          "notify_enabled": "Enable notifications",
+          "notify_targets": "Notification targets",
+          "suggestion_threshold": "Suggestion threshold",
+          "sensor_stale_seconds": "Sensor timeout (seconds)"
+        }
+      },
+      "delete_device": {
+        "title": "Delete Smart Charger Device",
+        "description": "Select a Smart Charger device to remove.",
+        "data": {
+          "idx": "Select device to delete"
+        }
+      }
+    }
+  },
+  "selector": {
+    "alarm_mode": {
+      "options": {
+        "single": "One alarm for all days",
+        "per_day": "Different alarms per weekday"
+      }
+    }
+  }
+}

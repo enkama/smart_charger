@@ -1,0 +1,79 @@
+force_refresh:
+  name: Force Refresh
+  description: Berechnet die Startzeit sofort neu.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional – falls mehrere Smart-Charger-Konfigurationen aktiv sind.
+      example: 1234567890abcdef1234567890abcdef
+      selector:
+        text:
+
+start_charging:
+  name: Start Charging
+  description: Schaltet den angegebenen Charger ein, unabhängig vom Zeitplan.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional – falls mehrere Smart-Charger-Konfigurationen aktiv sind.
+      example: 1234567890abcdef1234567890abcdef
+      selector:
+        text:
+    entity_id:
+      description: Switch-Entity des Ladegeräts (leer lassen, um alle zu starten)
+      example: switch.schlafzimmer_handy_ladegeraet
+      selector:
+        entity:
+          domain: switch
+
+stop_charging:
+  name: Stop Charging
+  description: Schaltet den Charger aus.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional – falls mehrere Smart-Charger-Konfigurationen aktiv sind.
+      example: 1234567890abcdef1234567890abcdef
+      selector:
+        text:
+    entity_id:
+      description: Switch-Entity des Ladegeräts (leer lassen, um alle zu stoppen)
+      example: switch.schlafzimmer_handy_ladegeraet
+      selector:
+        entity:
+          domain: switch
+
+auto_manage:
+  name: Auto Manage
+  description: Prüft Ladezustand und steuert Charger automatisch nach aktuellem Plan.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional – falls mehrere Smart-Charger-Konfigurationen aktiv sind.
+      example: 1234567890abcdef1234567890abcdef
+      selector:
+        text:
+
+load_model:
+  name: Load / Reset Learning Model
+  description: Lädt oder setzt das gespeicherte Smart-Charger-Lernmodell zurück.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional – falls mehrere Smart-Charger-Konfigurationen aktiv sind.
+      example: 1234567890abcdef1234567890abcdef
+      selector:
+        text:
+    action:
+      name: Action
+      description: load (Standard) oder reset, um Daten zu löschen.
+      example: reset
+      selector:
+        select:
+          options:
+            - load
+            - reset
+    profile_id:
+      name: Profile ID
+      description: Name des Profils (optional, bei 'reset' leer lassen, um alle zu löschen)
+      example: "Mein Handy"

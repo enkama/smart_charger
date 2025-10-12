@@ -1,0 +1,123 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Smart Charger Geräteverwaltung",
+        "description": "Konfigurierte Smart Charger Geräte:\n{devices}\n\nWähle eine Aktion:",
+        "menu_options": {
+          "add_device": "➕ Neues Gerät hinzufügen",
+          "edit_device": "⚙️ Gerät bearbeiten",
+          "delete_device": "🗑️ Gerät löschen"
+        }
+      },
+      "add_device": {
+        "title": "Neues Smart Charger Gerät hinzufügen",
+        "description": "Basisinformationen für dein neues Smart Charger Gerät konfigurieren.",
+        "data": {
+          "name": "Gerätename",
+          "battery_sensor": "Batteriestand-Sensor (%)",
+          "charger_switch": "Ladeschalter",
+          "charging_sensor": "Ladezustands-Sensor (optional)",
+          "presence_sensor": "Präsenzsensor (optional)"
+        }
+      },
+      "add_device_page_2": {
+        "title": "Ladeziele & Predictive-Einstellungen",
+        "description": "Zielwerte, Sicherheitsgrenzen und Vorhersagemodus festlegen.",
+        "data": {
+          "target_level": "Ziel-Ladelevel (%)",
+          "min_level": "Minimales Sicherheitslevel vor Ladebeginn (%)",
+          "precharge_level": "Frühstart-Schwelle (wenn darunter, früher laden)",
+          "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (optional)",
+          "use_predictive_mode": "Vorhersageladen aktivieren"
+        }
+      },
+      "add_device_page_3": {
+        "title": "Wecker & Benachrichtigungen",
+        "description": "Weckzeiten und Benachrichtigungsoptionen konfigurieren.",
+        "data": {
+          "alarm_mode": "Weckermodus",
+          "alarm_entity": "Globaler Wecker / Aufwach-Entität",
+          "alarm_entity_monday": "Wecker am Montag",
+          "alarm_entity_tuesday": "Wecker am Dienstag",
+          "alarm_entity_wednesday": "Wecker am Mittwoch",
+          "alarm_entity_thursday": "Wecker am Donnerstag",
+          "alarm_entity_friday": "Wecker am Freitag",
+          "alarm_entity_saturday": "Wecker am Samstag",
+          "alarm_entity_sunday": "Wecker am Sonntag",
+          "notify_enabled": "Benachrichtigungen aktivieren",
+          "notify_targets": "Benachrichtigungsziele (durch Komma getrennt)",
+          "suggestion_threshold": "Vorschlags-Schwellenwert",
+          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)"
+        }
+      }
+    },
+    "error": {
+      "invalid_level": "Ungültige Ladelevel-Einstellungen",
+      "name_exists": "Ein Gerät mit diesem Namen existiert bereits",
+      "name_empty": "Gerätename darf nicht leer sein",
+      "alarm_required_single": "Bitte wähle eine globale Wecker-Entität aus.",
+      "alarm_required_per_day": "Bitte setze mindestens eine Wecker-Entität für einen Wochentag."
+    },
+    "abort": {
+      "no_devices": "Noch keine Geräte konfiguriert.",
+      "invalid_device": "Ungültige Geräteauswahl",
+      "finished": "Einrichtung erfolgreich abgeschlossen"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Smart Charger Optionen",
+        "description": "{info}\n\nWähle eine Aktion:",
+        "menu_options": {
+          "edit_device": "⚙️ Gerät bearbeiten",
+          "delete_device": "🗑️ Gerät löschen"
+        }
+      },
+      "edit_device": {
+        "title": "Smart Charger Gerät bearbeiten",
+        "description": "Wähle ein Gerät aus, um es zu bearbeiten.",
+        "data": {
+          "idx": "Gerät zum Bearbeiten auswählen"
+        }
+      },
+      "edit_device_details": {
+        "title": "Smart Charger Gerät bearbeiten",
+        "description": "Passe Sensoren, Ladegrenzen und Vorhersageeinstellungen für {device_name} an.",
+        "data": {
+          "name": "Gerätename",
+          "battery_sensor": "Batteriestand-Sensor (%)",
+          "charging_sensor": "Ladezustands-Sensor (optional)",
+          "charger_switch": "Ladeschalter",
+          "alarm_entity": "Globaler Wecker / Aufwach-Entität",
+          "target_level": "Ziel-Ladelevel (%)",
+          "min_level": "Minimales Sicherheitslevel (%)",
+          "precharge_level": "Frühstart-Schwelle (%)",
+          "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit",
+          "presence_sensor": "Präsenzsensor",
+          "use_predictive_mode": "Vorhersageladen aktivieren",
+          "notify_enabled": "Benachrichtigungen aktivieren",
+          "notify_targets": "Benachrichtigungsziele",
+          "suggestion_threshold": "Vorschlags-Schwellenwert",
+          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)"
+        }
+      },
+      "delete_device": {
+        "title": "Smart Charger Gerät löschen",
+        "description": "Wähle ein Gerät zum Entfernen aus.",
+        "data": {
+          "idx": "Gerät zum Löschen auswählen"
+        }
+      }
+    }
+  },
+  "selector": {
+    "alarm_mode": {
+      "options": {
+        "single": "Ein Wecker für alle Tage",
+        "per_day": "Unterschiedliche Wecker pro Wochentag"
+      }
+    }
+  }
+}
