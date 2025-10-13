@@ -149,7 +149,10 @@ async def handle_start_charging(
             )
         except Exception as err:
             _LOGGER.error(
-                "Failed to start manual charge for %s (%s): %s", name, charger_ent, err
+                "Failed to start manual charge for %s (%s): %s",
+                name,
+                charger_ent,
+                err,
             )
             sm.add_error(name, f"start_failed:{err}")
             continue
@@ -180,7 +183,10 @@ async def handle_stop_charging(
             )
         except Exception as err:
             _LOGGER.error(
-                "Failed to stop manual charge for %s (%s): %s", name, charger_ent, err
+                "Failed to stop manual charge for %s (%s): %s",
+                name,
+                charger_ent,
+                err,
             )
             sm.add_error(name, f"stop_failed:{err}")
             continue
@@ -243,11 +249,16 @@ async def handle_auto_manage(
             charger_state = _get_state(hass, charger_ent)
             if charger_state == STATE_ON:
                 await hass.services.async_call(
-                    "switch", "turn_off", {"entity_id": charger_ent}
+                    "switch",
+                    "turn_off",
+                    {"entity_id": charger_ent},
                 )
                 sm.set_state(pid, "completed")
                 _LOGGER.info(
-                    "Auto-stop: %s reached %.1f%% (target %.1f%%)", pid, battery, target
+                    "Auto-stop: %s reached %.1f%% (target %.1f%%)",
+                    pid,
+                    battery,
+                    target,
                 )
 
     refresh = getattr(coordinator, "async_throttled_refresh", None)

@@ -14,6 +14,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from .const import (
     CONF_BATTERY_SENSOR,
     CONF_CHARGING_SENSOR,
+    CONF_PRESENCE_SENSOR,
     DOMAIN,
     PLATFORMS,
     SERVICE_AUTO_MANAGE,
@@ -41,6 +42,175 @@ def _get_domain_data(hass: HomeAssistant) -> dict[str, Any]:
     data.setdefault("entries", {})
     data.setdefault("services_registered", False)
     return data
+
+
+DEVICE_SENSOR_KEYS: tuple[str, ...] = (CONF_BATTERY_SENSOR, CONF_CHARGING_SENSOR)
+ALARM_ENTITY_KEYS: tuple[str, ...] = (
+    "alarm_entity",
+    "alarm_entity_monday",
+    "alarm_entity_tuesday",
+    "alarm_entity_wednesday",
+    "alarm_entity_thursday",
+    "alarm_entity_friday",
+    "alarm_entity_saturday",
+    "alarm_entity_sunday",
+)
+PRESENCE_ACTIVE_STATES: set[str] = {"home", "on", "present", "true"}
+
+
+def _merged_entry_config(entry: ConfigEntry) -> dict[str, Any]:
+    options = getattr(entry, "options", {}) or {}
+    return {**entry.data, **options}
+
+
+def _maybe_start_coordinator_polling(coordinator: SmartChargerCoordinator) -> Any:
+    start_polling = getattr(coordinator, "async_start_polling", None)
+    if callable(start_polling):
+        return start_polling()
+    return None
+
+
+def _create_auto_manage_debouncer(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: SmartChargerCoordinator,
+    state_machine: SmartChargerStateMachine,
+    learning: SmartChargerLearning,
+) -> Debouncer:
+    async def _async_auto_manage() -> None:
+        cfg = _merged_entry_config(entry)
+        await handle_auto_manage(
+            hass,
+            entry.entry_id,
+            cfg,
+            coordinator,
+            state_machine,
+            learning,
+        )
+
+    return Debouncer(
+        hass,
+        _LOGGER,
+        cooldown=2.0,
+        immediate=False,
+        function=_async_auto_manage,
+    )
+
+
+def _register_devices_with_registry(
+    hass: HomeAssistant, entry: ConfigEntry, devices: list[dict[str, Any]]
+) -> None:
+    device_registry = dr.async_get(hass)
+    for device in devices:
+        name = device.get("name")
+        if not name:
+            continue
+        device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, name.lower().replace(" ", "_"))},
+            manufacturer="Smart Charger System",
+            name=f"Smart Charger – {name}",
+            model="Predictive Charging v2",
+            configuration_url="https://my.home-assistant.io/redirect/integrations/",
+        )
+
+
+async def _safe_forward_entry_setups(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception as err:
+        _LOGGER.exception("Error forwarding platforms: %s", err)
+
+
+def _attach_device_state_listeners(
+    hass: HomeAssistant,
+    entry_data: dict[str, Any],
+    devices: list[dict[str, Any]],
+    callback: Callable[[Any], Any],
+) -> list[str]:
+    listeners: list[Callable[[], None]] = entry_data.setdefault("unsub_listeners", [])
+    for device in devices:
+        for key in DEVICE_SENSOR_KEYS:
+            ent = device.get(key)
+            if ent:
+                listeners.append(async_track_state_change_event(hass, ent, callback))
+        for key in ALARM_ENTITY_KEYS:
+            ent = device.get(key)
+            if ent:
+                listeners.append(async_track_state_change_event(hass, ent, callback))
+    return [
+        device[CONF_PRESENCE_SENSOR]
+        for device in devices
+        if device.get(CONF_PRESENCE_SENSOR)
+    ]
+
+
+def _attach_presence_listeners(
+    hass: HomeAssistant,
+    entry_data: dict[str, Any],
+    presence_entities: list[str],
+    callback: Callable[[Any], Any],
+) -> None:
+    listeners: list[Callable[[], None]] = entry_data.setdefault("unsub_listeners", [])
+    for ent in presence_entities:
+        listeners.append(async_track_state_change_event(hass, ent, callback))
+
+
+def _make_entity_change_callback(
+    hass: HomeAssistant,
+    entries: dict[str, dict[str, Any]],
+    entry_id: str,
+) -> Callable[[Any], Any]:
+    async def _on_entity_change(event: Any) -> None:
+        data = entries.get(entry_id)
+        if not data:
+            return
+        debouncer: Debouncer | None = data.get("auto_manage_debouncer")
+        if debouncer:
+            hass.async_create_task(debouncer.async_call())
+
+    return _on_entity_change
+
+
+def _make_presence_callback(
+    hass: HomeAssistant,
+    entry_data: dict[str, Any],
+    coordinator: SmartChargerCoordinator,
+    presence_entities: list[str],
+) -> Callable[[Any], Any]:
+    presence_targets = {ent for ent in presence_entities if ent}
+
+    async def _on_presence_change(event: Any) -> None:
+        new_state = event.data.get("new_state")
+        if not new_state or new_state.entity_id not in presence_targets:
+            return
+        if str(new_state.state).lower() not in PRESENCE_ACTIVE_STATES:
+            return
+        _LOGGER.debug(
+            "Smart Charger: %s became home -> triggering refresh",
+            new_state.entity_id,
+        )
+        debouncer: Debouncer | None = entry_data.get("auto_manage_debouncer")
+        if debouncer:
+            hass.async_create_task(debouncer.async_call())
+            return
+        refresh = getattr(coordinator, "async_throttled_refresh", None)
+        if callable(refresh):
+            result = refresh()
+            if inspect.isawaitable(result):
+                await result
+            return
+        await coordinator.async_request_refresh()
+
+    return _on_presence_change
+
+
+def _trigger_initial_auto_manage(
+    hass: HomeAssistant, entry_data: dict[str, Any]
+) -> None:
+    debouncer: Debouncer | None = entry_data.get("auto_manage_debouncer")
+    if debouncer:
+        hass.async_create_task(debouncer.async_call())
 
 
 def _resolve_entry_context(
@@ -136,12 +306,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry_data["coordinator"] = coordinator
     await coordinator.async_config_entry_first_refresh()
 
-    """Ensure the coordinator keeps polling even without tracked entities."""
-    polling_unsub = None
-    start_polling = getattr(coordinator, "async_start_polling", None)
-    if callable(start_polling):
-        polling_unsub = start_polling()
-    entry_data["coordinator_polling_unsub"] = polling_unsub
+    entry_data["coordinator_polling_unsub"] = _maybe_start_coordinator_polling(
+        coordinator
+    )
 
     state_machine = SmartChargerStateMachine(hass)
     await state_machine.async_load()
@@ -151,122 +318,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     devices = entry.data.get("devices") or []
 
-    async def _async_auto_manage() -> None:
-        cfg = {**entry.data, **getattr(entry, "options", {})}
-        await handle_auto_manage(
-            hass,
-            entry.entry_id,
-            cfg,
-            coordinator,
-            state_machine,
-            learning,
-        )
-
     entry_data.update(
         {
             "state_machine": state_machine,
             "learning": learning,
             "unsub_listeners": [],
-            "auto_manage_debouncer": Debouncer(
+            "auto_manage_debouncer": _create_auto_manage_debouncer(
                 hass,
-                _LOGGER,
-                cooldown=2.0,
-                immediate=False,
-                function=_async_auto_manage,
+                entry,
+                coordinator,
+                state_machine,
+                learning,
             ),
         }
     )
 
-    device_registry = dr.async_get(hass)
+    _register_devices_with_registry(hass, entry, devices)
+    await _safe_forward_entry_setups(hass, entry)
 
-    """Register each configured device in the registry."""
-    for device in devices:
-        name = device.get("name")
-        if not name:
-            continue
-
-        device_registry.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, name.lower().replace(" ", "_"))},
-            manufacturer="Smart Charger System",
-            name=f"Smart Charger – {name}",
-            model="Predictive Charging v2",
-            configuration_url="https://my.home-assistant.io/redirect/integrations/",
-        )
-
-    try:
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    except Exception as err:
-        _LOGGER.exception("Error forwarding platforms: %s", err)
-
-    async def _on_entity_change(event: Any) -> None:
-        """Recalculate charging plan when relevant sensor changes."""
-        data = entries.get(entry.entry_id)
-        if not data:
-            return
-        debouncer: Debouncer | None = data.get("auto_manage_debouncer")
-        if debouncer:
-            hass.async_create_task(debouncer.async_call())
-
-    listeners: list[Callable[[], None]] = entry_data["unsub_listeners"]
-
-    for device in devices:
-        for key in (CONF_BATTERY_SENSOR, CONF_CHARGING_SENSOR):
-            ent = device.get(key)
-            if ent:
-                listeners.append(
-                    async_track_state_change_event(hass, ent, _on_entity_change)
-                )
-
-        for key in (
-            "alarm_entity",
-            "alarm_entity_monday",
-            "alarm_entity_tuesday",
-            "alarm_entity_wednesday",
-            "alarm_entity_thursday",
-            "alarm_entity_friday",
-            "alarm_entity_saturday",
-            "alarm_entity_sunday",
-        ):
-            ent = device.get(key)
-            if ent:
-                listeners.append(
-                    async_track_state_change_event(hass, ent, _on_entity_change)
-                )
-
-    presence_entities = [
-        d.get("presence_sensor") for d in devices if d.get("presence_sensor")
-    ]
-
-    async def _on_presence_change(event: Any) -> None:
-        new_state = event.data.get("new_state")
-        if not new_state or new_state.entity_id not in presence_entities:
-            return
-        if str(new_state.state).lower() in ("home", "on", "present", "true"):
-            _LOGGER.debug(
-                "Smart Charger: %s became home -> triggering refresh",
-                new_state.entity_id,
-            )
-            debouncer: Debouncer | None = entry_data.get("auto_manage_debouncer")
-            if debouncer:
-                hass.async_create_task(debouncer.async_call())
-            else:
-                refresh = getattr(coordinator, "async_throttled_refresh", None)
-                if callable(refresh):
-                    result = refresh()
-                    if inspect.isawaitable(result):
-                        await result
-                    return
-                await coordinator.async_request_refresh()
-
-    for ent in presence_entities:
-        listeners.append(async_track_state_change_event(hass, ent, _on_presence_change))
+    entity_callback = _make_entity_change_callback(hass, entries, entry.entry_id)
+    presence_entities = _attach_device_state_listeners(
+        hass, entry_data, devices, entity_callback
+    )
+    presence_callback = _make_presence_callback(
+        hass, entry_data, coordinator, presence_entities
+    )
+    _attach_presence_listeners(
+        hass,
+        entry_data,
+        presence_entities,
+        presence_callback,
+    )
 
     entry_data["update_listener_unsub"] = entry.add_update_listener(_async_reload_entry)
 
-    debouncer: Debouncer | None = entry_data.get("auto_manage_debouncer")
-    if debouncer:
-        hass.async_create_task(debouncer.async_call())
+    _trigger_initial_auto_manage(hass, entry_data)
 
     _LOGGER.info("Smart Charger initialized with entry_id=%s", entry.entry_id)
     return True

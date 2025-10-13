@@ -179,7 +179,7 @@ class SmartChargerDeviceSensor(SensorEntity):
             name=f"Smart Charger – {device_name}",
             manufacturer="Smart Charger System",
             model="Predictive Charging v2",
-            configuration_url="https://my.home-assistant.io/redirect/integrations/",
+            configuration_url=("https://my.home-assistant.io/redirect/integrations/"),
         )
         self._attr_native_value = STATE_UNKNOWN
         self._attr_extra_state_attributes: Dict[str, Any] = {

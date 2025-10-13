@@ -186,106 +186,127 @@ class SmartChargerLearning:
 
         self._invalidate_cache(profile_id)
 
+    def _avg_cache_key(self, profile_id: Optional[str], scope: str) -> str:
+        return f"{profile_id or '__global__'}::{scope}"
+
+    def _avg_cache_get(self, profile_id: Optional[str], scope: str) -> Optional[float]:
+        token = self._avg_cache.get(self._avg_cache_key(profile_id, scope))
+        if not token:
+            return None
+        value, timestamp = token
+        if (dt_util.utcnow().timestamp() - timestamp) > LEARNING_CACHE_TTL:
+            self._avg_cache.pop(self._avg_cache_key(profile_id, scope), None)
+            return None
+        return value
+
+    def _avg_cache_set(
+        self, profile_id: Optional[str], scope: str, value: float
+    ) -> None:
+        self._avg_cache[self._avg_cache_key(profile_id, scope)] = (
+            value,
+            dt_util.utcnow().timestamp(),
+        )
+
+    def _entry_speed_value(
+        self, entry: Optional[Dict[str, Any]], now: datetime
+    ) -> Optional[float]:
+        if not entry:
+            return None
+        ema = entry.get("ema")
+        if ema is None:
+            return None
+        age_hours: Optional[float] = None
+        last = entry.get("last_sample")
+        if last:
+            parsed = dt_util.parse_datetime(last)
+            if parsed:
+                age_hours = (now - parsed).total_seconds() / 3600.0
+        value = _decay_to_baseline(float(ema), age_hours)
+        return round(self._clamp_speed(value), 3)
+
+    def _profile_bucket_avg(
+        self, profile_id: str, bucket_key: str, now: datetime
+    ) -> Optional[float]:
+        pdata = self._ensure_profile_schema(profile_id)
+        bucket_entry = pdata.get("bucket_stats", {}).get(bucket_key)
+        return self._entry_speed_value(bucket_entry, now)
+
+    def _profile_overall_avg(self, profile_id: str, now: datetime) -> Optional[float]:
+        pdata = self._ensure_profile_schema(profile_id)
+        return self._entry_speed_value(pdata.get("stats"), now)
+
+    def _global_profile_avg(self, now: datetime) -> Optional[float]:
+        values: list[float] = []
+        for pid in list(self._profiles.keys()):
+            value = self._profile_overall_avg(pid, now)
+            if value is not None:
+                values.append(value)
+        if not values:
+            return None
+        return round(sum(values) / len(values), 3)
+
+    def _collect_samples(self, profile_id: Optional[str]) -> list[tuple[str, float]]:
+        if profile_id and profile_id in self._profiles:
+            return list(self._profiles[profile_id].get("samples", []))
+        samples: list[tuple[str, float]] = []
+        for pdata in self._profiles.values():
+            samples.extend(pdata.get("samples", []))
+        return samples
+
+    def _recent_sample_average(
+        self, profile_id: Optional[str], now: datetime
+    ) -> Optional[float]:
+        samples = self._collect_samples(profile_id)
+        if not samples:
+            return None
+        weighted_sum = 0.0
+        total_weight = 0.0
+        for ts, speed in samples[-100:]:
+            parsed = dt_util.parse_datetime(ts)
+            if not parsed:
+                continue
+            hours_old = (now - parsed).total_seconds() / 3600.0
+            weight = 0.5 ** (hours_old / (DECAY_HALF_LIFE_HOURS / 2))
+            weighted_sum += float(speed) * weight
+            total_weight += weight
+        if total_weight <= 0:
+            return None
+        avg = weighted_sum / total_weight
+        return round(self._clamp_speed(avg), 3)
+
     def avg_speed(self, profile_id: Optional[str] = None) -> float:
         """Compute a weighted average speed that favors recent, time-matched samples."""
         try:
             now = dt_util.now()
             bucket_key = _time_bucket(now.hour)
-
-            def _cache_token(scope: str) -> str:
-                return f"{profile_id or '__global__'}::{scope}"
-
-            def _cache_get(scope: str) -> Optional[float]:
-                token = _cache_token(scope)
-                cached = self._avg_cache.get(token)
-                if not cached:
-                    return None
-                value, ts = cached
-                if (dt_util.utcnow().timestamp() - ts) <= LEARNING_CACHE_TTL:
-                    return value
-                self._avg_cache.pop(token, None)
-                return None
-
-            def _cache_set(scope: str, value: float) -> None:
-                self._avg_cache[_cache_token(scope)] = (
-                    value,
-                    dt_util.utcnow().timestamp(),
-                )
-
-            def _from_entry(entry: Optional[Dict[str, Any]]) -> Optional[float]:
-                if not entry:
-                    return None
-                ema = entry.get("ema")
-                if ema is None:
-                    return None
-                last = entry.get("last_sample")
-                age_hours: Optional[float] = None
-                if last:
-                    dt = dt_util.parse_datetime(last)
-                    if dt:
-                        age_hours = (now - dt).total_seconds() / 3600.0
-                value = _decay_to_baseline(float(ema), age_hours)
-                return round(max(0.1, min(5.0, value)), 3)
-
             if profile_id and profile_id in self._profiles:
-                cached_bucket = _cache_get(bucket_key)
+                cached_bucket = self._avg_cache_get(profile_id, bucket_key)
                 if cached_bucket is not None:
                     return cached_bucket
-                pdata = self._ensure_profile_schema(profile_id)
-                bucket_entry = pdata.get("bucket_stats", {}).get(bucket_key)
-                bucket_value = _from_entry(bucket_entry)
-                if bucket_value is not None:
-                    _cache_set(bucket_key, bucket_value)
-                    return bucket_value
+                bucket_avg = self._profile_bucket_avg(profile_id, bucket_key, now)
+                if bucket_avg is not None:
+                    self._avg_cache_set(profile_id, bucket_key, bucket_avg)
+                    return bucket_avg
+                profile_avg = self._profile_overall_avg(profile_id, now)
+                if profile_avg is not None:
+                    self._avg_cache_set(profile_id, "profile", profile_avg)
+                    return profile_avg
 
-                overall_value = _from_entry(pdata.get("stats"))
-                if overall_value is not None:
-                    _cache_set("profile", overall_value)
-                    return overall_value
-
-            cached_global = _cache_get("global")
+            cached_global = self._avg_cache_get(None, "global")
             if cached_global is not None:
                 return cached_global
 
-            aggregated: list[float] = []
-            for pid in list(self._profiles.keys()):
-                pdata = self._ensure_profile_schema(pid)
-                value = _from_entry(pdata.get("stats"))
-                if value is not None:
-                    aggregated.append(value)
-            if aggregated:
-                avg_value = round(sum(aggregated) / len(aggregated), 3)
-                _cache_set("global", avg_value)
-                return avg_value
+            global_avg = self._global_profile_avg(now)
+            if global_avg is not None:
+                self._avg_cache_set(None, "global", global_avg)
+                return global_avg
 
-            samples: list[tuple[str, float]] = []
-            if profile_id and profile_id in self._profiles:
-                samples = self._profiles[profile_id].get("samples", [])
-            else:
-                for pdata in self._profiles.values():
-                    samples.extend(pdata.get("samples", []))
+            fallback = self._recent_sample_average(profile_id, now)
+            if fallback is not None:
+                self._avg_cache_set(profile_id, "fallback", fallback)
+                return fallback
 
-            if not samples:
-                return LEARNING_DEFAULT_SPEED
-
-            weighted_sum = 0.0
-            total_weight = 0.0
-            for ts, speed in samples[-100:]:
-                dt = dt_util.parse_datetime(ts)
-                if not dt:
-                    continue
-                hours_old = (now - dt).total_seconds() / 3600.0
-                weight = 0.5 ** (hours_old / (DECAY_HALF_LIFE_HOURS / 2))
-                weighted_sum += float(speed) * weight
-                total_weight += weight
-
-            if total_weight <= 0:
-                return LEARNING_DEFAULT_SPEED
-
-            avg = weighted_sum / total_weight
-            clamped = round(self._clamp_speed(avg), 3)
-            _cache_set("fallback", clamped)
-            return clamped
+            return LEARNING_DEFAULT_SPEED
         except Exception:
             _LOGGER.exception("Adaptive avg_speed calculation failed")
             return LEARNING_DEFAULT_SPEED
