@@ -676,6 +676,26 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             )
             return False
 
+        if (
+            charger_is_on
+            and smart_start_active
+            and start_time
+            and now_local < start_time
+            and not precharge_required
+        ):
+            self._log_action(
+                device_name,
+                logging.INFO,
+                "[SmartStart] %s scheduled for %s -> pausing charger until window opens (%s)",
+                device_name,
+                start_time.isoformat(),
+                charger_ent,
+            )
+            await self.hass.services.async_call(
+                "switch", "turn_off", service_data, blocking=False
+            )
+            return False
+
         if precharge_required:
             target_release = (
                 release_level if release_level is not None else device.precharge_level
