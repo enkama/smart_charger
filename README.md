@@ -43,10 +43,19 @@ The integration provides a config flow. Each device entry supports the following
 - Charger switch entity to toggle charging
 - Optional charging state, presence, and average speed sensors
 - Predictive mode with target, minimum, and precharge levels
+- Tune precharge hysteresis (release/resume margins) and SmartStart finish buffers
 - Alarm entities that define desired ready times per weekday
 - Notification targets and thresholds for charging suggestions
 
 You can revisit the options via the entry's *Configure* button to edit or remove devices at any time.
+
+Diagnostics expose both the configured and effective margins so you can confirm what the coordinator currently applies.
+
+### Precharge hysteresis & retry behavior
+
+- The coordinator keeps chargers running using a hysteresis window: by default it releases after reaching the precharge level plus `1.5%` and resumes if the level falls `0.5%` below the target. Both margins, as well as the SmartStart finish buffer (`2%`), can be adjusted in the options flow per device.
+- Learning session finalization will retry when the battery sensor is temporarily unavailable, using backoff delays of 30s, 90s, and 300s. Diagnostics show the current retry attempt count together with the active delay schedule.
+- Coordinator diagnostics now surface the active hysteresis release thresholds, making it easier to verify when and why a charger remains running.
 
 ## Services
 

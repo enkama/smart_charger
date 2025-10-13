@@ -28,6 +28,9 @@
           "target_level": "Target level (%)",
           "min_level": "Minimum safety level before charging (%)",
           "precharge_level": "Precharge level (start early if below this)",
+          "precharge_margin_on": "Precharge release margin (%)",
+          "precharge_margin_off": "Precharge resume margin (%)",
+          "smart_start_margin": "SmartStart finish margin (%)",
           "avg_speed_sensor": "Average charging speed sensor (optional)",
           "use_predictive_mode": "Enable predictive charging"
         }
@@ -53,8 +56,9 @@
       }
     },
     "error": {
-      "invalid_level": "Invalid charge level settings",
-      "name_exists": "A device with this name already exists",
+  "invalid_level": "Invalid charge level settings",
+  "invalid_margin": "Invalid margin configuration",
+  "name_exists": "A device with this name already exists",
       "name_empty": "Device name cannot be empty",
       "alarm_required_single": "Please select a global alarm entity.",
       "alarm_required_per_day": "Please set at least one weekday alarm entity."
@@ -94,6 +98,9 @@
           "target_level": "Target level (%)",
           "min_level": "Minimum safety level (%)",
           "precharge_level": "Precharge level (%)",
+          "precharge_margin_on": "Precharge release margin (%)",
+          "precharge_margin_off": "Precharge resume margin (%)",
+          "smart_start_margin": "SmartStart finish margin (%)",
           "avg_speed_sensor": "Average charging speed sensor",
           "presence_sensor": "Presence sensor",
           "use_predictive_mode": "Enable predictive charging",

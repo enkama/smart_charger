@@ -12,9 +12,16 @@ from .const import (
     CONF_BATTERY_SENSOR,
     CONF_CHARGER_SWITCH,
     CONF_CHARGING_SENSOR,
+    CONF_PRECHARGE_MARGIN_OFF,
+    CONF_PRECHARGE_MARGIN_ON,
     CONF_PRESENCE_SENSOR,
+    CONF_SMART_START_MARGIN,
+    DEFAULT_PRECHARGE_MARGIN_OFF,
+    DEFAULT_PRECHARGE_MARGIN_ON,
+    DEFAULT_SMART_START_MARGIN,
     DOMAIN,
 )
+from .learning import SESSION_RETRY_DELAYS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +45,22 @@ def _extract_state(state_obj: Optional[State]) -> Dict[str, Any]:
             if k in ("unit_of_measurement", "device_class", "charging_state")
         },
     }
+
+
+def _optional_float(value: Any) -> Optional[float]:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed
+
+
+def _resolved_margin(value: Optional[float], default: float) -> float:
+    if value is None or value < 0:
+        return default
+    return value
 
 
 def _coordinator_meta(coordinator) -> Dict[str, Any]:
@@ -112,6 +135,9 @@ def _collect_device_diagnostics(
         charger_ent = dev.get(CONF_CHARGER_SWITCH)
         charging_ent = dev.get(CONF_CHARGING_SENSOR)
         presence_ent = dev.get(CONF_PRESENCE_SENSOR)
+        margin_on = _optional_float(dev.get(CONF_PRECHARGE_MARGIN_ON))
+        margin_off = _optional_float(dev.get(CONF_PRECHARGE_MARGIN_OFF))
+        smart_margin = _optional_float(dev.get(CONF_SMART_START_MARGIN))
 
         sanitized_devices.append(
             {
@@ -155,6 +181,20 @@ def _collect_device_diagnostics(
                 "target_level": dev.get("target_level"),
                 "min_level": dev.get("min_level"),
                 "precharge_level": dev.get("precharge_level"),
+                "precharge_margin_on": margin_on,
+                "precharge_margin_off": margin_off,
+                "smart_start_margin": smart_margin,
+                "effective_margins": {
+                    "precharge_margin_on": _resolved_margin(
+                        margin_on, DEFAULT_PRECHARGE_MARGIN_ON
+                    ),
+                    "precharge_margin_off": _resolved_margin(
+                        margin_off, DEFAULT_PRECHARGE_MARGIN_OFF
+                    ),
+                    "smart_start_margin": _resolved_margin(
+                        smart_margin, DEFAULT_SMART_START_MARGIN
+                    ),
+                },
             }
         )
 
@@ -177,6 +217,18 @@ def _build_learning_summary(learning) -> Dict[str, Any]:
             }
             for pid, pdata in profiles.items()
         }
+        active_sessions = {}
+        for pid, pdata in profiles.items():
+            session = pdata.get("current_session")
+            if session:
+                active_sessions[pid] = {
+                    "started": session.get("started"),
+                    "sensor": session.get("sensor"),
+                    "retries": session.get("retries", 0),
+                }
+        if active_sessions:
+            summary["active_sessions"] = active_sessions
+        summary["retry_schedule_seconds"] = list(SESSION_RETRY_DELAYS)
 
     return summary
 
@@ -224,6 +276,7 @@ def _capture_coordinator_state(
         now_utc = dt_util.utcnow()
         precharge_active = []
         smart_active = []
+        release_map = dict(getattr(coordinator, "_precharge_release", {}) or {})
 
         for pid, plan in coordinator.profiles.items():
             plan_copy = dict(plan)
@@ -251,6 +304,10 @@ def _capture_coordinator_state(
                 "alarm_time": plan_copy.get("alarm_time"),
                 "seconds_until_alarm": next_event_delta,
                 "precharge_level": plan_copy.get("precharge_level"),
+                "precharge_margin_on": plan_copy.get("precharge_margin_on"),
+                "precharge_margin_off": plan_copy.get("precharge_margin_off"),
+                "smart_start_margin": plan_copy.get("smart_start_margin"),
+                "precharge_release_level": release_map.get(pid),
                 "precharge_active": plan_copy.get("precharge_active"),
                 "smart_start_active": plan_copy.get("smart_start_active"),
                 "predicted_level_at_alarm": plan_copy.get("predicted_level_at_alarm"),
@@ -267,6 +324,7 @@ def _capture_coordinator_state(
             "active_profiles": list(coordinator_state.keys()),
             "precharge_active": precharge_active,
             "smart_start_active": smart_active,
+            "precharge_release_levels": release_map,
         }
 
     return coordinator_state, coordinator_plans, coordinator_insights

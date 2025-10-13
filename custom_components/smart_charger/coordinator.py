@@ -29,10 +29,16 @@ from .const import (
     CONF_CHARGING_SENSOR,
     CONF_MIN_LEVEL,
     CONF_PRECHARGE_LEVEL,
+    CONF_PRECHARGE_MARGIN_OFF,
+    CONF_PRECHARGE_MARGIN_ON,
     CONF_PRESENCE_SENSOR,
     CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
+    CONF_SMART_START_MARGIN,
     DEFAULT_TARGET_LEVEL,
+    DEFAULT_PRECHARGE_MARGIN_OFF,
+    DEFAULT_PRECHARGE_MARGIN_ON,
+    DEFAULT_SMART_START_MARGIN,
     DISCHARGING_STATES,
     DOMAIN,
     FULL_STATES,
@@ -41,11 +47,6 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-PRECHARGE_MARGIN_ON = 0.5
-PRECHARGE_MARGIN_OFF = 1.5
-SMART_START_MARGIN = 2.0
-
 
 WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
     CONF_ALARM_MONDAY,
@@ -67,6 +68,9 @@ class DeviceConfig:
     min_level: float
     precharge_level: float
     use_predictive_mode: bool
+    precharge_margin_on: Optional[float] = None
+    precharge_margin_off: Optional[float] = None
+    smart_start_margin: Optional[float] = None
     charging_sensor: Optional[str] = None
     avg_speed_sensor: Optional[str] = None
     presence_sensor: Optional[str] = None
@@ -90,6 +94,15 @@ class DeviceConfig:
             if ent:
                 weekday_map[idx] = ent
 
+        def _coerce_margin(value: Any) -> Optional[float]:
+            if value in (None, ""):
+                return None
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError):
+                return None
+            return max(0.0, parsed)
+
         return cls(
             name=name,
             battery_sensor=battery_sensor,
@@ -101,6 +114,9 @@ class DeviceConfig:
             min_level=float(raw.get(CONF_MIN_LEVEL, 30)),
             precharge_level=float(raw.get(CONF_PRECHARGE_LEVEL, 50)),
             use_predictive_mode=bool(raw.get(CONF_USE_PREDICTIVE_MODE, True)),
+            precharge_margin_on=_coerce_margin(raw.get(CONF_PRECHARGE_MARGIN_ON)),
+            precharge_margin_off=_coerce_margin(raw.get(CONF_PRECHARGE_MARGIN_OFF)),
+            smart_start_margin=_coerce_margin(raw.get(CONF_SMART_START_MARGIN)),
             alarm_mode=alarm_mode,
             alarm_entity=raw.get(CONF_ALARM_ENTITY),
             alarm_entities_by_weekday=weekday_map,
@@ -124,6 +140,9 @@ class SmartChargePlan:
     predicted_level_at_alarm: float
     smart_start_active: bool
     precharge_level: float
+    precharge_margin_on: float
+    precharge_margin_off: float
+    smart_start_margin: float
     precharge_active: bool
     charging_state: str
     presence_state: str
@@ -145,6 +164,9 @@ class SmartChargePlan:
             "predicted_level_at_alarm": round(self.predicted_level_at_alarm, 1),
             "smart_start_active": self.smart_start_active,
             "precharge_level": round(self.precharge_level, 1),
+            "precharge_margin_on": round(self.precharge_margin_on, 2),
+            "precharge_margin_off": round(self.precharge_margin_off, 2),
+            "smart_start_margin": round(self.smart_start_margin, 2),
             "precharge_active": self.precharge_active,
             "charging_state": self.charging_state,
             "presence_state": self.presence_state,
@@ -170,6 +192,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._last_successful_update: datetime | None = None
         self._last_action_log = {}
         self._precharge_release: Dict[str, float] = {}
+        self._precharge_margin_on = DEFAULT_PRECHARGE_MARGIN_ON
+        self._precharge_margin_off = DEFAULT_PRECHARGE_MARGIN_OFF
+        self._smart_start_margin = DEFAULT_SMART_START_MARGIN
 
     @property
     def profiles(self) -> Dict[str, Dict[str, Any]]:
@@ -179,9 +204,26 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self.config = {**dict(self.entry.data), **getattr(self.entry, "options", {})}
         return self.config
 
-    def _iter_device_configs(self) -> Iterable[DeviceConfig]:
-        devices = self._raw_config().get("devices") or []
-        for raw in devices:
+    def _option_float(self, key: str, default: float) -> float:
+        value = self.config.get(key, default)
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            _LOGGER.debug(
+                "Invalid option %s=%s, falling back to %.2f",
+                key,
+                value,
+                default,
+            )
+            return default
+        return max(0.0, parsed)
+
+    def _iter_device_configs(
+        self, devices: Optional[Iterable[Mapping[str, Any]]] = None
+    ) -> Iterable[DeviceConfig]:
+        if devices is None:
+            devices = self._raw_config().get("devices") or []
+        for raw in list(devices or []):
             try:
                 yield DeviceConfig.from_dict(raw)
             except Exception as err:
@@ -198,7 +240,18 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         now_local = dt_util.now()
 
         try:
-            for device in self._iter_device_configs():
+            raw_config = self._raw_config()
+            self._precharge_margin_on = self._option_float(
+                CONF_PRECHARGE_MARGIN_ON, DEFAULT_PRECHARGE_MARGIN_ON
+            )
+            self._precharge_margin_off = self._option_float(
+                CONF_PRECHARGE_MARGIN_OFF, DEFAULT_PRECHARGE_MARGIN_OFF
+            )
+            self._smart_start_margin = self._option_float(
+                CONF_SMART_START_MARGIN, DEFAULT_SMART_START_MARGIN
+            )
+
+            for device in self._iter_device_configs(raw_config.get("devices") or []):
                 plan = await self._build_plan(device, now_local, learning)
                 if plan:
                     results[device.name] = plan.as_dict()
@@ -428,26 +481,58 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         precharge_required = False
         release_level = self._precharge_release.get(device.name)
+        previous_release = release_level
+        margin_on = (
+            device.precharge_margin_on
+            if device.precharge_margin_on is not None
+            else self._precharge_margin_on
+        )
+        margin_off = (
+            device.precharge_margin_off
+            if device.precharge_margin_off is not None
+            else self._precharge_margin_off
+        )
+        smart_margin = (
+            device.smart_start_margin
+            if device.smart_start_margin is not None
+            else self._smart_start_margin
+        )
 
         if not is_home:
             if release_level is not None:
                 self._precharge_release.pop(device.name, None)
             release_level = None
         elif device.precharge_level > device.min_level:
-            trigger_threshold = device.precharge_level - PRECHARGE_MARGIN_ON
-            predicted_threshold = device.precharge_level + PRECHARGE_MARGIN_ON
+            trigger_threshold = device.precharge_level - margin_on
+            predicted_threshold = device.precharge_level + margin_on
 
             if battery <= trigger_threshold or predicted_level <= trigger_threshold:
-                extra_margin = max(PRECHARGE_MARGIN_OFF, expected_drain * 0.4)
+                extra_margin = max(margin_off, expected_drain * 0.4)
                 release_level = min(
                     device.target_level,
                     device.precharge_level + extra_margin,
                 )
                 self._precharge_release[device.name] = release_level
+                if previous_release != release_level:
+                    self._log_action(
+                        device.name,
+                        logging.DEBUG,
+                        "[Precharge] %s latched until %.1f%% (margins on %.2f/off %.2f)",
+                        device.name,
+                        release_level,
+                        margin_on,
+                        margin_off,
+                    )
                 precharge_required = True
             elif release_level is not None:
                 if battery >= release_level and predicted_level >= predicted_threshold:
                     self._precharge_release.pop(device.name, None)
+                    self._log_action(
+                        device.name,
+                        logging.DEBUG,
+                        "[Precharge] %s release window cleared",
+                        device.name,
+                    )
                     release_level = None
                 else:
                     precharge_required = True
@@ -455,6 +540,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         if release_level is not None and not precharge_required and is_home:
             if battery < release_level or predicted_level < device.precharge_level:
                 precharge_required = True
+                self._log_action(
+                    device.name,
+                    logging.DEBUG,
+                    "[Precharge] %s staying active until %.1f%% release threshold",
+                    device.name,
+                    release_level,
+                )
 
         charger_expected_on = await self._apply_charger_logic(
             device,
@@ -465,6 +557,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             start_time=start_time,
             smart_start_active=smart_start_active,
             precharge_required=precharge_required,
+            release_level=release_level,
+            smart_margin=smart_margin,
         )
 
         precharge_active = (precharge_required and charger_expected_on) or (
@@ -485,6 +579,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             predicted_level_at_alarm=predicted_level,
             smart_start_active=smart_start_active,
             precharge_level=device.precharge_level,
+            precharge_margin_on=margin_on,
+            precharge_margin_off=margin_off,
+            smart_start_margin=smart_margin,
             precharge_active=precharge_active,
             charging_state=charging_state,
             presence_state=presence_state,
@@ -502,6 +599,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         start_time: Optional[datetime],
         smart_start_active: bool,
         precharge_required: bool,
+        release_level: Optional[float],
+        smart_margin: float,
     ) -> bool:
         charger_ent = device.charger_switch
         expected_on = charger_is_on
@@ -562,7 +661,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             and start_time
             and now_local < start_time
             and not precharge_required
-            and battery >= device.target_level - SMART_START_MARGIN
+            and battery >= device.target_level - smart_margin
         ):
             self._log_action(
                 device_name,
@@ -576,6 +675,18 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 "switch", "turn_off", service_data, blocking=False
             )
             return False
+
+        if precharge_required and expected_on:
+            target_release = (
+                release_level if release_level is not None else device.precharge_level
+            )
+            self._log_action(
+                device_name,
+                logging.DEBUG,
+                "[Precharge] Keeping charger on for %s until %.1f%%",
+                device_name,
+                target_release,
+            )
 
         return expected_on
 

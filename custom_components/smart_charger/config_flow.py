@@ -37,14 +37,20 @@ from .const import (
     CONF_CHARGER_SWITCH,
     CONF_CHARGING_SENSOR,
     CONF_MIN_LEVEL,
+    CONF_PRECHARGE_MARGIN_OFF,
+    CONF_PRECHARGE_MARGIN_ON,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_TARGETS,
     CONF_PRECHARGE_LEVEL,
     CONF_PRESENCE_SENSOR,
     CONF_SENSOR_STALE_SECONDS,
     CONF_SUGGESTION_THRESHOLD,
+    CONF_SMART_START_MARGIN,
     CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
+    DEFAULT_PRECHARGE_MARGIN_OFF,
+    DEFAULT_PRECHARGE_MARGIN_ON,
+    DEFAULT_SMART_START_MARGIN,
     DEFAULT_SENSOR_STALE_SECONDS,
     DEFAULT_SUGGESTION_THRESHOLD,
     DEFAULT_TARGET_LEVEL,
@@ -164,6 +170,27 @@ TARGET_FIELDS: tuple[SchemaField, ...] = (
         validator=vol.Coerce(float),
         default=50,
     ),
+    SchemaField(
+        CONF_PRECHARGE_MARGIN_ON,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=0, max=10, step=0.1, unit_of_measurement="%")
+        ),
+        default=DEFAULT_PRECHARGE_MARGIN_ON,
+    ),
+    SchemaField(
+        CONF_PRECHARGE_MARGIN_OFF,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=0, max=10, step=0.1, unit_of_measurement="%")
+        ),
+        default=DEFAULT_PRECHARGE_MARGIN_OFF,
+    ),
+    SchemaField(
+        CONF_SMART_START_MARGIN,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=0, max=10, step=0.1, unit_of_measurement="%")
+        ),
+        default=DEFAULT_SMART_START_MARGIN,
+    ),
     SchemaField(CONF_AVG_SPEED_SENSOR, selector=SENSOR_SELECTOR, existing_only=True),
     SchemaField(CONF_USE_PREDICTIVE_MODE, validator=bool, default=True),
 )
@@ -259,6 +286,15 @@ class SmartChargerFlowMixin:
             target = float(data.get(CONF_TARGET_LEVEL, DEFAULT_TARGET_LEVEL))
             min_level = float(data.get(CONF_MIN_LEVEL, 30))
             precharge = float(data.get(CONF_PRECHARGE_LEVEL, 50))
+            precharge_margin_on = float(
+                data.get(CONF_PRECHARGE_MARGIN_ON, DEFAULT_PRECHARGE_MARGIN_ON)
+            )
+            precharge_margin_off = float(
+                data.get(CONF_PRECHARGE_MARGIN_OFF, DEFAULT_PRECHARGE_MARGIN_OFF)
+            )
+            smart_start_margin = float(
+                data.get(CONF_SMART_START_MARGIN, DEFAULT_SMART_START_MARGIN)
+            )
         except (TypeError, ValueError):
             errors[CONF_TARGET_LEVEL] = "invalid_level"
             return errors
@@ -269,6 +305,14 @@ class SmartChargerFlowMixin:
             errors[CONF_MIN_LEVEL] = "invalid_level"
         if not (min_level <= precharge <= target):
             errors[CONF_PRECHARGE_LEVEL] = "invalid_level"
+        if precharge_margin_on < 0:
+            errors[CONF_PRECHARGE_MARGIN_ON] = "invalid_margin"
+        if precharge_margin_off < precharge_margin_on:
+            errors[CONF_PRECHARGE_MARGIN_OFF] = "invalid_margin"
+        if precharge_margin_off < 0:
+            errors[CONF_PRECHARGE_MARGIN_OFF] = "invalid_margin"
+        if smart_start_margin < 0:
+            errors[CONF_SMART_START_MARGIN] = "invalid_margin"
         return errors
 
     @staticmethod

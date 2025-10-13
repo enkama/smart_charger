@@ -413,6 +413,11 @@ class SmartChargerLearning:
     ) -> None:
         sensor = session.get("sensor")
         attempt = int(session.get("retries", 0))
+        start_level_raw = session.get("level", 0.0)
+        try:
+            start_level = float(start_level_raw)
+        except (TypeError, ValueError):
+            start_level = 0.0
         if not sensor:
             _LOGGER.debug(
                 "Cannot retry session for %s: battery sensor unknown", profile_id
@@ -422,7 +427,11 @@ class SmartChargerLearning:
             return
         if attempt >= len(SESSION_RETRY_DELAYS):
             _LOGGER.debug(
-                "Giving up on session for %s after %d attempts", profile_id, attempt
+                "Giving up on session for %s after %d attempts (sensor=%s, start_level=%.1f%%)",
+                profile_id,
+                attempt,
+                sensor,
+                start_level,
             )
             profile.pop("current_session", None)
             self._cancel_session_retry(profile_id)
@@ -433,10 +442,12 @@ class SmartChargerLearning:
         profile["current_session"] = session
         self._schedule_session_retry(profile_id, delay)
         _LOGGER.debug(
-            "Retrying session finalize for %s in %ss (attempt %d)",
+            "Retrying session finalize for %s in %ss (attempt %d/%d, sensor=%s)",
             profile_id,
             delay,
             attempt + 1,
+            len(SESSION_RETRY_DELAYS),
+            sensor,
         )
 
     def _schedule_session_retry(self, profile_id: str, delay: float) -> None:
