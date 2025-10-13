@@ -8,7 +8,7 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import DOMAIN, UNKNOWN_STATES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,6 +18,8 @@ EMA_ALPHA = 0.35
 """Half-life (hours) used when decaying older measurements."""
 DECAY_HALF_LIFE_HOURS = 48
 SAVE_DEBOUNCE_SECONDS = 10
+SESSION_RETRY_DELAYS: tuple[int, ...] = (30, 90, 300)
+MIN_SESSION_DELTA = 0.2
 
 
 def _time_bucket(hour: int) -> str:
@@ -58,6 +60,7 @@ class SmartChargerLearning:
         self._store = Store(hass, self.STORAGE_VERSION, self.STORAGE_KEY)
         self._data: Dict[str, Dict[str, Any]] = {}
         self._save_debounce_unsub: Optional[Callable[[], None]] = None
+        self._session_retry_unsubs: Dict[str, Callable[[], None]] = {}
 
     async def async_load(self, profile_id: Optional[str] = None) -> None:
         try:
@@ -163,36 +166,89 @@ class SmartChargerLearning:
             _LOGGER.exception("Adaptive avg_speed calculation failed")
             return 1.0
 
-    def start_session(self, profile_id: str, level_now: float) -> None:
+    def start_session(
+        self, profile_id: str, level_now: float, sensor: Optional[str] = None
+    ) -> None:
         """Start tracking a new charging session."""
         pdata = self._ensure_profile_schema(profile_id)
-        pdata["current_session"] = (
-            dt_util.now().isoformat(),
-            float(level_now),
+        pdata["current_session"] = {
+            "started": dt_util.now().isoformat(),
+            "level": float(level_now),
+            "sensor": sensor,
+            "retries": 0,
+        }
+        self._cancel_session_retry(profile_id)
+        _LOGGER.debug(
+            "Session started for %s at %.1f%% (sensor=%s)",
+            profile_id,
+            level_now,
+            sensor,
         )
-        _LOGGER.debug("Session started for %s at %.1f%%", profile_id, level_now)
 
-    async def end_session(self, profile_id: str, level_end: float) -> None:
+    async def end_session(
+        self,
+        profile_id: str,
+        level_end: Optional[float] = None,
+        sensor: Optional[str] = None,
+    ) -> None:
         """Finish tracking the active charging session."""
-        p = self._ensure_profile_schema(profile_id)
-        sess = p.pop("current_session", None)
-        if not sess:
+        profile = self._ensure_profile_schema(profile_id)
+        session = self._normalize_session(profile.get("current_session"))
+        if not session:
             _LOGGER.debug("No active session for %s", profile_id)
             return
-        try:
-            start_time = dt_util.parse_datetime(sess[0]) or dt_util.now()
-            start_level = float(sess[1])
-            await self.record_cycle(
-                profile_id=profile_id,
-                start_time=start_time,
-                end_time=dt_util.now(),
-                start_level=start_level,
-                end_level=float(level_end),
-                reached_target=start_level < level_end,
-                error=None,
+
+        profile["current_session"] = session
+        if sensor:
+            session["sensor"] = sensor
+
+        sensor_id = session.get("sensor")
+        level_now = self._read_battery_sensor(sensor_id)
+        if level_now is None and level_end is not None:
+            try:
+                level_now = float(level_end)
+            except (TypeError, ValueError):
+                level_now = None
+
+        if level_now is None:
+            _LOGGER.debug(
+                "Deferring session finalization for %s: sensor=%s unavailable",
+                profile_id,
+                sensor_id,
             )
+            self._handle_session_retry(profile_id, profile, session)
+            return
+
+        try:
+            start_iso = session.get("started")
+            parsed = (
+                dt_util.parse_datetime(start_iso)
+                if isinstance(start_iso, str)
+                else None
+            )
+            start_time = parsed or dt_util.now()
+            start_level = float(session.get("level", level_now))
         except Exception:
-            _LOGGER.exception("Error while ending session for %s", profile_id)
+            _LOGGER.exception("Error while preparing session data for %s", profile_id)
+            profile.pop("current_session", None)
+            self._cancel_session_retry(profile_id)
+            return
+
+        success = await self.record_cycle(
+            profile_id=profile_id,
+            start_time=start_time,
+            end_time=dt_util.now(),
+            start_level=start_level,
+            end_level=float(level_now),
+            reached_target=start_level < level_now,
+            error=None,
+        )
+
+        if success:
+            profile.pop("current_session", None)
+            self._cancel_session_retry(profile_id)
+        else:
+            self._handle_session_retry(profile_id, profile, session)
 
     async def record_cycle(
         self,
@@ -203,7 +259,7 @@ class SmartChargerLearning:
         end_level: float,
         reached_target: bool,
         error: Optional[str],
-    ) -> None:
+    ) -> bool:
         """Persist a completed charging cycle and update derived metrics."""
         p = self._ensure_profile_schema(profile_id)
         duration_min = max(0.0, (end_time - start_time).total_seconds() / 60.0)
@@ -211,11 +267,18 @@ class SmartChargerLearning:
             delta = max(0.0, end_level - start_level)
             speed = delta / duration_min if duration_min > 0 else 0.0
         except Exception:
+            delta = 0.0
             speed = 0.0
 
-        if speed <= 0 or speed > 10:
-            _LOGGER.debug("Ignoring implausible speed %.3f for %s", speed, profile_id)
-            return
+        if delta < MIN_SESSION_DELTA or speed <= 0 or speed > 10:
+            _LOGGER.debug(
+                "Ignoring implausible session for %s: Δ%.3f%% over %.1fmin (speed=%.3f)",
+                profile_id,
+                delta,
+                duration_min,
+                speed,
+            )
+            return False
 
         timestamp = dt_util.now().isoformat()
         p["samples"].append((timestamp, speed))
@@ -242,6 +305,7 @@ class SmartChargerLearning:
 
         self._update_stats(p, speed, timestamp, start_time)
         self._schedule_save()
+        return True
 
     def cleanup_old_data(self, max_samples: int = 200, max_cycles: int = 100) -> None:
         """Keep only a bounded number of stored samples and cycles."""
@@ -275,7 +339,45 @@ class SmartChargerLearning:
         pdata.setdefault("cycles", [])
         pdata.setdefault("stats", {"ema": None, "count": 0, "last_sample": None})
         pdata.setdefault("bucket_stats", {})
+        if "current_session" in pdata:
+            normalized = self._normalize_session(pdata.get("current_session"))
+            if normalized:
+                pdata["current_session"] = normalized
+            else:
+                pdata.pop("current_session", None)
         return pdata
+
+    def _normalize_session(self, session: Any) -> Optional[Dict[str, Any]]:
+        if not session:
+            return None
+        if isinstance(session, dict):
+            session.setdefault("retries", 0)
+            session.setdefault("sensor", None)
+            return session
+        if isinstance(session, (list, tuple)) and len(session) >= 2:
+            try:
+                level = float(session[1])
+            except (TypeError, ValueError):
+                level = 0.0
+            return {
+                "started": session[0],
+                "level": level,
+                "sensor": None,
+                "retries": 0,
+            }
+        return None
+
+    def _read_battery_sensor(self, sensor: Optional[str]) -> Optional[float]:
+        if not sensor:
+            return None
+        state = self.hass.states.get(sensor)
+        if not state or state.state in UNKNOWN_STATES:
+            return None
+        try:
+            return float(state.state)
+        except (TypeError, ValueError):
+            _LOGGER.debug("Cannot parse battery state %s for %s", state.state, sensor)
+            return None
 
     def _update_stats(
         self,
@@ -302,6 +404,71 @@ class SmartChargerLearning:
         )
         bucket_entry["count"] = int(bucket_entry.get("count", 0)) + 1
         bucket_entry["last_sample"] = timestamp
+
+    def _handle_session_retry(
+        self,
+        profile_id: str,
+        profile: Dict[str, Any],
+        session: Dict[str, Any],
+    ) -> None:
+        sensor = session.get("sensor")
+        attempt = int(session.get("retries", 0))
+        if not sensor:
+            _LOGGER.debug(
+                "Cannot retry session for %s: battery sensor unknown", profile_id
+            )
+            profile.pop("current_session", None)
+            self._cancel_session_retry(profile_id)
+            return
+        if attempt >= len(SESSION_RETRY_DELAYS):
+            _LOGGER.debug(
+                "Giving up on session for %s after %d attempts", profile_id, attempt
+            )
+            profile.pop("current_session", None)
+            self._cancel_session_retry(profile_id)
+            return
+
+        delay = SESSION_RETRY_DELAYS[attempt]
+        session["retries"] = attempt + 1
+        profile["current_session"] = session
+        self._schedule_session_retry(profile_id, delay)
+        _LOGGER.debug(
+            "Retrying session finalize for %s in %ss (attempt %d)",
+            profile_id,
+            delay,
+            attempt + 1,
+        )
+
+    def _schedule_session_retry(self, profile_id: str, delay: float) -> None:
+        self._cancel_session_retry(profile_id)
+
+        def _callback(_now: Any) -> None:
+            self._session_retry_unsubs.pop(profile_id, None)
+            self.hass.async_create_task(self._retry_end_session(profile_id))
+
+        self._session_retry_unsubs[profile_id] = async_call_later(
+            self.hass,
+            delay,
+            _callback,
+        )
+
+    def _cancel_session_retry(self, profile_id: str) -> None:
+        unsub = self._session_retry_unsubs.pop(profile_id, None)
+        if unsub:
+            try:
+                unsub()
+            except Exception:
+                _LOGGER.debug("Failed to cancel retry timer for %s", profile_id)
+
+    async def _retry_end_session(self, profile_id: str) -> None:
+        profile = self._ensure_profile_schema(profile_id)
+        session = self._normalize_session(profile.get("current_session"))
+        if not session:
+            return
+        profile["current_session"] = session
+        sensor = session.get("sensor")
+        level = self._read_battery_sensor(sensor)
+        await self.end_session(profile_id, level_end=level, sensor=sensor)
 
     def _schedule_save(self) -> None:
         if self._save_debounce_unsub:

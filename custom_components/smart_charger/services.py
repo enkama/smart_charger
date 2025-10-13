@@ -222,12 +222,16 @@ async def handle_auto_manage(
 
         """Handle the start of a detected charging session."""
         if currently_charging and sm.states.get(pid) != "charging":
-            learning.start_session(pid, battery)
+            learning.start_session(pid, battery, d.get(CONF_BATTERY_SENSOR))
             sm.set_state(pid, "charging")
 
         """Handle the end of a detected charging session."""
         if not currently_charging and sm.states.get(pid) == "charging":
-            await learning.end_session(pid, battery)
+            await learning.end_session(
+                pid,
+                level_end=battery,
+                sensor=d.get(CONF_BATTERY_SENSOR),
+            )
             sm.set_state(pid, "idle")
 
         """Stop charging automatically once the target level is reached."""

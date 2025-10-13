@@ -42,6 +42,10 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+PRECHARGE_MARGIN_ON = 0.5
+PRECHARGE_MARGIN_OFF = 1.5
+SMART_START_MARGIN = 2.0
+
 
 WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
     CONF_ALARM_MONDAY,
@@ -165,6 +169,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._state: Optional[Dict[str, Dict[str, Any]]] = None
         self._last_successful_update: datetime | None = None
         self._last_action_log = {}
+        self._precharge_release: Dict[str, float] = {}
 
     @property
     def profiles(self) -> Dict[str, Dict[str, Any]]:
@@ -197,6 +202,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 plan = await self._build_plan(device, now_local, learning)
                 if plan:
                     results[device.name] = plan.as_dict()
+
+            if self._precharge_release:
+                active = set(results.keys())
+                for name in list(self._precharge_release.keys()):
+                    if name not in active:
+                        self._precharge_release.pop(name, None)
 
             self._state = results
             self._last_successful_update = dt_util.utcnow()
@@ -415,15 +426,35 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             STATE_ON,
         )
 
-        precharge_margin = 0.5
-        precharge_required = (
-            is_home
-            and device.precharge_level > device.min_level
-            and (
-                battery <= device.precharge_level - precharge_margin
-                or predicted_level <= device.precharge_level - precharge_margin
-            )
-        )
+        precharge_required = False
+        release_level = self._precharge_release.get(device.name)
+
+        if not is_home:
+            if release_level is not None:
+                self._precharge_release.pop(device.name, None)
+            release_level = None
+        elif device.precharge_level > device.min_level:
+            trigger_threshold = device.precharge_level - PRECHARGE_MARGIN_ON
+            predicted_threshold = device.precharge_level + PRECHARGE_MARGIN_ON
+
+            if battery <= trigger_threshold or predicted_level <= trigger_threshold:
+                extra_margin = max(PRECHARGE_MARGIN_OFF, expected_drain * 0.4)
+                release_level = min(
+                    device.target_level,
+                    device.precharge_level + extra_margin,
+                )
+                self._precharge_release[device.name] = release_level
+                precharge_required = True
+            elif release_level is not None:
+                if battery >= release_level and predicted_level >= predicted_threshold:
+                    self._precharge_release.pop(device.name, None)
+                    release_level = None
+                else:
+                    precharge_required = True
+
+        if release_level is not None and not precharge_required and is_home:
+            if battery < release_level or predicted_level < device.precharge_level:
+                precharge_required = True
 
         charger_expected_on = await self._apply_charger_logic(
             device,
@@ -492,34 +523,6 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             )
             return True
 
-        if precharge_required and not charger_is_on:
-            self._log_action(
-                device_name,
-                logging.INFO,
-                "[Precharge] %s below precharge level %.1f%% (current %.1f%%) -> activating charger (%s)",
-                device_name,
-                device.precharge_level,
-                battery,
-                charger_ent,
-            )
-            await self.hass.services.async_call(
-                "switch", "turn_on", service_data, blocking=False
-            )
-            return True
-
-        if not is_home and charger_is_on:
-            self._log_action(
-                device_name,
-                logging.INFO,
-                "[SmartStop] %s not at home -> deactivating charger (%s)",
-                device_name,
-                charger_ent,
-            )
-            await self.hass.services.async_call(
-                "switch", "turn_off", service_data, blocking=False
-            )
-            return False
-
         if (
             smart_start_active
             and start_time
@@ -559,6 +562,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             and start_time
             and now_local < start_time
             and not precharge_required
+            and battery >= device.target_level - SMART_START_MARGIN
         ):
             self._log_action(
                 device_name,
