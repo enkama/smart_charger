@@ -1,25 +1,37 @@
 from __future__ import annotations
 
+import asyncio
+import copy
 import logging
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, UNKNOWN_STATES
+from .const import (
+    DOMAIN,
+    LEARNING_CACHE_TTL,
+    LEARNING_DEFAULT_SPEED,
+    LEARNING_EMA_ALPHA,
+    LEARNING_MAX_SPEED,
+    LEARNING_MIN_SPEED,
+    UNKNOWN_STATES,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 
-"""Weight applied to new measurements in the EMA tracker."""
-EMA_ALPHA = 0.35
 """Half-life (hours) used when decaying older measurements."""
 DECAY_HALF_LIFE_HOURS = 48
 SAVE_DEBOUNCE_SECONDS = 10
 SESSION_RETRY_DELAYS: tuple[int, ...] = (30, 90, 300)
 MIN_SESSION_DELTA = 0.2
+PROFILE_SCHEMA_VERSION = 2
+STORAGE_KEY_LEGACY = f"{DOMAIN}_learning"
+MAX_SAMPLES_DEFAULT = 200
+MAX_CYCLES_DEFAULT = 120
 
 
 def _time_bucket(hour: int) -> str:
@@ -33,7 +45,7 @@ def _time_bucket(hour: int) -> str:
 
 
 def _ema_update(
-    previous: Optional[float], value: float, alpha: float = EMA_ALPHA
+    previous: Optional[float], value: float, alpha: float = LEARNING_EMA_ALPHA
 ) -> float:
     if previous is None:
         return value
@@ -53,28 +65,98 @@ class SmartChargerLearning:
     """Persistent learning engine tracking charge speeds and cycles."""
 
     STORAGE_VERSION = 1
-    STORAGE_KEY = f"{DOMAIN}_learning"
 
-    def __init__(self, hass) -> None:
+    def __init__(self, hass, entry_id: Optional[str] = None) -> None:
         self.hass = hass
-        self._store = Store(hass, self.STORAGE_VERSION, self.STORAGE_KEY)
-        self._data: Dict[str, Dict[str, Any]] = {}
+        self._entry_id = entry_id
+        storage_key = (
+            f"{STORAGE_KEY_LEGACY}_{entry_id}"
+            if entry_id
+            else STORAGE_KEY_LEGACY
+        )
+        self._store = Store(hass, self.STORAGE_VERSION, storage_key)
+        self._legacy_store = (
+            None
+            if not entry_id
+            else Store(hass, self.STORAGE_VERSION, STORAGE_KEY_LEGACY)
+        )
+        self._data: Dict[str, Any] = self._default_storage()
         self._save_debounce_unsub: Optional[Callable[[], None]] = None
         self._session_retry_unsubs: Dict[str, Callable[[], None]] = {}
+        self._avg_cache: Dict[str, Tuple[float, float]] = {}
+        self._lock = asyncio.Lock()
+        self._migrated_from_legacy = False
+
+    def _default_meta(self) -> Dict[str, Any]:
+        now_iso = dt_util.utcnow().isoformat()
+        return {
+            "model_revision": PROFILE_SCHEMA_VERSION,
+            "entry_id": self._entry_id,
+            "created": now_iso,
+            "updated": now_iso,
+            "profile_count": 0,
+            "sample_count": 0,
+            "cycle_count": 0,
+        }
+
+    def _default_storage(self) -> Dict[str, Any]:
+        return {"meta": self._default_meta(), "profiles": {}}
+
+    @property
+    def _profiles(self) -> Dict[str, Dict[str, Any]]:
+        return self._data.setdefault("profiles", {})
+
+    @property
+    def _meta(self) -> Dict[str, Any]:
+        return self._data.setdefault("meta", self._default_meta())
+
+    def _refresh_meta(self) -> None:
+        profiles = self._profiles
+        meta = self._meta
+        meta["profile_count"] = len(profiles)
+        meta["sample_count"] = sum(len(p.get("samples", [])) for p in profiles.values())
+        meta["cycle_count"] = sum(len(p.get("cycles", [])) for p in profiles.values())
+        meta["updated"] = dt_util.utcnow().isoformat()
 
     async def async_load(self, profile_id: Optional[str] = None) -> None:
         try:
             data = await self._store.async_load()
+            if not data and self._legacy_store is not None:
+                legacy = await self._legacy_store.async_load()
+                if legacy:
+                    data = legacy
+                    self._migrated_from_legacy = True
+
             if not data:
+                self._data = self._default_storage()
                 return
-            if profile_id and profile_id in data:
-                self._data[profile_id] = data[profile_id]
+
+            if "profiles" not in data or not isinstance(data.get("profiles"), dict):
+                profiles = data if isinstance(data, dict) else {}
+                migrated = self._default_storage()
+                migrated["profiles"].update(profiles)
+                data = migrated
+
+            self._data = data
+            if self._meta.get("model_revision", 0) < PROFILE_SCHEMA_VERSION:
+                self._meta["model_revision"] = PROFILE_SCHEMA_VERSION
+
+            if profile_id and profile_id in self._profiles:
                 self._ensure_profile_schema(profile_id)
             else:
-                self._data = data
-                for pid in list(self._data.keys()):
+                for pid in list(self._profiles.keys()):
                     self._ensure_profile_schema(pid)
-            _LOGGER.debug("Learning data loaded (profiles=%d)", len(self._data))
+
+            self._refresh_meta()
+            self._avg_cache.clear()
+            _LOGGER.debug(
+                "Learning data loaded (profiles=%d, migrated=%s)",
+                len(self._profiles),
+                self._migrated_from_legacy,
+            )
+
+            if self._migrated_from_legacy:
+                await self.async_save()
         except Exception:
             _LOGGER.exception("Learning: load failed")
 
@@ -83,22 +165,54 @@ class SmartChargerLearning:
             if self._save_debounce_unsub:
                 self._save_debounce_unsub()
                 self._save_debounce_unsub = None
-            await self._store.async_save(self._data)
+            async with self._lock:
+                self._refresh_meta()
+                await self._store.async_save(self._data)
         except Exception:
             _LOGGER.exception("Learning: save failed")
 
     async def ensure_profile(self, profile_id: str) -> None:
         """Ensure profile exists in memory."""
-        if profile_id not in self._data:
-            self._data[profile_id] = self._default_profile()
+        created = False
+        async with self._lock:
+            if profile_id not in self._profiles:
+                self._profiles[profile_id] = self._default_profile()
+                created = True
+            else:
+                self._ensure_profile_schema(profile_id)
+            if created:
+                self._refresh_meta()
+
+        if created:
             await self.async_save()
-        else:
-            self._ensure_profile_schema(profile_id)
+
+        self._invalidate_cache(profile_id)
 
     def avg_speed(self, profile_id: Optional[str] = None) -> float:
         """Compute a weighted average speed that favors recent, time-matched samples."""
         try:
             now = dt_util.now()
+            bucket_key = _time_bucket(now.hour)
+
+            def _cache_token(scope: str) -> str:
+                return f"{profile_id or '__global__'}::{scope}"
+
+            def _cache_get(scope: str) -> Optional[float]:
+                token = _cache_token(scope)
+                cached = self._avg_cache.get(token)
+                if not cached:
+                    return None
+                value, ts = cached
+                if (dt_util.utcnow().timestamp() - ts) <= LEARNING_CACHE_TTL:
+                    return value
+                self._avg_cache.pop(token, None)
+                return None
+
+            def _cache_set(scope: str, value: float) -> None:
+                self._avg_cache[_cache_token(scope)] = (
+                    value,
+                    dt_util.utcnow().timestamp(),
+                )
 
             def _from_entry(entry: Optional[Dict[str, Any]]) -> Optional[float]:
                 if not entry:
@@ -115,36 +229,46 @@ class SmartChargerLearning:
                 value = _decay_to_baseline(float(ema), age_hours)
                 return round(max(0.1, min(5.0, value)), 3)
 
-            if profile_id and profile_id in self._data:
+            if profile_id and profile_id in self._profiles:
+                cached_bucket = _cache_get(bucket_key)
+                if cached_bucket is not None:
+                    return cached_bucket
                 pdata = self._ensure_profile_schema(profile_id)
-                bucket_key = _time_bucket(now.hour)
                 bucket_entry = pdata.get("bucket_stats", {}).get(bucket_key)
                 bucket_value = _from_entry(bucket_entry)
                 if bucket_value is not None:
+                    _cache_set(bucket_key, bucket_value)
                     return bucket_value
 
                 overall_value = _from_entry(pdata.get("stats"))
                 if overall_value is not None:
+                    _cache_set("profile", overall_value)
                     return overall_value
 
+            cached_global = _cache_get("global")
+            if cached_global is not None:
+                return cached_global
+
             aggregated: list[float] = []
-            for pid in list(self._data.keys()):
+            for pid in list(self._profiles.keys()):
                 pdata = self._ensure_profile_schema(pid)
                 value = _from_entry(pdata.get("stats"))
                 if value is not None:
                     aggregated.append(value)
             if aggregated:
-                return round(sum(aggregated) / len(aggregated), 3)
+                avg_value = round(sum(aggregated) / len(aggregated), 3)
+                _cache_set("global", avg_value)
+                return avg_value
 
             samples: list[tuple[str, float]] = []
-            if profile_id and profile_id in self._data:
-                samples = self._data[profile_id].get("samples", [])
+            if profile_id and profile_id in self._profiles:
+                samples = self._profiles[profile_id].get("samples", [])
             else:
-                for pdata in self._data.values():
+                for pdata in self._profiles.values():
                     samples.extend(pdata.get("samples", []))
 
             if not samples:
-                return 1.0
+                return LEARNING_DEFAULT_SPEED
 
             weighted_sum = 0.0
             total_weight = 0.0
@@ -158,31 +282,47 @@ class SmartChargerLearning:
                 total_weight += weight
 
             if total_weight <= 0:
-                return 1.0
+                return LEARNING_DEFAULT_SPEED
 
             avg = weighted_sum / total_weight
-            return round(max(0.1, min(5.0, avg)), 3)
+            clamped = round(self._clamp_speed(avg), 3)
+            _cache_set("fallback", clamped)
+            return clamped
         except Exception:
             _LOGGER.exception("Adaptive avg_speed calculation failed")
-            return 1.0
+            return LEARNING_DEFAULT_SPEED
 
-    def start_session(
+    async def async_start_session(
         self, profile_id: str, level_now: float, sensor: Optional[str] = None
     ) -> None:
         """Start tracking a new charging session."""
-        pdata = self._ensure_profile_schema(profile_id)
-        pdata["current_session"] = {
-            "started": dt_util.now().isoformat(),
-            "level": float(level_now),
-            "sensor": sensor,
-            "retries": 0,
-        }
+
+        async with self._lock:
+            pdata = self._ensure_profile_schema(profile_id)
+            pdata["current_session"] = {
+                "started": dt_util.now().isoformat(),
+                "level": float(level_now),
+                "sensor": sensor,
+                "retries": 0,
+            }
+            self._refresh_meta()
+
         self._cancel_session_retry(profile_id)
+        self._invalidate_cache(profile_id)
+        self._schedule_save()
         _LOGGER.debug(
             "Session started for %s at %.1f%% (sensor=%s)",
             profile_id,
             level_now,
             sensor,
+        )
+
+    def start_session(
+        self, profile_id: str, level_now: float, sensor: Optional[str] = None
+    ) -> None:
+        """Compat wrapper scheduling the async session start."""
+        self.hass.async_create_task(
+            self.async_start_session(profile_id, level_now, sensor)
         )
 
     async def end_session(
@@ -245,7 +385,10 @@ class SmartChargerLearning:
         )
 
         if success:
-            profile.pop("current_session", None)
+            async with self._lock:
+                profile = self._ensure_profile_schema(profile_id)
+                profile.pop("current_session", None)
+                self._refresh_meta()
             self._cancel_session_retry(profile_id)
         else:
             self._handle_session_retry(profile_id, profile, session)
@@ -261,7 +404,6 @@ class SmartChargerLearning:
         error: Optional[str],
     ) -> bool:
         """Persist a completed charging cycle and update derived metrics."""
-        p = self._ensure_profile_schema(profile_id)
         duration_min = max(0.0, (end_time - start_time).total_seconds() / 60.0)
         try:
             delta = max(0.0, end_level - start_level)
@@ -280,53 +422,55 @@ class SmartChargerLearning:
             )
             return False
 
-        timestamp = dt_util.now().isoformat()
-        p["samples"].append((timestamp, speed))
-        p["cycles"].append(
-            {
-                "start_time": getattr(start_time, "isoformat", lambda: start_time)(),
-                "end_time": getattr(end_time, "isoformat", lambda: end_time)(),
-                "start_level": round(start_level, 1),
-                "end_level": round(end_level, 1),
-                "duration_min": round(duration_min, 1),
-                "speed": round(speed, 3),
-                "reached_target": reached_target,
-                "error_cause": error,
-            }
-        )
+        accepted = False
+        async with self._lock:
+            profile = self._ensure_profile_schema(profile_id)
+            stats = profile.get("stats", {})
+            baseline = stats.get("ema")
+            if baseline and speed > self._clamp_speed(float(baseline) * 3):
+                _LOGGER.debug(
+                    "Dropping outlier session for %s: speed %.3f too far from baseline %.3f",
+                    profile_id,
+                    speed,
+                    baseline,
+                )
+                return False
 
-        _LOGGER.debug(
-            "Recorded cycle for %s: Δ%.1f%% in %.1fmin (%.3f %%/min)",
-            profile_id,
-            end_level - start_level,
-            duration_min,
-            speed,
-        )
+            speed = self._clamp_speed(speed)
+            timestamp = dt_util.now().isoformat()
+            profile.setdefault("samples", []).append((timestamp, speed))
+            profile.setdefault("cycles", []).append(
+                {
+                    "start_time": getattr(start_time, "isoformat", lambda: start_time)(),
+                    "end_time": getattr(end_time, "isoformat", lambda: end_time)(),
+                    "start_level": round(start_level, 1),
+                    "end_level": round(end_level, 1),
+                    "duration_min": round(duration_min, 1),
+                    "speed": round(speed, 3),
+                    "reached_target": reached_target,
+                    "error_cause": error,
+                }
+            )
+            self._trim_profile(profile)
+            self._update_stats(profile, speed, timestamp, start_time)
+            self._refresh_meta()
+            accepted = True
 
-        self._update_stats(p, speed, timestamp, start_time)
-        self._schedule_save()
-        return True
-
-    def cleanup_old_data(self, max_samples: int = 200, max_cycles: int = 100) -> None:
-        """Keep only a bounded number of stored samples and cycles."""
-        for pdata in self._data.values():
-            if "samples" in pdata:
-                pdata["samples"] = pdata["samples"][-max_samples:]
-            if "cycles" in pdata:
-                pdata["cycles"] = pdata["cycles"][-max_cycles:]
-            if "bucket_stats" in pdata:
-                for bucket, entry in list(pdata["bucket_stats"].items()):
-                    if not entry.get("ema"):
-                        pdata["bucket_stats"].pop(bucket, None)
-        _LOGGER.debug(
-            "Cleaned up learning data (max %d samples, %d cycles)",
-            max_samples,
-            max_cycles,
-        )
-        self._schedule_save()
+        if accepted:
+            _LOGGER.debug(
+                "Recorded cycle for %s: Δ%.1f%% in %.1fmin (%.3f %%/min)",
+                profile_id,
+                end_level - start_level,
+                duration_min,
+                speed,
+            )
+            self._schedule_save()
+            self._invalidate_cache(profile_id)
+        return accepted
 
     def _default_profile(self) -> Dict[str, Any]:
         return {
+            "version": PROFILE_SCHEMA_VERSION,
             "samples": [],
             "cycles": [],
             "stats": {"ema": None, "count": 0, "last_sample": None},
@@ -334,7 +478,16 @@ class SmartChargerLearning:
         }
 
     def _ensure_profile_schema(self, profile_id: str) -> Dict[str, Any]:
-        pdata = self._data.setdefault(profile_id, self._default_profile())
+        profiles = self._profiles
+        pdata = profiles.get(profile_id)
+        if not isinstance(pdata, dict):
+            pdata = self._default_profile()
+            profiles[profile_id] = pdata
+
+        pdata.setdefault("version", PROFILE_SCHEMA_VERSION)
+        if pdata.get("version", 0) < PROFILE_SCHEMA_VERSION:
+            pdata["version"] = PROFILE_SCHEMA_VERSION
+
         pdata.setdefault("samples", [])
         pdata.setdefault("cycles", [])
         pdata.setdefault("stats", {"ema": None, "count": 0, "last_sample": None})
@@ -346,6 +499,25 @@ class SmartChargerLearning:
             else:
                 pdata.pop("current_session", None)
         return pdata
+
+    def _invalidate_cache(self, profile_id: Optional[str]) -> None:
+        if not self._avg_cache:
+            return
+        if profile_id is None:
+            keys_to_drop = list(self._avg_cache.keys())
+        else:
+            prefix = f"{profile_id}::"
+            keys_to_drop = [
+                key
+                for key in self._avg_cache
+                if key.startswith(prefix) or key.startswith("__global__::")
+            ]
+        for key in keys_to_drop:
+            self._avg_cache.pop(key, None)
+
+    @staticmethod
+    def _clamp_speed(value: float) -> float:
+        return max(LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, value))
 
     def _normalize_session(self, session: Any) -> Optional[Dict[str, Any]]:
         if not session:
@@ -400,10 +572,87 @@ class SmartChargerLearning:
             bucket_key, {"ema": None, "count": 0, "last_sample": None}
         )
         bucket_entry["ema"] = _ema_update(
-            bucket_entry.get("ema"), speed, alpha=EMA_ALPHA
+            bucket_entry.get("ema"), speed, alpha=LEARNING_EMA_ALPHA
         )
         bucket_entry["count"] = int(bucket_entry.get("count", 0)) + 1
         bucket_entry["last_sample"] = timestamp
+
+    def _trim_profile(
+        self,
+        profile: Dict[str, Any],
+        max_samples: int = MAX_SAMPLES_DEFAULT,
+        max_cycles: int = MAX_CYCLES_DEFAULT,
+    ) -> None:
+        if max_samples > 0 and "samples" in profile:
+            profile["samples"] = profile["samples"][-max_samples:]
+        if max_cycles > 0 and "cycles" in profile:
+            profile["cycles"] = profile["cycles"][-max_cycles:]
+        bucket_stats = profile.get("bucket_stats")
+        if isinstance(bucket_stats, dict):
+            for bucket, entry in list(bucket_stats.items()):
+                if not entry.get("ema"):
+                    bucket_stats.pop(bucket, None)
+
+    async def async_cleanup_old_data(
+        self,
+        max_samples: int = MAX_SAMPLES_DEFAULT,
+        max_cycles: int = MAX_CYCLES_DEFAULT,
+    ) -> None:
+        """Keep only a bounded number of stored samples and cycles."""
+        async with self._lock:
+            for pdata in self._profiles.values():
+                self._trim_profile(pdata, max_samples, max_cycles)
+            self._refresh_meta()
+
+        _LOGGER.debug(
+            "Cleaned up learning data (max %d samples, %d cycles)",
+            max_samples,
+            max_cycles,
+        )
+        self._schedule_save()
+        self._avg_cache.clear()
+
+    def cleanup_old_data(
+        self,
+        max_samples: int = MAX_SAMPLES_DEFAULT,
+        max_cycles: int = MAX_CYCLES_DEFAULT,
+    ) -> None:
+        """Compat wrapper that schedules cleanup asynchronously."""
+        self.hass.async_create_task(
+            self.async_cleanup_old_data(max_samples=max_samples, max_cycles=max_cycles)
+        )
+
+    def snapshot(self, profile_id: Optional[str] = None) -> Dict[str, Any]:
+        """Return a deep copy of the current learning state for diagnostics."""
+        meta_copy = copy.deepcopy(self._meta)
+        meta_copy["snapshot_ts"] = dt_util.utcnow().isoformat()
+        if profile_id:
+            profiles = {}
+            pdata = self._profiles.get(profile_id)
+            if pdata:
+                profiles[profile_id] = copy.deepcopy(pdata)
+        else:
+            profiles = copy.deepcopy(self._profiles)
+        return {"meta": meta_copy, "profiles": profiles}
+
+    def profile_ids(self) -> tuple[str, ...]:
+        return tuple(self._profiles.keys())
+
+    async def async_reset_profile(self, profile_id: str) -> None:
+        """Reset a single profile to its default state."""
+        async with self._lock:
+            if profile_id in self._profiles:
+                self._profiles[profile_id] = self._default_profile()
+                self._refresh_meta()
+        await self.async_save()
+        self._invalidate_cache(profile_id)
+
+    async def async_reset_all(self) -> None:
+        """Clear all learning data."""
+        async with self._lock:
+            self._data = self._default_storage()
+        await self.async_save()
+        self._invalidate_cache(None)
 
     def _handle_session_retry(
         self,

@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
@@ -145,16 +146,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     state_machine = SmartChargerStateMachine(hass)
     await state_machine.async_load()
 
-    learning = SmartChargerLearning(hass)
+    learning = SmartChargerLearning(hass, entry.entry_id)
     await learning.async_load()
 
     devices = entry.data.get("devices") or []
+
+    async def _async_auto_manage() -> None:
+        cfg = {**entry.data, **getattr(entry, "options", {})}
+        await handle_auto_manage(
+            hass,
+            entry.entry_id,
+            cfg,
+            coordinator,
+            state_machine,
+            learning,
+        )
 
     entry_data.update(
         {
             "state_machine": state_machine,
             "learning": learning,
             "unsub_listeners": [],
+            "auto_manage_debouncer": Debouncer(
+                hass,
+                _LOGGER,
+                cooldown=2.0,
+                immediate=False,
+                function=_async_auto_manage,
+            ),
         }
     )
 
@@ -185,15 +204,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data = entries.get(entry.entry_id)
         if not data:
             return
-        cfg = {**entry.data, **getattr(entry, "options", {})}
-        await handle_auto_manage(
-            hass,
-            entry.entry_id,
-            cfg,
-            data["coordinator"],
-            data["state_machine"],
-            data["learning"],
-        )
+        debouncer: Debouncer | None = data.get("auto_manage_debouncer")
+        if debouncer:
+            hass.async_create_task(debouncer.async_call())
 
     listeners: list[Callable[[], None]] = entry_data["unsub_listeners"]
 
@@ -234,18 +247,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Smart Charger: %s became home -> triggering refresh",
                 new_state.entity_id,
             )
-            refresh = getattr(coordinator, "async_throttled_refresh", None)
-            if callable(refresh):
-                result = refresh()
-                if inspect.isawaitable(result):
-                    await result
-                return
-            await coordinator.async_request_refresh()
+            debouncer: Debouncer | None = entry_data.get("auto_manage_debouncer")
+            if debouncer:
+                hass.async_create_task(debouncer.async_call())
+            else:
+                refresh = getattr(coordinator, "async_throttled_refresh", None)
+                if callable(refresh):
+                    result = refresh()
+                    if inspect.isawaitable(result):
+                        await result
+                    return
+                await coordinator.async_request_refresh()
 
     for ent in presence_entities:
         listeners.append(async_track_state_change_event(hass, ent, _on_presence_change))
 
     entry_data["update_listener_unsub"] = entry.add_update_listener(_async_reload_entry)
+
+    debouncer: Debouncer | None = entry_data.get("auto_manage_debouncer")
+    if debouncer:
+        hass.async_create_task(debouncer.async_call())
 
     _LOGGER.info("Smart Charger initialized with entry_id=%s", entry.entry_id)
     return True
@@ -279,6 +300,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 unsub()
             except Exception as err:
                 _LOGGER.warning("Error while unsubscribing listener: %s", err)
+        if debouncer := data.get("auto_manage_debouncer"):
+            try:
+                debouncer.async_cancel()
+            except Exception:  # best effort
+                pass
         _LOGGER.info("Smart Charger unloaded: %s", entry.entry_id)
     device_registry = dr.async_get(hass)
     devices = entry.data.get("devices", [])

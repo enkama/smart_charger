@@ -41,6 +41,9 @@ from .const import (
     DEFAULT_SMART_START_MARGIN,
     DISCHARGING_STATES,
     DOMAIN,
+    LEARNING_DEFAULT_SPEED,
+    LEARNING_MAX_SPEED,
+    LEARNING_MIN_SPEED,
     FULL_STATES,
     UNKNOWN_STATES,
     UPDATE_INTERVAL,
@@ -138,6 +141,9 @@ class SmartChargePlan:
     start_time: Optional[datetime]
     predicted_drain: float
     predicted_level_at_alarm: float
+    drain_rate: float
+    drain_confidence: float
+    drain_basis: tuple[str, ...]
     smart_start_active: bool
     precharge_level: float
     precharge_margin_on: float
@@ -162,6 +168,9 @@ class SmartChargePlan:
             ),
             "predicted_drain": round(self.predicted_drain, 2),
             "predicted_level_at_alarm": round(self.predicted_level_at_alarm, 1),
+            "drain_rate": round(self.drain_rate, 3),
+            "drain_confidence": round(self.drain_confidence, 3),
+            "drain_basis": list(self.drain_basis),
             "smart_start_active": self.smart_start_active,
             "precharge_level": round(self.precharge_level, 1),
             "precharge_margin_on": round(self.precharge_margin_on, 2),
@@ -192,6 +201,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._last_successful_update: datetime | None = None
         self._last_action_log = {}
         self._precharge_release: Dict[str, float] = {}
+        self._drain_rate_cache: Dict[str, float] = {}
         self._precharge_margin_on = DEFAULT_PRECHARGE_MARGIN_ON
         self._precharge_margin_off = DEFAULT_PRECHARGE_MARGIN_OFF
         self._smart_start_margin = DEFAULT_SMART_START_MARGIN
@@ -261,6 +271,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 for name in list(self._precharge_release.keys()):
                     if name not in active:
                         self._precharge_release.pop(name, None)
+            if self._drain_rate_cache:
+                active = set(results.keys())
+                for name in list(self._drain_rate_cache.keys()):
+                    if name not in active:
+                        self._drain_rate_cache.pop(name, None)
 
             self._state = results
             self._last_successful_update = dt_util.utcnow()
@@ -407,19 +422,23 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         return time(hour=6, minute=30)
 
     def _avg_speed(
-        self, device: DeviceConfig, learning, fallback: float = 1.0
+        self,
+        device: DeviceConfig,
+        learning,
+        fallback: float = LEARNING_DEFAULT_SPEED,
     ) -> float:
+        fallback = max(LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, fallback))
         if device.use_predictive_mode and learning and hasattr(learning, "avg_speed"):
             try:
                 speed = learning.avg_speed(device.name)
                 if speed:
-                    return max(0.1, float(speed))
+                    return max(LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, float(speed)))
             except Exception:
                 _LOGGER.debug("Predictive avg_speed failed for %s", device.name)
 
         manual_state = self._float_state(device.avg_speed_sensor)
         if manual_state and manual_state > 0:
-            return manual_state
+            return max(LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, manual_state))
 
         return fallback
 
@@ -430,6 +449,62 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         lowered = state.lower()
         is_home = lowered in ("home", "on", "present", "true")
         return is_home, state
+
+    def _predict_drain_rate(
+        self,
+        device: DeviceConfig,
+        *,
+        now_local: datetime,
+        battery: float,
+        is_home: bool,
+    ) -> tuple[float, float, list[str]]:
+        base_reasons: list[str] = []
+        if now_local.hour < 6:
+            rate = 0.2
+            base_reasons.append("night")
+        elif now_local.hour < 22:
+            rate = 0.4
+            base_reasons.append("day")
+        else:
+            rate = 0.3
+            base_reasons.append("late_evening")
+
+        if not is_home:
+            rate += 0.2
+            base_reasons.append("away")
+        if battery < device.min_level:
+            rate += 0.1
+            base_reasons.append("below_min")
+        if battery < 20:
+            rate += 0.05
+            base_reasons.append("critical_reserve")
+        if not device.use_predictive_mode:
+            rate *= 0.9
+            base_reasons.append("manual_mode_scaling")
+
+        rate = max(0.0, rate)
+
+        prior = self._drain_rate_cache.get(device.name)
+        if prior is not None:
+            rate = prior + (rate - prior) * 0.5
+            base_reasons.append("ema_smoothing")
+        else:
+            base_reasons.append("seeded")
+
+        self._drain_rate_cache[device.name] = rate
+
+        confidence = 0.65
+        if prior is None:
+            confidence -= 0.1
+        if not device.use_predictive_mode:
+            confidence -= 0.05
+        if not is_home:
+            confidence -= 0.1
+        if battery < device.min_level:
+            confidence -= 0.05
+        confidence = max(0.2, min(0.95, confidence))
+
+        return rate, confidence, base_reasons
 
     async def _build_plan(
         self,
@@ -443,7 +518,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             return None
 
         charging_state = self._charging_state(device.charging_sensor)
-        avg_speed = max(0.1, self._avg_speed(device, learning))
+        avg_speed = self._avg_speed(device, learning)
         is_home, presence_state = self._presence(device)
         alarm_dt = self._resolve_alarm(device, now_local)
 
@@ -451,17 +526,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         duration_min = min(diff / avg_speed, 24 * 60)
         hours_until_alarm = max(0.0, (alarm_dt - now_local).total_seconds() / 3600)
 
-        base_drain = (
-            0.2 if now_local.hour < 6 else (0.4 if now_local.hour < 22 else 0.3)
+        drain_rate, drain_confidence, drain_basis = self._predict_drain_rate(
+            device,
+            now_local=now_local,
+            battery=battery,
+            is_home=is_home,
         )
-        if not is_home:
-            base_drain += 0.2
-        if battery < 20:
-            base_drain += 0.1
-        if not device.use_predictive_mode:
-            base_drain *= 0.9
 
-        expected_drain = hours_until_alarm * base_drain
+        expected_drain = max(0.0, hours_until_alarm * drain_rate)
         predicted_level = max(0.0, battery - expected_drain)
 
         if predicted_level < device.target_level:
@@ -584,6 +656,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             start_time=start_time,
             predicted_drain=expected_drain,
             predicted_level_at_alarm=predicted_level,
+            drain_rate=drain_rate,
+            drain_confidence=drain_confidence,
+            drain_basis=tuple(drain_basis),
             smart_start_active=smart_start_active,
             precharge_level=device.precharge_level,
             precharge_margin_on=margin_on,

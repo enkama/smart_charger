@@ -71,11 +71,11 @@ class SmartChargerNextStartSensor(SensorEntity):
             self.async_write_ha_state()
             return
 
-        start_times = [
-            d.get("start_time")
-            for d in profiles.values()
-            if d.get("start_time") and not d.get("skipped")
-        ]
+        start_times: list[str] = []
+        for plan in profiles.values():
+            start_time = plan.get("start_time")
+            if start_time and not plan.get("skipped"):
+                start_times.append(str(start_time))
         self._attr_native_value = min(start_times) if start_times else STATE_UNKNOWN
 
         device_data: Dict[str, Dict[str, Any]] = {}
@@ -89,6 +89,9 @@ class SmartChargerNextStartSensor(SensorEntity):
                 "start_time": data.get("start_time"),
                 "predicted_drain": data.get("predicted_drain"),
                 "predicted_level_at_alarm": data.get("predicted_level_at_alarm"),
+                "drain_rate": data.get("drain_rate"),
+                "drain_confidence": data.get("drain_confidence"),
+                "drain_basis": data.get("drain_basis"),
                 "smart_start_active": data.get("smart_start_active"),
                 "precharge_level": data.get("precharge_level"),
                 "precharge_active": data.get("precharge_active"),
@@ -135,11 +138,20 @@ class SmartChargerLearningSensor(SensorEntity):
         except Exception:
             self._attr_native_value = 1.0
 
-        profiles = getattr(self.learning, "_data", {})
-        total_samples = sum(len(p.get("samples", [])) for p in profiles.values())
+        snapshot = self.learning.snapshot()
+        profiles = snapshot.get("profiles", {})
+        meta = snapshot.get("meta", {})
+        sample_count = meta.get("sample_count")
+        if sample_count is None:
+            sample_count = sum(len(p.get("samples", [])) for p in profiles.values())
+        cycle_count = meta.get("cycle_count")
+        if cycle_count is None:
+            cycle_count = sum(len(p.get("cycles", [])) for p in profiles.values())
         extra: Dict[str, Any] = {
-            "profile_count": len(profiles),
-            "sample_count": total_samples,
+            "profile_count": meta.get("profile_count", len(profiles)),
+            "sample_count": sample_count,
+            "cycle_count": cycle_count,
+            "model_revision": meta.get("model_revision"),
             "profiles": list(profiles.keys()),
             "last_update": dt_util.now().isoformat(),
         }
@@ -154,8 +166,8 @@ class SmartChargerDeviceSensor(SensorEntity):
     _attr_should_poll = False
 
     def __init__(self, device_name: str, coordinator) -> None:
-        self.device_name = device_name
         self.coordinator = coordinator
+        self.device_name = device_name
         self._attr_name = f"Smart Charger {device_name} Status"
         self._attr_unique_id = (
             f"{DOMAIN}_{device_name.lower().replace(' ', '_')}_status"
@@ -227,6 +239,9 @@ class SmartChargerDeviceSensor(SensorEntity):
             "start_time": data.get("start_time"),
             "predicted_drain": data.get("predicted_drain"),
             "predicted_level_at_alarm": data.get("predicted_level_at_alarm"),
+            "drain_rate": data.get("drain_rate"),
+            "drain_confidence": data.get("drain_confidence"),
+            "drain_basis": data.get("drain_basis"),
             "smart_start_active": data.get("smart_start_active"),
             "precharge_level": data.get("precharge_level"),
             "precharge_active": data.get("precharge_active"),
@@ -240,3 +255,4 @@ class SmartChargerDeviceSensor(SensorEntity):
 
     async def async_update(self) -> None:
         await self.coordinator.async_request_refresh()
+

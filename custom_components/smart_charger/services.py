@@ -221,12 +221,24 @@ async def handle_auto_manage(
         currently_charging = _is_charging_state(charging_state)
 
         """Handle the start of a detected charging session."""
-        if currently_charging and sm.states.get(pid) != "charging":
-            learning.start_session(pid, battery, d.get(CONF_BATTERY_SENSOR))
+        if (
+            learning
+            and currently_charging
+            and sm.states.get(pid) != "charging"
+        ):
+            await learning.async_start_session(
+                pid,
+                battery,
+                d.get(CONF_BATTERY_SENSOR),
+            )
             sm.set_state(pid, "charging")
 
         """Handle the end of a detected charging session."""
-        if not currently_charging and sm.states.get(pid) == "charging":
+        if (
+            learning
+            and not currently_charging
+            and sm.states.get(pid) == "charging"
+        ):
             await learning.end_session(
                 pid,
                 level_end=battery,
@@ -261,18 +273,19 @@ async def handle_load_model(
     """Load or reset the predictive learning model on demand."""
     action = call.data.get("action", "load")
     pid = call.data.get("profile_id")
+    if not learning:
+        return
+
     if action == "reset":
-        if pid and pid in learning._data:
-            learning._data[pid] = {"samples": [], "cycles": []}
-            await learning.async_save()
+        if pid:
+            await learning.async_reset_profile(pid)
             _LOGGER.warning("Learning data reset for %s", pid)
-        elif not pid:
-            learning._data.clear()
-            await learning.async_save()
+        else:
+            await learning.async_reset_all()
             _LOGGER.warning("All learning data cleared")
     else:
         await learning.async_load(pid)
         _LOGGER.info("Learning model reloaded for %s", pid or "all")
 
     """Clean up outdated learning samples after handling the request."""
-    learning.cleanup_old_data()
+    await learning.async_cleanup_old_data()

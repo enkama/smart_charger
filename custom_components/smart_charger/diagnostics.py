@@ -203,33 +203,39 @@ def _collect_device_diagnostics(
 
 def _build_learning_summary(learning) -> Dict[str, Any]:
     summary: Dict[str, Any] = {}
-    if learning and getattr(learning, "_data", None):
-        profiles = getattr(learning, "_data", {})
-        summary["profile_count"] = len(profiles)
-        summary["profiles"] = list(profiles.keys())
-        summary["stats"] = {
-            pid: {
-                "sample_count": len(pdata.get("samples", [])),
-                "cycle_count": len(pdata.get("cycles", [])),
-                "last_cycle": (pdata.get("cycles") or [None])[-1],
-                "ema_avg_speed": (pdata.get("stats", {}) or {}).get("ema"),
-                "bucket_stats": pdata.get("bucket_stats", {}),
-            }
-            for pid, pdata in profiles.items()
-        }
-        active_sessions = {}
-        for pid, pdata in profiles.items():
-            session = pdata.get("current_session")
-            if session:
-                active_sessions[pid] = {
-                    "started": session.get("started"),
-                    "sensor": session.get("sensor"),
-                    "retries": session.get("retries", 0),
-                }
-        if active_sessions:
-            summary["active_sessions"] = active_sessions
-        summary["retry_schedule_seconds"] = list(SESSION_RETRY_DELAYS)
+    if not learning or not hasattr(learning, "snapshot"):
+        return summary
 
+    snapshot = learning.snapshot()
+    profiles = snapshot.get("profiles", {})
+    meta = snapshot.get("meta", {})
+
+    summary["meta"] = meta
+    summary["profile_count"] = meta.get("profile_count", len(profiles))
+    summary["profiles"] = list(profiles.keys())
+    stats_detail: Dict[str, Any] = {}
+    active_sessions: Dict[str, Any] = {}
+
+    for pid, pdata in profiles.items():
+        stats_detail[pid] = {
+            "sample_count": len(pdata.get("samples", [])),
+            "cycle_count": len(pdata.get("cycles", [])),
+            "last_cycle": (pdata.get("cycles") or [None])[-1],
+            "ema_avg_speed": (pdata.get("stats", {}) or {}).get("ema"),
+            "bucket_stats": pdata.get("bucket_stats", {}),
+        }
+        session = pdata.get("current_session")
+        if session:
+            active_sessions[pid] = {
+                "started": session.get("started"),
+                "sensor": session.get("sensor"),
+                "retries": session.get("retries", 0),
+            }
+
+    summary["stats"] = stats_detail
+    if active_sessions:
+        summary["active_sessions"] = active_sessions
+    summary["retry_schedule_seconds"] = list(SESSION_RETRY_DELAYS)
     return summary
 
 
@@ -307,6 +313,9 @@ def _capture_coordinator_state(
                 "precharge_margin_on": plan_copy.get("precharge_margin_on"),
                 "precharge_margin_off": plan_copy.get("precharge_margin_off"),
                 "smart_start_margin": plan_copy.get("smart_start_margin"),
+                "drain_rate": plan_copy.get("drain_rate"),
+                "drain_confidence": plan_copy.get("drain_confidence"),
+                "drain_basis": plan_copy.get("drain_basis"),
                 "precharge_release_level": release_map.get(pid),
                 "precharge_active": plan_copy.get("precharge_active"),
                 "smart_start_active": plan_copy.get("smart_start_active"),
