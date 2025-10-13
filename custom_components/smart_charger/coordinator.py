@@ -676,10 +676,24 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             )
             return False
 
-        if precharge_required and expected_on:
+        if precharge_required:
             target_release = (
                 release_level if release_level is not None else device.precharge_level
             )
+            if not expected_on:
+                self._log_action(
+                    device_name,
+                    logging.INFO,
+                    "[Precharge] %s requires precharge -> activating charger %s until %.1f%%",
+                    device_name,
+                    charger_ent,
+                    target_release,
+                )
+                await self.hass.services.async_call(
+                    "switch", "turn_on", service_data, blocking=False
+                )
+                return True
+
             self._log_action(
                 device_name,
                 logging.DEBUG,
@@ -687,6 +701,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 device_name,
                 target_release,
             )
+            return True
 
         return expected_on
 
