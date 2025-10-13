@@ -303,8 +303,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if debouncer := data.get("auto_manage_debouncer"):
             try:
                 debouncer.async_cancel()
-            except Exception:  # best effort
-                pass
+            except Exception as err:  # best effort
+                _LOGGER.debug(
+                    "Smart Charger debouncer cancel failed for %s: %s",
+                    entry.entry_id,
+                    err,
+                )
         _LOGGER.info("Smart Charger unloaded: %s", entry.entry_id)
     device_registry = dr.async_get(hass)
     devices = entry.data.get("devices", [])
