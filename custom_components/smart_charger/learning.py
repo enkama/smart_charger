@@ -70,9 +70,7 @@ class SmartChargerLearning:
         self.hass = hass
         self._entry_id = entry_id
         storage_key = (
-            f"{STORAGE_KEY_LEGACY}_{entry_id}"
-            if entry_id
-            else STORAGE_KEY_LEGACY
+            f"{STORAGE_KEY_LEGACY}_{entry_id}" if entry_id else STORAGE_KEY_LEGACY
         )
         self._store = Store(hass, self.STORAGE_VERSION, storage_key)
         self._legacy_store = (
@@ -441,7 +439,9 @@ class SmartChargerLearning:
             profile.setdefault("samples", []).append((timestamp, speed))
             profile.setdefault("cycles", []).append(
                 {
-                    "start_time": getattr(start_time, "isoformat", lambda: start_time)(),
+                    "start_time": getattr(
+                        start_time, "isoformat", lambda: start_time
+                    )(),
                     "end_time": getattr(end_time, "isoformat", lambda: end_time)(),
                     "start_level": round(start_level, 1),
                     "end_level": round(end_level, 1),

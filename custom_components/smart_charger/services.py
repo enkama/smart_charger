@@ -221,11 +221,7 @@ async def handle_auto_manage(
         currently_charging = _is_charging_state(charging_state)
 
         """Handle the start of a detected charging session."""
-        if (
-            learning
-            and currently_charging
-            and sm.states.get(pid) != "charging"
-        ):
+        if learning and currently_charging and sm.states.get(pid) != "charging":
             await learning.async_start_session(
                 pid,
                 battery,
@@ -234,11 +230,7 @@ async def handle_auto_manage(
             sm.set_state(pid, "charging")
 
         """Handle the end of a detected charging session."""
-        if (
-            learning
-            and not currently_charging
-            and sm.states.get(pid) == "charging"
-        ):
+        if learning and not currently_charging and sm.states.get(pid) == "charging":
             await learning.end_session(
                 pid,
                 level_end=battery,

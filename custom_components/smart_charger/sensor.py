@@ -255,4 +255,3 @@ class SmartChargerDeviceSensor(SensorEntity):
 
     async def async_update(self) -> None:
         await self.coordinator.async_request_refresh()
-

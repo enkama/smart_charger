@@ -432,7 +432,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             try:
                 speed = learning.avg_speed(device.name)
                 if speed:
-                    return max(LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, float(speed)))
+                    return max(
+                        LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, float(speed))
+                    )
             except Exception:
                 _LOGGER.debug("Predictive avg_speed failed for %s", device.name)
 
