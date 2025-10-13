@@ -47,6 +47,8 @@ The integration provides a config flow. Each device entry supports the following
 - Alarm entities that define desired ready times per weekday
 - Notification targets and thresholds for charging suggestions
 
+> **Tip:** Provide either a learning source or an average speed sensor so the coordinator can estimate how long charging takes. If neither is available the integration falls back to a conservative 24 hour charging window when it cannot determine a usable speed.
+
 You can revisit the options via the entry's *Configure* button to edit or remove devices at any time.
 
 Diagnostics expose both the configured and effective margins so you can confirm what the coordinator currently applies.

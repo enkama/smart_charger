@@ -23,7 +23,7 @@
       },
       "add_device_page_2": {
         "title": "Ladeziele & Predictive-Einstellungen",
-        "description": "Zielwerte, Sicherheitsgrenzen und Vorhersagemodus festlegen.",
+        "description": "Zielwerte, Sicherheitsgrenzen und Vorhersagemodus festlegen. Stelle Lernwerte oder einen Sensor für die Ladegeschwindigkeit bereit, damit Smart Charger die Laufzeit abschätzen kann; ohne Geschwindigkeit wird vorsorglich ein 24h-Fenster angenommen.",
         "data": {
           "target_level": "Ziel-Ladelevel (%)",
           "min_level": "Minimales Sicherheitslevel vor Ladebeginn (%)",
@@ -31,7 +31,7 @@
           "precharge_margin_on": "Abschalt-Marge für Frühstart (%)",
           "precharge_margin_off": "Wiederanlauf-Marge für Frühstart (%)",
           "smart_start_margin": "SmartStart-Abschlussmarge (%)",
-          "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (optional)",
+          "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (empfohlen ohne Lernwerte)",
           "use_predictive_mode": "Vorhersageladen aktivieren"
         }
       },
@@ -101,7 +101,7 @@
           "precharge_margin_on": "Abschalt-Marge für Frühstart (%)",
           "precharge_margin_off": "Wiederanlauf-Marge für Frühstart (%)",
           "smart_start_margin": "SmartStart-Abschlussmarge (%)",
-          "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit",
+          "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (wird genutzt, wenn keine Lernwerte verfügbar sind)",
           "presence_sensor": "Präsenzsensor",
           "use_predictive_mode": "Vorhersageladen aktivieren",
           "notify_enabled": "Benachrichtigungen aktivieren",

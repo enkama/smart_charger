@@ -23,7 +23,7 @@
       },
       "add_device_page_2": {
         "title": "Charging targets and predictive settings",
-        "description": "Set target levels, safety limits, and enable predictive mode.",
+        "description": "Set target levels, safety limits, and enable predictive mode. Provide learning data or an average speed sensor so Smart Charger can estimate run time; otherwise a conservative 24h fallback is used when no speed is known.",
         "data": {
           "target_level": "Target level (%)",
           "min_level": "Minimum safety level before charging (%)",
@@ -31,7 +31,7 @@
           "precharge_margin_on": "Precharge release margin (%)",
           "precharge_margin_off": "Precharge resume margin (%)",
           "smart_start_margin": "SmartStart finish margin (%)",
-          "avg_speed_sensor": "Average charging speed sensor (optional)",
+          "avg_speed_sensor": "Average charging speed sensor (recommended if learning is unavailable)",
           "use_predictive_mode": "Enable predictive charging"
         }
       },
@@ -101,7 +101,7 @@
           "precharge_margin_on": "Precharge release margin (%)",
           "precharge_margin_off": "Precharge resume margin (%)",
           "smart_start_margin": "SmartStart finish margin (%)",
-          "avg_speed_sensor": "Average charging speed sensor",
+          "avg_speed_sensor": "Average charging speed sensor (used when learning is unavailable)",
           "presence_sensor": "Presence sensor",
           "use_predictive_mode": "Enable predictive charging",
           "notify_enabled": "Enable notifications",

@@ -162,7 +162,7 @@ class SmartChargePlan:
             "duration_min": round(self.duration_min, 1),
             "alarm_time": dt_util.as_local(self.alarm_time).isoformat(),
             "start_time": (
-                dt_util.as_local(self.start_time).isoformat()
+                self._display_start_time()
                 if self.start_time
                 else None
             ),
@@ -181,6 +181,14 @@ class SmartChargePlan:
             "presence_state": self.presence_state,
             "last_update": dt_util.now().isoformat(),
         }
+
+    def _display_start_time(self) -> str:
+        assert self.start_time is not None
+        local_start = dt_util.as_local(self.start_time)
+        now_local = dt_util.as_local(dt_util.utcnow())
+        if local_start < now_local:
+            local_start = now_local
+        return local_start.isoformat()
 
 
 class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
@@ -202,6 +210,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._last_action_log = {}
         self._precharge_release: Dict[str, float] = {}
         self._drain_rate_cache: Dict[str, float] = {}
+        self._battery_history: Dict[str, tuple[datetime, float]] = {}
         self._precharge_margin_on = DEFAULT_PRECHARGE_MARGIN_ON
         self._precharge_margin_off = DEFAULT_PRECHARGE_MARGIN_OFF
         self._smart_start_margin = DEFAULT_SMART_START_MARGIN
@@ -459,8 +468,21 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         now_local: datetime,
         battery: float,
         is_home: bool,
+        charging_active: bool,
     ) -> tuple[float, float, list[str]]:
         base_reasons: list[str] = []
+        observed_rate: Optional[float] = None
+        last_sample = self._battery_history.get(device.name)
+        if last_sample and not charging_active:
+            prev_ts, prev_level = last_sample
+            elapsed_hours = (now_local - prev_ts).total_seconds() / 3600
+            if elapsed_hours > 0:
+                delta = prev_level - battery
+                if delta > 0.2:
+                    observed_rate = max(0.0, delta / elapsed_hours)
+        elif charging_active and last_sample:
+            base_reasons.append("charging_skip")
+
         if now_local.hour < 6:
             rate = 0.2
             base_reasons.append("night")
@@ -486,6 +508,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         rate = max(0.0, rate)
 
+        if observed_rate is not None:
+            rate = rate + (observed_rate - rate) * 0.3
+            base_reasons.append("observed_drain")
+
         prior = self._drain_rate_cache.get(device.name)
         if prior is not None:
             rate = prior + (rate - prior) * 0.5
@@ -494,6 +520,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             base_reasons.append("seeded")
 
         self._drain_rate_cache[device.name] = rate
+        self._battery_history[device.name] = (now_local, battery)
 
         confidence = 0.65
         if prior is None:
@@ -504,6 +531,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             confidence -= 0.1
         if battery < device.min_level:
             confidence -= 0.05
+        if observed_rate is not None:
+            confidence += 0.1
         confidence = max(0.2, min(0.95, confidence))
 
         return rate, confidence, base_reasons
@@ -531,6 +560,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             now_local=now_local,
             battery=battery,
             is_home=is_home,
+            charging_active=(charging_state == "charging"),
         )
 
         expected_drain = max(0.0, hours_until_alarm * drain_rate)
@@ -699,6 +729,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         service_data = {"entity_id": charger_ent}
         device_name = device.name
+        window_imminent = (
+            smart_start_active
+            and start_time is not None
+            and now_local + timedelta(seconds=5) >= start_time
+        )
 
         if battery <= device.min_level and not charger_is_on:
             self._log_action(
@@ -754,6 +789,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             and now_local < start_time
             and not precharge_required
             and battery >= device.target_level - smart_margin
+            and not window_imminent
         ):
             self._log_action(
                 device_name,
@@ -774,6 +810,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             and start_time
             and now_local < start_time
             and not precharge_required
+            and not window_imminent
         ):
             self._log_action(
                 device_name,
