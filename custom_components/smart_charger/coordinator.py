@@ -435,23 +435,29 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         device: DeviceConfig,
         learning,
         fallback: float = LEARNING_DEFAULT_SPEED,
-    ) -> float:
+    ) -> tuple[float, bool]:
         fallback = max(LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, fallback))
         if device.use_predictive_mode and learning and hasattr(learning, "avg_speed"):
             try:
                 speed = learning.avg_speed(device.name)
-                if speed:
-                    return max(
-                        LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, float(speed))
+                if speed and float(speed) > 0:
+                    return (
+                        max(
+                            LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, float(speed))
+                        ),
+                        True,
                     )
             except Exception:
                 _LOGGER.debug("Predictive avg_speed failed for %s", device.name)
 
         manual_state = self._float_state(device.avg_speed_sensor)
         if manual_state and manual_state > 0:
-            return max(LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, manual_state))
+            return (
+                max(LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, manual_state)),
+                True,
+            )
 
-        return fallback
+        return fallback, False
 
     def _presence(self, device: DeviceConfig) -> tuple[bool, str]:
         state = self._text_state(device.presence_sensor)
@@ -549,7 +555,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             return None
 
         charging_state = self._charging_state(device.charging_sensor)
-        avg_speed = self._avg_speed(device, learning)
+        avg_speed, speed_confident = self._avg_speed(device, learning)
         is_home, presence_state = self._presence(device)
         alarm_dt = self._resolve_alarm(device, now_local)
 
@@ -568,7 +574,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         charge_deficit = max(0.0, device.target_level - predicted_level)
         if charge_deficit > 0.0:
-            if avg_speed > 0.0:
+            if speed_confident and avg_speed > 0.0:
                 duration_min = min(charge_deficit / avg_speed, 24 * 60)
             else:
                 # Without a usable speed we fall back to the longest window to keep charging active.
