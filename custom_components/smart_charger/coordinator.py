@@ -524,8 +524,6 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         is_home, presence_state = self._presence(device)
         alarm_dt = self._resolve_alarm(device, now_local)
 
-        diff = max(0.0, device.target_level - battery)
-        duration_min = min(diff / avg_speed, 24 * 60)
         hours_until_alarm = max(0.0, (alarm_dt - now_local).total_seconds() / 3600)
 
         drain_rate, drain_confidence, drain_basis = self._predict_drain_rate(
@@ -538,7 +536,17 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         expected_drain = max(0.0, hours_until_alarm * drain_rate)
         predicted_level = max(0.0, battery - expected_drain)
 
-        if predicted_level < device.target_level:
+        charge_deficit = max(0.0, device.target_level - predicted_level)
+        if charge_deficit > 0.0:
+            if avg_speed > 0.0:
+                duration_min = min(charge_deficit / avg_speed, 24 * 60)
+            else:
+                # Without a usable speed we fall back to the longest window to keep charging active.
+                duration_min = 24 * 60
+        else:
+            duration_min = 0.0
+
+        if charge_deficit > 0.0 and duration_min > 0.0:
             start_time = alarm_dt - timedelta(minutes=duration_min)
             smart_start_active = True
         else:
