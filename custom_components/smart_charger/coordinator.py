@@ -47,6 +47,7 @@ from .const import (
     LEARNING_MAX_SPEED,
     LEARNING_MIN_SPEED,
     FULL_STATES,
+    MAX_OBSERVED_DRAIN_RATE,
     UNKNOWN_STATES,
     UPDATE_INTERVAL,
 )
@@ -583,15 +584,18 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
     ) -> tuple[float, bool]:
         if observed_rate is None:
             return rate, False
-        return rate + (observed_rate - rate) * 0.3, True
+        clamped_observed = max(0.0, min(MAX_OBSERVED_DRAIN_RATE, observed_rate))
+        adjusted = rate + (clamped_observed - rate) * 0.3
+        return min(MAX_OBSERVED_DRAIN_RATE, adjusted), True
 
     def _smooth_drain_rate(
         self, device: DeviceConfig, rate: float
     ) -> tuple[float, bool]:
         prior = self._drain_rate_cache.get(device.name)
         if prior is None:
-            return rate, False
+            return min(MAX_OBSERVED_DRAIN_RATE, max(0.0, rate)), False
         smoothed = prior + (rate - prior) * 0.5
+        smoothed = max(0.0, min(MAX_OBSERVED_DRAIN_RATE, smoothed))
         return smoothed, True
 
     def _drain_confidence(
@@ -976,6 +980,27 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 device_name,
                 logging.INFO,
                 "[SmartStart] %s scheduled for %s -> pausing charger until window opens (%s)",
+                device_name,
+                start_time.isoformat(),
+                charger_ent,
+            )
+            await self.hass.services.async_call(
+                "switch", "turn_off", service_data, blocking=False
+            )
+            return False
+
+        if (
+            charger_is_on
+            and smart_start_active
+            and start_time
+            and now_local < start_time
+            and not precharge_required
+            and not window_imminent
+        ):
+            self._log_action(
+                device_name,
+                logging.INFO,
+                "[SmartStart] %s finished precharge and will wait for the window at %s -> pausing charger (%s)",
                 device_name,
                 start_time.isoformat(),
                 charger_ent,

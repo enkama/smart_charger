@@ -18,10 +18,6 @@ Smart Charger is a custom integration for Home Assistant that orchestrates predi
 
 This integration can be added to HACS as a custom repository.
 
-**Warning**
-
-If you want to add this custom repository to HACS, do the following:
-
 HACS Menu
 
 1. Click on the 3 dots in the top right corner.
@@ -31,9 +27,35 @@ HACS Menu
 5. Click the "ADD" button.
 6. Install **Smart Charger** from the custom repositories list and restart Home Assistant.
 
-### Manual updates
+### Manual installation
 
-If you do not use HACS, repeat the copy step above with every release and restart Home Assistant afterwards.
+If you do not use HACS you can install the integration by copying the folder manually:
+
+1. Download the latest release archive (or use the GitHub *Raw* view when saving individual files).
+2. Copy the entire `custom_components/smart_charger` directory from the archive into your Home Assistant `config/custom_components` directory. Create the folder structure if it does not exist yet.
+3. Ensure all files and subfolders are present, including the translation resources:
+
+```
+config
+  custom_components
+    smart_charger
+      translations
+        *.json
+      __init__.py
+      config_flow.py
+      const.py
+      coordinator.py
+      diagnostics.py
+      learning.py
+      manifest.json
+      sensor.py
+      services.py
+      services.yaml
+```
+
+4. Restart Home Assistant to load the integration.
+
+Repeat these steps whenever a new release is published.
 
 ## Configuration
 

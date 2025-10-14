@@ -57,6 +57,8 @@ LEARNING_MIN_SPEED = 0.1
 LEARNING_MAX_SPEED = 5.0
 LEARNING_DEFAULT_SPEED = 1.0
 LEARNING_EMA_ALPHA = 0.35
+# Drain-rate sanity guard to avoid runaway predictions when sensors glitch.
+MAX_OBSERVED_DRAIN_RATE = 6.0
 
 # State categories used for interpretation of Home Assistant sensors.
 UNKNOWN_STATES = {"unknown", "unavailable", None}
