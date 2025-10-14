@@ -4,10 +4,12 @@ import inspect
 import logging
 from typing import Any, Callable
 
+import voluptuous as vol
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import async_track_state_change_event
 
@@ -244,6 +246,19 @@ def _resolve_entry_context(
 def _register_services(hass: HomeAssistant) -> None:
     domain_data = _get_domain_data(hass)
 
+    base_schema = vol.Schema({vol.Optional("entry_id"): cv.string})
+    entity_schema = base_schema.extend(
+        {
+            vol.Optional("entity_id"): vol.Any(cv.entity_id, cv.entity_ids),
+        }
+    )
+    load_model_schema = base_schema.extend(
+        {
+            vol.Optional("action", default="load"): vol.In({"load", "reset"}),
+            vol.Optional("profile_id"): cv.string,
+        }
+    )
+
     async def _svc_force_refresh(call: ServiceCall) -> None:
         _, entry_data = _resolve_entry_context(hass, call)
         await handle_force_refresh(hass, entry_data["coordinator"])
@@ -275,15 +290,15 @@ def _register_services(hass: HomeAssistant) -> None:
         cfg = {**entry.data, **getattr(entry, "options", {})}
         await handle_load_model(hass, cfg, call, entry_data["learning"])
 
-    for name, func in (
-        (SERVICE_FORCE_REFRESH, _svc_force_refresh),
-        (SERVICE_START_CHARGING, _svc_start),
-        (SERVICE_STOP_CHARGING, _svc_stop),
-        (SERVICE_AUTO_MANAGE, _svc_auto),
-        (SERVICE_LOAD_MODEL, _svc_load_model),
+    for name, func, schema in (
+        (SERVICE_FORCE_REFRESH, _svc_force_refresh, base_schema),
+        (SERVICE_START_CHARGING, _svc_start, entity_schema),
+        (SERVICE_STOP_CHARGING, _svc_stop, entity_schema),
+        (SERVICE_AUTO_MANAGE, _svc_auto, base_schema),
+        (SERVICE_LOAD_MODEL, _svc_load_model, load_model_schema),
     ):
         if not hass.services.has_service(DOMAIN, name):
-            hass.services.async_register(DOMAIN, name, func)
+            hass.services.async_register(DOMAIN, name, func, schema=schema)
 
     domain_data["services_registered"] = True
 

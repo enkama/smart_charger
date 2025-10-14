@@ -725,7 +725,9 @@ class SmartChargerLearning:
 
         def _callback(_now: Any) -> None:
             self._session_retry_unsubs.pop(profile_id, None)
-            self.hass.async_create_task(self._retry_end_session(profile_id))
+            asyncio.run_coroutine_threadsafe(
+                self._retry_end_session(profile_id), self.hass.loop
+            )
 
         self._session_retry_unsubs[profile_id] = async_call_later(
             self.hass,
@@ -757,7 +759,7 @@ class SmartChargerLearning:
 
         def _async_save_callback(_now: Any) -> None:
             self._save_debounce_unsub = None
-            self.hass.async_create_task(self.async_save())
+            asyncio.run_coroutine_threadsafe(self.async_save(), self.hass.loop)
 
         self._save_debounce_unsub = async_call_later(
             self.hass,
