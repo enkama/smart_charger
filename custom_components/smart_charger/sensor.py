@@ -199,11 +199,18 @@ class SmartChargerDeviceSensor(SensorEntity):
     def _handle_coordinator_update(self) -> None:
         profiles = self.coordinator.profiles or {}
         data = profiles.get(self.device_name)
+        prev_attrs = dict(self._attr_extra_state_attributes or {})
         if not data:
-            self._attr_native_value = STATE_UNKNOWN
-            self._attr_icon = "mdi:battery-question"
-            self._attr_extra_state_attributes = {"info": "No data available"}
-            self.async_write_ha_state()
+            fallback_attrs = {"info": "No data available"}
+            if (
+                self._attr_native_value != STATE_UNKNOWN
+                or self._attr_icon != "mdi:battery-question"
+                or prev_attrs != fallback_attrs
+            ):
+                self._attr_native_value = STATE_UNKNOWN
+                self._attr_icon = "mdi:battery-question"
+                self._attr_extra_state_attributes = fallback_attrs
+                self.async_write_ha_state()
             return
 
         if data.get("skipped"):
@@ -250,8 +257,15 @@ class SmartChargerDeviceSensor(SensorEntity):
             "skipped": data.get("skipped", False),
             "last_update": data.get("last_update"),
         }
-        self._attr_extra_state_attributes = extra
-        self.async_write_ha_state()
+        if (
+            self._attr_native_value != status
+            or self._attr_icon != icon_map.get(status, "mdi:battery")
+            or prev_attrs != extra
+        ):
+            self._attr_native_value = status
+            self._attr_icon = icon_map.get(status, "mdi:battery")
+            self._attr_extra_state_attributes = extra
+            self.async_write_ha_state()
 
     async def async_update(self) -> None:
         await self.coordinator.async_request_refresh()

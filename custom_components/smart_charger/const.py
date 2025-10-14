@@ -22,6 +22,7 @@ CONF_USE_PREDICTIVE_MODE = "use_predictive_mode"
 CONF_PRECHARGE_MARGIN_ON = "precharge_margin_on"
 CONF_PRECHARGE_MARGIN_OFF = "precharge_margin_off"
 CONF_SMART_START_MARGIN = "smart_start_margin"
+CONF_PRECHARGE_COUNTDOWN_WINDOW = "precharge_countdown_window"
 CONF_NOTIFY_ENABLED = "notify_enabled"
 CONF_NOTIFY_TARGETS = "notify_targets"
 CONF_SUGGESTION_THRESHOLD = "suggestion_threshold"
@@ -48,6 +49,7 @@ DEFAULT_TARGET_LEVEL = 95.0
 DEFAULT_PRECHARGE_MARGIN_ON = 0.5
 DEFAULT_PRECHARGE_MARGIN_OFF = 1.5
 DEFAULT_SMART_START_MARGIN = 2.0
+DEFAULT_PRECHARGE_COUNTDOWN_WINDOW = 5.0
 
 # Learning / prediction defaults.
 LEARNING_CACHE_TTL = 60  # seconds

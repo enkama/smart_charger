@@ -51,7 +51,8 @@
           "notify_enabled": "Benachrichtigungen aktivieren",
           "notify_targets": "Benachrichtigungsziele (durch Komma getrennt)",
           "suggestion_threshold": "Vorschlags-Schwellenwert",
-          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)"
+          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)",
+          "precharge_countdown_window": "Haltezeit für Frühstart-Freigabe (%)"
         }
       }
     },
@@ -107,7 +108,8 @@
           "notify_enabled": "Benachrichtigungen aktivieren",
           "notify_targets": "Benachrichtigungsziele",
           "suggestion_threshold": "Vorschlags-Schwellenwert",
-          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)"
+          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)",
+          "precharge_countdown_window": "Haltezeit für Frühstart-Freigabe (%)"
         }
       },
       "delete_device": {

@@ -14,10 +14,12 @@ from .const import (
     CONF_CHARGING_SENSOR,
     CONF_PRECHARGE_MARGIN_OFF,
     CONF_PRECHARGE_MARGIN_ON,
+    CONF_PRECHARGE_COUNTDOWN_WINDOW,
     CONF_PRESENCE_SENSOR,
     CONF_SMART_START_MARGIN,
     DEFAULT_PRECHARGE_MARGIN_OFF,
     DEFAULT_PRECHARGE_MARGIN_ON,
+    DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     DEFAULT_SMART_START_MARGIN,
     DOMAIN,
 )
@@ -85,6 +87,11 @@ def _coordinator_meta(coordinator) -> Dict[str, Any]:
         next_refresh_eta = max(0.0, interval_seconds - elapsed_since_success)
 
     pending_refresh = getattr(coordinator, "_refresh_pending", False)
+    countdown_window = getattr(
+        coordinator,
+        "_precharge_countdown_window",
+        DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
+    )
 
     return {
         "update_interval_seconds": interval_seconds,
@@ -92,6 +99,7 @@ def _coordinator_meta(coordinator) -> Dict[str, Any]:
         "seconds_since_last_success": elapsed_since_success,
         "next_refresh_eta_seconds": next_refresh_eta,
         "refresh_pending": pending_refresh,
+        CONF_PRECHARGE_COUNTDOWN_WINDOW: countdown_window,
     }
 
 
@@ -313,6 +321,11 @@ def _capture_coordinator_state(
                 "precharge_margin_on": plan_copy.get("precharge_margin_on"),
                 "precharge_margin_off": plan_copy.get("precharge_margin_off"),
                 "smart_start_margin": plan_copy.get("smart_start_margin"),
+                CONF_PRECHARGE_COUNTDOWN_WINDOW: getattr(
+                    coordinator,
+                    "_precharge_countdown_window",
+                    DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
+                ),
                 "drain_rate": plan_copy.get("drain_rate"),
                 "drain_confidence": plan_copy.get("drain_confidence"),
                 "drain_basis": plan_copy.get("drain_basis"),

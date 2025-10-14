@@ -39,6 +39,7 @@ from .const import (
     CONF_MIN_LEVEL,
     CONF_PRECHARGE_MARGIN_OFF,
     CONF_PRECHARGE_MARGIN_ON,
+    CONF_PRECHARGE_COUNTDOWN_WINDOW,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_TARGETS,
     CONF_PRECHARGE_LEVEL,
@@ -50,6 +51,7 @@ from .const import (
     CONF_USE_PREDICTIVE_MODE,
     DEFAULT_PRECHARGE_MARGIN_OFF,
     DEFAULT_PRECHARGE_MARGIN_ON,
+    DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     DEFAULT_SMART_START_MARGIN,
     DEFAULT_SENSOR_STALE_SECONDS,
     DEFAULT_SUGGESTION_THRESHOLD,
@@ -224,6 +226,13 @@ ALARM_FIELDS: tuple[SchemaField, ...] = (
         ),
         default=DEFAULT_SENSOR_STALE_SECONDS,
     ),
+    SchemaField(
+        CONF_PRECHARGE_COUNTDOWN_WINDOW,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=0, max=20, step=0.5, unit_of_measurement="%")
+        ),
+        default=DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
+    ),
 )
 
 
@@ -295,6 +304,12 @@ class SmartChargerFlowMixin:
             smart_start_margin = float(
                 data.get(CONF_SMART_START_MARGIN, DEFAULT_SMART_START_MARGIN)
             )
+            countdown_window = float(
+                data.get(
+                    CONF_PRECHARGE_COUNTDOWN_WINDOW,
+                    DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
+                )
+            )
         except (TypeError, ValueError):
             errors[CONF_TARGET_LEVEL] = "invalid_level"
             return errors
@@ -313,6 +328,8 @@ class SmartChargerFlowMixin:
             errors[CONF_PRECHARGE_MARGIN_OFF] = "invalid_margin"
         if smart_start_margin < 0:
             errors[CONF_SMART_START_MARGIN] = "invalid_margin"
+        if countdown_window < 0:
+            errors[CONF_PRECHARGE_COUNTDOWN_WINDOW] = "invalid_margin"
         return errors
 
     @staticmethod

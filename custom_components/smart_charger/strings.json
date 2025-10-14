@@ -51,7 +51,8 @@
           "notify_enabled": "Enable notifications",
           "notify_targets": "Notification targets (comma separated)",
           "suggestion_threshold": "Suggestion threshold",
-          "sensor_stale_seconds": "Sensor timeout (seconds)"
+          "sensor_stale_seconds": "Sensor timeout (seconds)",
+          "precharge_countdown_window": "Precharge release countdown window (%)"
         }
       }
     },
@@ -107,7 +108,8 @@
           "notify_enabled": "Enable notifications",
           "notify_targets": "Notification targets",
           "suggestion_threshold": "Suggestion threshold",
-          "sensor_stale_seconds": "Sensor timeout (seconds)"
+          "sensor_stale_seconds": "Sensor timeout (seconds)",
+          "precharge_countdown_window": "Precharge release countdown window (%)"
         }
       },
       "delete_device": {
