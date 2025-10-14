@@ -31,7 +31,7 @@
           "precharge_margin_on": "Abschalt-Marge für Frühstart (%)",
           "precharge_margin_off": "Wiederanlauf-Marge für Frühstart (%)",
           "smart_start_margin": "SmartStart-Abschlussmarge (%)",
-          "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (empfohlen ohne Lernwerte)",
+          "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (% pro Stunde, wenn keine Lernwerte vorliegen)",
           "use_predictive_mode": "Vorhersageladen aktivieren"
         }
       },
@@ -96,6 +96,13 @@
           "charging_sensor": "Ladezustands-Sensor (optional)",
           "charger_switch": "Ladeschalter",
           "alarm_entity": "Globaler Wecker / Aufwach-Entität",
+          "alarm_entity_monday": "Wecker am Montag",
+          "alarm_entity_tuesday": "Wecker am Dienstag",
+          "alarm_entity_wednesday": "Wecker am Mittwoch",
+          "alarm_entity_thursday": "Wecker am Donnerstag",
+          "alarm_entity_friday": "Wecker am Freitag",
+          "alarm_entity_saturday": "Wecker am Samstag",
+          "alarm_entity_sunday": "Wecker am Sonntag",
           "target_level": "Ziel-Ladelevel (%)",
           "min_level": "Minimales Sicherheitslevel (%)",
           "precharge_level": "Frühstart-Schwelle (%)",

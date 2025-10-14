@@ -31,7 +31,7 @@
           "precharge_margin_on": "Precharge release margin (%)",
           "precharge_margin_off": "Precharge resume margin (%)",
           "smart_start_margin": "SmartStart finish margin (%)",
-          "avg_speed_sensor": "Average charging speed sensor (recommended if learning is unavailable)",
+          "avg_speed_sensor": "Average charging speed sensor (% per hour, used when learning is unavailable)",
           "use_predictive_mode": "Enable predictive charging"
         }
       },
@@ -96,6 +96,13 @@
           "charging_sensor": "Charging state sensor (optional)",
           "charger_switch": "Charger switch",
           "alarm_entity": "Global alarm / wake-up entity",
+          "alarm_entity_monday": "Alarm entity Monday",
+          "alarm_entity_tuesday": "Alarm entity Tuesday",
+          "alarm_entity_wednesday": "Alarm entity Wednesday",
+          "alarm_entity_thursday": "Alarm entity Thursday",
+          "alarm_entity_friday": "Alarm entity Friday",
+          "alarm_entity_saturday": "Alarm entity Saturday",
+          "alarm_entity_sunday": "Alarm entity Sunday",
           "target_level": "Target level (%)",
           "min_level": "Minimum safety level (%)",
           "precharge_level": "Precharge level (%)",

@@ -41,13 +41,15 @@ The integration provides a config flow. Each device entry supports the following
 
 - Battery level sensor (percentage)
 - Charger switch entity to toggle charging
-- Optional charging state, presence, and average speed sensors
+- Optional charging state, presence, and average speed sensors (speed should report percentage gained per hour)
 - Predictive mode with target, minimum, and precharge levels
 - Tune precharge hysteresis (release/resume margins) and SmartStart finish buffers
 - Alarm entities that define desired ready times per weekday
 - Notification targets and thresholds for charging suggestions
 
 > **Tip:** Provide either a learning source or an average speed sensor so the coordinator can estimate how long charging takes. If neither is available the integration falls back to a conservative 24 hour charging window when it cannot determine a usable speed.
+
+You can build the average speed sensor with Home Assistant helpers if your device does not expose one directly. For example, create a [Template Sensor](https://www.home-assistant.io/integrations/template/) that measures the delta of your battery percentage over time, then wrap it with the [Statistics Sensor](https://www.home-assistant.io/integrations/statistics/) using a mean of the last few charge sessions. Aim to express the result in `%/h`, which Smart Charger interprets as the fallback rate whenever no learned data is available.
 
 You can revisit the options via the entry's *Configure* button to edit or remove devices at any time.
 
