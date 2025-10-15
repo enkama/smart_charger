@@ -652,7 +652,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         charge_deficit = max(0.0, device.target_level - predicted_level)
         if charge_deficit > 0.0:
             if speed_confident and avg_speed > 0.0:
-                duration_min = min(charge_deficit / avg_speed, 24 * 60)
+                duration_hours = charge_deficit / avg_speed
+                duration_min = min(duration_hours * 60.0, 24 * 60)
             else:
                 # Without a usable speed we fall back to the longest window to keep charging active.
                 duration_min = 24 * 60
@@ -760,6 +761,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         precharge_required = False
         release_level = self._precharge_release.get(device.name)
         previous_release = release_level
+        release_ready_at = self._precharge_release_ready.get(device.name)
         margin_on = (
             device.precharge_margin_on
             if device.precharge_margin_on is not None
@@ -812,13 +814,46 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     )
                 precharge_required = True
             elif release_level is not None:
-                if battery >= release_level and predicted_level >= predicted_threshold:
-                    near_precharge = (
-                        battery
-                        <= device.precharge_level + self._precharge_countdown_window
-                    )
-                    ready_at = self._precharge_release_ready.get(device.name)
-                    if not near_precharge:
+                previously_in_range = release_ready_at is not None
+                in_range = (
+                    release_level is not None
+                    and battery >= release_level
+                    and predicted_level >= predicted_threshold
+                )
+                near_precharge = (
+                    battery <= device.precharge_level + self._precharge_countdown_window
+                )
+
+                if not previously_in_range:
+                    if in_range:
+                        release_ready_at = now_local + PRECHARGE_RELEASE_HYSTERESIS
+                        self._precharge_release_ready[device.name] = release_ready_at
+                        self._log_action(
+                            device.name,
+                            logging.DEBUG,
+                            "[Precharge] %s release countdown started; clears at %s",
+                            device.name,
+                            release_ready_at.isoformat(),
+                        )
+                        precharge_required = True
+                    else:
+                        self._precharge_release_ready.pop(device.name, None)
+                        precharge_required = True
+                else:
+                    if in_range and near_precharge:
+                        if release_ready_at is not None and now_local >= release_ready_at:
+                            self._precharge_release.pop(device.name, None)
+                            self._precharge_release_ready.pop(device.name, None)
+                            self._log_action(
+                                device.name,
+                                logging.DEBUG,
+                                "[Precharge] %s release window cleared",
+                                device.name,
+                            )
+                            release_level = None
+                        else:
+                            precharge_required = True
+                    elif not near_precharge:
                         self._precharge_release.pop(device.name, None)
                         self._precharge_release_ready.pop(device.name, None)
                         self._log_action(
@@ -829,32 +864,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             battery,
                         )
                         release_level = None
-                    elif ready_at is None:
-                        ready_at = now_local + PRECHARGE_RELEASE_HYSTERESIS
-                        self._precharge_release_ready[device.name] = ready_at
-                        self._log_action(
-                            device.name,
-                            logging.DEBUG,
-                            "[Precharge] %s release countdown started; clears at %s",
-                            device.name,
-                            ready_at.isoformat(),
-                        )
-                        precharge_required = True
-                    elif now_local >= ready_at:
-                        self._precharge_release.pop(device.name, None)
-                        self._precharge_release_ready.pop(device.name, None)
-                        self._log_action(
-                            device.name,
-                            logging.DEBUG,
-                            "[Precharge] %s release window cleared",
-                            device.name,
-                        )
-                        release_level = None
                     else:
+                        # Keep countdown running even if the level briefly dips again.
                         precharge_required = True
-                else:
-                    self._precharge_release_ready.pop(device.name, None)
-                    precharge_required = True
 
         if release_level is not None and not precharge_required and is_home:
             if battery < release_level or predicted_level < device.precharge_level:
