@@ -301,6 +301,23 @@ class SmartChargerFlowMixin:
         names = [d.get("name") or f"Device {idx + 1}" for idx, d in enumerate(devices)]
         return "\n".join(f"• {name}" for name in names) if names else "-"
 
+    def _device_count_message(self, count: int) -> str:
+        language = getattr(getattr(self.hass, "config", None), "language", None) or "en"
+        primary = language.split("-")[0].lower()
+
+        if primary == "de":
+            if count == 0:
+                return "Keine Smart-Charger-Ger\u00e4te konfiguriert."
+            if count == 1:
+                return "1 Smart-Charger-Ger\u00e4t konfiguriert."
+            return f"{count} Smart-Charger-Ger\u00e4te konfiguriert."
+
+        if count == 0:
+            return "No Smart Charger devices configured."
+        if count == 1:
+            return "1 Smart Charger device configured."
+        return f"{count} Smart Charger devices configured."
+
     @staticmethod
     def _duplicate_name(
         devices: Sequence[Mapping[str, Any]],
@@ -693,10 +710,10 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 return await self.async_step_advanced_settings()
             return self.async_create_entry(title="", data={})
 
-        info = f"{len(self.devices)} Smart Charger device(s) configured."
+        info = self._device_count_message(len(self.devices))
         return self.async_show_menu(
             step_id="init",
-            menu_options=["edit_device", "delete_device", "advanced_settings"],
+            menu_options=["edit_device", "advanced_settings", "delete_device"],
             description_placeholders={"info": info},
         )
 
@@ -792,7 +809,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             if handler is not None:
                 return await handler()
 
-        info = f"{len(self.devices)} Smart Charger device(s) configured."
+        info = self._device_count_message(len(self.devices))
         return self.async_show_menu(
             step_id="advanced_settings",
             menu_options=[

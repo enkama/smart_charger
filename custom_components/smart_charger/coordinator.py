@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from typing import Any, Dict, Iterable, Mapping, Optional
@@ -45,6 +46,7 @@ from .const import (
     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
     DISCHARGING_STATES,
     DOMAIN,
+    DEFAULT_FALLBACK_MINUTES_PER_PERCENT,
     LEARNING_DEFAULT_SPEED,
     LEARNING_MAX_SPEED,
     LEARNING_MIN_SPEED,
@@ -180,18 +182,26 @@ class SmartChargePlan:
     last_update: datetime
 
     def as_dict(self) -> Dict[str, Any]:
+        charge_duration_display: Optional[float] = None
+        if not math.isclose(self.charge_duration_min, self.duration_min, abs_tol=0.05):
+            charge_duration_display = round(self.charge_duration_min, 1)
+
+        total_duration_display: Optional[float] = None
+        if not math.isclose(self.total_duration_min, self.duration_min, abs_tol=0.05):
+            total_duration_display = round(self.total_duration_min, 1)
+
+        precharge_duration_display: Optional[float] = None
+        if self.precharge_duration_min is not None and self.precharge_duration_min > 0:
+            precharge_duration_display = round(self.precharge_duration_min, 1)
+
         return {
             "battery": round(self.battery, 1),
             "target": round(self.target, 1),
             "avg_speed": round(self.avg_speed, 3),
             "duration_min": round(self.duration_min, 1),
-            "charge_duration_min": round(self.charge_duration_min, 1),
-            "total_duration_min": round(self.total_duration_min, 1),
-            "precharge_duration_min": (
-                round(self.precharge_duration_min, 1)
-                if self.precharge_duration_min is not None
-                else None
-            ),
+            "charge_duration_min": charge_duration_display,
+            "total_duration_min": total_duration_display,
+            "precharge_duration_min": precharge_duration_display,
             "alarm_time": dt_util.as_local(self.alarm_time).isoformat(),
             "start_time": (
                 self._display_start_time()
@@ -526,6 +536,19 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             except Exception:
                 _LOGGER.debug("Predictive avg_speed failed for %s", device.name)
 
+            try:
+                global_speed = learning.avg_speed()
+                if global_speed and float(global_speed) > 0:
+                    return (
+                        max(
+                            LEARNING_MIN_SPEED,
+                            min(LEARNING_MAX_SPEED, float(global_speed)),
+                        ),
+                        False,
+                    )
+            except Exception:
+                _LOGGER.debug("Predictive global avg_speed failed for %s", device.name)
+
         manual_state = self._float_state(device.avg_speed_sensor)
         if manual_state and manual_state > 0:
             return (
@@ -757,16 +780,22 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         charge_deficit = max(0.0, device.target_level - predicted_level)
         if charge_deficit > 0.0:
-            if speed_confident and avg_speed > 0.0:
-                duration_hours = charge_deficit / avg_speed
+            if avg_speed > 0.0:
+                duration_hours = charge_deficit / max(avg_speed, 1e-3)
                 duration_min = min(duration_hours * 60.0, 24 * 60)
-                if hours_until_alarm > 0:
-                    min_window_hours = 0.25
-                    duration_min = max(duration_min, min_window_hours * 60.0)
-                    duration_min = min(duration_min, hours_until_alarm * 60.0)
+                if not speed_confident:
+                    heuristic_min = (
+                        charge_deficit * DEFAULT_FALLBACK_MINUTES_PER_PERCENT
+                    )
+                    heuristic_min = min(heuristic_min, 24 * 60)
+                    if heuristic_min > 0:
+                        duration_min = min(duration_min, heuristic_min * 1.2)
             else:
-                # Without a usable speed we fall back to the longest window to keep charging active.
                 duration_min = 24 * 60
+            if hours_until_alarm > 0:
+                min_window_hours = 0.25
+                duration_min = max(duration_min, min_window_hours * 60.0)
+                duration_min = min(duration_min, hours_until_alarm * 60.0)
         else:
             duration_min = 0.0
 

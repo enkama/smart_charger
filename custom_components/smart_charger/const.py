@@ -64,6 +64,9 @@ LEARNING_RECENT_SAMPLE_HOURS = DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
 # Drain-rate sanity guard to avoid runaway predictions when sensors glitch.
 MAX_OBSERVED_DRAIN_RATE = 6.0
 
+# Heuristic used when no reliable speed data is available.
+DEFAULT_FALLBACK_MINUTES_PER_PERCENT = 3.0
+
 # State categories used for interpretation of Home Assistant sensors.
 UNKNOWN_STATES = {"unknown", "unavailable", None}
 CHARGING_STATES = {"charging", "on", "true"}

@@ -105,6 +105,13 @@ class SmartChargerNextStartSensor(SensorEntity):
                 "skipped": data.get("skipped", False),
                 "last_update": data.get("last_update"),
             }
+            for key in (
+                "charge_duration_min",
+                "total_duration_min",
+                "precharge_duration_min",
+            ):
+                if device_data[pid].get(key) is None:
+                    device_data[pid].pop(key, None)
 
         extra: Dict[str, Any] = {
             "devices": device_data,
@@ -268,6 +275,13 @@ class SmartChargerDeviceSensor(SensorEntity):
             "skipped": data.get("skipped", False),
             "last_update": data.get("last_update"),
         }
+        for key in (
+            "charge_duration_min",
+            "total_duration_min",
+            "precharge_duration_min",
+        ):
+            if extra.get(key) is None:
+                extra.pop(key, None)
         if (
             self._attr_native_value != status
             or self._attr_icon != icon_map.get(status, "mdi:battery")
