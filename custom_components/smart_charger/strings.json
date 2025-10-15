@@ -26,8 +26,8 @@
         "description": "Set target levels, safety limits, and enable predictive mode. Predictive margins and alert tuning can be adjusted later under Advanced settings.",
         "data": {
           "target_level": "Target level (%)",
-          "min_level": "Minimum safety level before charging (%)",
-          "precharge_level": "Precharge level (start early if below this)",
+          "min_level": "Minimum reserve level before charging (%)",
+          "precharge_level": "Precharge threshold (start early if below this)",
           "avg_speed_sensor": "Average charging speed sensor (% per hour, used when learning is unavailable)",
           "use_predictive_mode": "Enable predictive charging"
         }
@@ -99,8 +99,8 @@
           "alarm_entity_saturday": "Alarm entity Saturday",
           "alarm_entity_sunday": "Alarm entity Sunday",
           "target_level": "Target level (%)",
-          "min_level": "Minimum safety level (%)",
-          "precharge_level": "Precharge level (%)",
+          "min_level": "Minimum reserve level (%)",
+          "precharge_level": "Precharge threshold (%)",
           "avg_speed_sensor": "Average charging speed sensor (used when learning is unavailable)",
           "presence_sensor": "Presence sensor",
           "use_predictive_mode": "Enable predictive charging",
@@ -119,8 +119,7 @@
         "title": "Advanced Smart Charger settings",
         "description": "{info}\n\nChoose what you would like to adjust:",
         "menu_options": {
-          "advanced_settings_device": "⚙️ Device predictive margins",
-          "advanced_settings_global": "🌐 Global learning window"
+          "advanced_settings_device": "⚙️ Device predictive margins"
         }
       },
       "advanced_settings_device": {
@@ -139,13 +138,7 @@
           "smart_start_margin": "SmartStart finish margin (%)",
           "precharge_countdown_window": "Precharge release countdown window (%)",
           "suggestion_threshold": "Suggestion threshold",
-          "sensor_stale_seconds": "Sensor timeout (seconds)"
-        }
-      },
-      "advanced_settings_global": {
-        "title": "Advanced Smart Charger settings",
-        "description": "Tune global predictive behaviour.",
-        "data": {
+          "sensor_stale_seconds": "Sensor timeout (seconds)",
           "learning_recent_sample_hours": "Recent sample window (hours)"
         }
       }

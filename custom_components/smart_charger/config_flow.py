@@ -218,6 +218,18 @@ ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
         ),
         default=DEFAULT_SENSOR_STALE_SECONDS,
     ),
+    SchemaField(
+        CONF_LEARNING_RECENT_SAMPLE_HOURS,
+        selector=NumberSelector(
+            NumberSelectorConfig(
+                min=0.5,
+                max=48,
+                step=0.5,
+                unit_of_measurement="h",
+            )
+        ),
+        default=DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+    ),
 )
 ALARM_FIELDS: tuple[SchemaField, ...] = (
     SchemaField(
@@ -246,6 +258,7 @@ ADVANCED_FIELD_KEYS = {
     CONF_PRECHARGE_COUNTDOWN_WINDOW,
     CONF_SUGGESTION_THRESHOLD,
     CONF_SENSOR_STALE_SECONDS,
+    CONF_LEARNING_RECENT_SAMPLE_HOURS,
 }
 
 
@@ -323,6 +336,12 @@ class SmartChargerFlowMixin:
                     DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
                 )
             )
+            learning_window = float(
+                data.get(
+                    CONF_LEARNING_RECENT_SAMPLE_HOURS,
+                    DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+                )
+            )
         except (TypeError, ValueError):
             errors[CONF_TARGET_LEVEL] = "invalid_level"
             return errors
@@ -343,6 +362,8 @@ class SmartChargerFlowMixin:
             errors[CONF_SMART_START_MARGIN] = "invalid_margin"
         if countdown_window < 0:
             errors[CONF_PRECHARGE_COUNTDOWN_WINDOW] = "invalid_margin"
+        if learning_window < 0.25 or learning_window > 48:
+            errors[CONF_LEARNING_RECENT_SAMPLE_HOURS] = "invalid_margin"
         return errors
 
     @staticmethod
@@ -411,9 +432,16 @@ class SmartChargerFlowMixin:
         return self._schema_from_fields(fields, device)
 
     def _build_device_advanced_schema(
-        self, device: Mapping[str, Any]
+        self,
+        device: Mapping[str, Any],
+        *,
+        defaults: Optional[Mapping[str, Any]] = None,
     ) -> vol.Schema:
-        return self._schema_from_fields(ADVANCED_DEVICE_FIELDS, device)
+        merged: Dict[str, Any] = {}
+        if defaults:
+            merged.update(defaults)
+        merged.update(device)
+        return self._schema_from_fields(ADVANCED_DEVICE_FIELDS, merged)
 
     async def _async_remove_from_registry(self, name: str) -> None:
         try:
@@ -769,51 +797,8 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             step_id="advanced_settings",
             menu_options=[
                 "advanced_settings_device",
-                "advanced_settings_global",
             ],
             description_placeholders={"info": info},
-        )
-
-    async def async_step_advanced_settings_global(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ) -> config_entries.ConfigFlowResult:
-        current = self.config_entry.options.get(
-            CONF_LEARNING_RECENT_SAMPLE_HOURS,
-            DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
-        )
-        schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_LEARNING_RECENT_SAMPLE_HOURS,
-                    default=current,
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=0.5,
-                        max=48,
-                        step=0.5,
-                        unit_of_measurement="h",
-                    )
-                )
-            }
-        )
-
-        if user_input:
-            try:
-                value = float(user_input[CONF_LEARNING_RECENT_SAMPLE_HOURS])
-            except (TypeError, ValueError):
-                value = DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
-            value = max(0.5, min(48.0, value))
-            new_options = {**self.config_entry.options}
-            new_options[CONF_LEARNING_RECENT_SAMPLE_HOURS] = value
-            self.hass.config_entries.async_update_entry(
-                self.config_entry,
-                options=new_options,
-            )
-            return self.async_create_entry(title="", data={})
-
-        return self.async_show_form(
-            step_id="advanced_settings_global",
-            data_schema=schema,
         )
 
     async def async_step_advanced_settings_device(
@@ -849,7 +834,13 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             return self.async_abort(reason="invalid_device")
 
         device = self.devices[idx]
-        schema = self._build_device_advanced_schema(device)
+        defaults = {
+            CONF_LEARNING_RECENT_SAMPLE_HOURS: self.config_entry.options.get(
+                CONF_LEARNING_RECENT_SAMPLE_HOURS,
+                DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+            )
+        }
+        schema = self._build_device_advanced_schema(device, defaults=defaults)
         errors: dict[str, str] = {}
 
         if user_input:
@@ -863,9 +854,15 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             if not errors:
                 updated = self._sanitize_optional_entities(merged)
                 self.devices[idx] = updated
+                options_kwargs: dict[str, Any] = {}
+                if CONF_LEARNING_RECENT_SAMPLE_HOURS in self.config_entry.options:
+                    new_options = dict(self.config_entry.options)
+                    new_options.pop(CONF_LEARNING_RECENT_SAMPLE_HOURS, None)
+                    options_kwargs["options"] = new_options
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
-                    data={"devices": deepcopy(self.devices)}
+                    data={"devices": deepcopy(self.devices)},
+                    **options_kwargs,
                 )
                 self._advanced_idx = None
                 return self.async_create_entry(title="", data={})

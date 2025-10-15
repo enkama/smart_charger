@@ -86,6 +86,7 @@ class DeviceConfig:
     presence_sensor: Optional[str] = None
     alarm_mode: str = ALARM_MODE_SINGLE
     alarm_entity: Optional[str] = None
+    learning_recent_sample_hours: Optional[float] = None
     alarm_entities_by_weekday: Mapping[int, str] = field(default_factory=dict)
 
     @classmethod
@@ -113,6 +114,16 @@ class DeviceConfig:
                 return None
             return max(0.0, parsed)
 
+        def _coerce_learning_window(value: Any) -> Optional[float]:
+            if value in (None, ""):
+                return None
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError):
+                return None
+            clamped = max(0.25, min(48.0, parsed))
+            return clamped
+
         return cls(
             name=name,
             battery_sensor=battery_sensor,
@@ -129,6 +140,9 @@ class DeviceConfig:
             smart_start_margin=_coerce_margin(raw.get(CONF_SMART_START_MARGIN)),
             alarm_mode=alarm_mode,
             alarm_entity=raw.get(CONF_ALARM_ENTITY),
+            learning_recent_sample_hours=_coerce_learning_window(
+                raw.get(CONF_LEARNING_RECENT_SAMPLE_HOURS)
+            ),
             alarm_entities_by_weekday=weekday_map,
         )
 
@@ -224,7 +238,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._precharge_margin_off = DEFAULT_PRECHARGE_MARGIN_OFF
         self._smart_start_margin = DEFAULT_SMART_START_MARGIN
         self._precharge_countdown_window = DEFAULT_PRECHARGE_COUNTDOWN_WINDOW
-        self._learning_recent_sample_hours = DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
+        self._default_learning_recent_sample_hours = (
+            DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
+        )
 
     @property
     def profiles(self) -> Dict[str, Dict[str, Any]]:
@@ -280,31 +296,41 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._smart_start_margin = self._option_float(
                 CONF_SMART_START_MARGIN, DEFAULT_SMART_START_MARGIN
             )
-            self._learning_recent_sample_hours = max(
+            self._default_learning_recent_sample_hours = max(
                 0.25,
                 self._option_float(
                     CONF_LEARNING_RECENT_SAMPLE_HOURS,
                     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
                 ),
             )
-            if (
-                learning is not None
-                and hasattr(learning, "set_recent_sample_window")
-            ):
-                try:
-                    learning.set_recent_sample_window(
-                        self._learning_recent_sample_hours
-                    )
-                except Exception as err:
-                    _LOGGER.debug(
-                        "Unable to update learning window: %s", err
-                    )
             self._precharge_countdown_window = self._option_float(
                 CONF_PRECHARGE_COUNTDOWN_WINDOW, DEFAULT_PRECHARGE_COUNTDOWN_WINDOW
             )
 
             for device in self._iter_device_configs(raw_config.get("devices") or []):
-                plan = await self._build_plan(device, now_local, learning)
+                device_window = device.learning_recent_sample_hours
+                if device_window is None:
+                    device_window = self._default_learning_recent_sample_hours
+                device_window = max(0.25, min(48.0, float(device_window)))
+
+                if learning is not None and hasattr(
+                    learning, "set_recent_sample_window"
+                ):
+                    try:
+                        learning.set_recent_sample_window(device_window)
+                    except Exception as err:
+                        _LOGGER.debug(
+                            "Unable to update learning window for %s: %s",
+                            device.name,
+                            err,
+                        )
+
+                plan = await self._build_plan(
+                    device,
+                    now_local,
+                    learning,
+                    device_window,
+                )
                 if plan:
                     results[device.name] = plan.as_dict()
 
@@ -509,10 +535,15 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         battery: float,
         is_home: bool,
         charging_active: bool,
+        learning_window_hours: float,
     ) -> tuple[float, float, list[str]]:
         base_reasons: list[str] = []
         observed_rate, stale_history = self._estimate_observed_drain(
-            device, now_local=now_local, battery=battery, charging_active=charging_active
+            device,
+            now_local=now_local,
+            battery=battery,
+            charging_active=charging_active,
+            recent_window_hours=learning_window_hours,
         )
         if stale_history:
             base_reasons.append("stale_history")
@@ -562,6 +593,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         now_local: datetime,
         battery: float,
         charging_active: bool,
+        recent_window_hours: float,
     ) -> tuple[Optional[float], bool]:
         last_sample = self._battery_history.get(device.name)
         if not last_sample:
@@ -570,7 +602,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         elapsed_hours = (now_local - prev_ts).total_seconds() / 3600
         if elapsed_hours <= 0:
             return None, False
-        if elapsed_hours > self._learning_recent_sample_hours:
+        if elapsed_hours > recent_window_hours:
             return None, True
         if charging_active:
             return None, False
@@ -681,6 +713,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         device: DeviceConfig,
         now_local: datetime,
         learning,
+        learning_window_hours: float,
     ) -> Optional[SmartChargePlan]:
         battery = self._float_state(device.battery_sensor)
         if battery is None:
@@ -700,6 +733,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             battery=battery,
             is_home=is_home,
             charging_active=(charging_state == "charging"),
+            learning_window_hours=learning_window_hours,
         )
 
         expected_drain = max(0.0, hours_until_alarm * drain_rate)

@@ -26,8 +26,8 @@
         "description": "Zielwerte, Sicherheitsgrenzen und Vorhersagemodus festlegen. Detaillierte Vorhersagemargen und Benachrichtigungsgrenzen kannst du später unter den erweiterten Einstellungen anpassen.",
         "data": {
           "target_level": "Ziel-Ladelevel (%)",
-          "min_level": "Minimales Sicherheitslevel vor Ladebeginn (%)",
-          "precharge_level": "Frühstart-Schwelle (wenn darunter, früher laden)",
+          "min_level": "Mindestladestand für Sicherheitsladung (%)",
+          "precharge_level": "Vorladestand-Schwelle (bei Unterschreitung früh starten)",
           "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (% pro Stunde, wenn keine Lernwerte vorliegen)",
           "use_predictive_mode": "Vorhersageladen aktivieren"
         }
@@ -51,9 +51,9 @@
       }
     },
     "error": {
-  "invalid_level": "Ungültige Ladelevel-Einstellungen",
-  "invalid_margin": "Ungültige Margen-Konfiguration",
-  "name_exists": "Ein Gerät mit diesem Namen existiert bereits",
+      "invalid_level": "Ungültige Ladelevel-Einstellungen",
+      "invalid_margin": "Ungültige Margen-Konfiguration",
+      "name_exists": "Ein Gerät mit diesem Namen existiert bereits",
       "name_empty": "Gerätename darf nicht leer sein",
       "alarm_required_single": "Bitte wähle eine globale Wecker-Entität aus.",
       "alarm_required_per_day": "Bitte setze mindestens eine Wecker-Entität für einen Wochentag."
@@ -84,7 +84,7 @@
       },
       "edit_device_details": {
         "title": "Smart Charger Gerät bearbeiten",
-        "description": "Passe Sensoren, Ladegrenzen und Benachrichtigungen für {device_name} an. Erweiterte Vorhersage-Margen findest du unter den erweiterten Einstellungen.",
+        "description": "Sensoren, Ladegrenzen und Benachrichtigungen für {device_name} anpassen. Erweiterte Vorhersagemargen findest du unter den erweiterten Einstellungen.",
         "data": {
           "name": "Gerätename",
           "battery_sensor": "Batteriestand-Sensor (%)",
@@ -99,8 +99,8 @@
           "alarm_entity_saturday": "Wecker am Samstag",
           "alarm_entity_sunday": "Wecker am Sonntag",
           "target_level": "Ziel-Ladelevel (%)",
-          "min_level": "Minimales Sicherheitslevel (%)",
-          "precharge_level": "Frühstart-Schwelle (%)",
+          "min_level": "Mindestladestand für Sicherheitsladung (%)",
+          "precharge_level": "Vorladestand-Schwelle (%)",
           "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (wird genutzt, wenn keine Lernwerte verfügbar sind)",
           "presence_sensor": "Präsenzsensor",
           "use_predictive_mode": "Vorhersageladen aktivieren",
@@ -119,8 +119,7 @@
         "title": "Erweiterte Smart Charger Einstellungen",
         "description": "{info}\n\nWähle, was du anpassen möchtest:",
         "menu_options": {
-          "advanced_settings_device": "⚙️ Gerätespezifische Vorhersagemargen",
-          "advanced_settings_global": "🌐 Globales Lernfenster"
+          "advanced_settings_device": "⚙️ Gerätespezifische Vorhersagemargen"
         }
       },
       "advanced_settings_device": {
@@ -139,13 +138,7 @@
           "smart_start_margin": "SmartStart-Abschlussmarge (%)",
           "precharge_countdown_window": "Countdown-Fenster für Frühstart-Freigabe (%)",
           "suggestion_threshold": "Vorschlags-Schwellenwert",
-          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)"
-        }
-      },
-      "advanced_settings_global": {
-        "title": "Erweiterte Smart Charger Einstellungen",
-        "description": "Globale Vorhersageparameter anpassen.",
-        "data": {
+          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)",
           "learning_recent_sample_hours": "Fenster für aktuelle Ladesamples (Stunden)"
         }
       }
@@ -155,7 +148,7 @@
     "alarm_mode": {
       "options": {
         "single": "Ein Wecker für alle Tage",
-        "per_day": "Unterschiedliche Wecker pro Wochentag"
+        "per_day": "Unterschiedliche Wecker je Wochentag"
       }
     }
   }

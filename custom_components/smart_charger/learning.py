@@ -482,14 +482,20 @@ class SmartChargerLearning:
             profile = self._ensure_profile_schema(profile_id)
             stats = profile.get("stats", {})
             baseline = stats.get("ema")
-            if baseline and speed > self._clamp_speed(float(baseline) * 3):
-                _LOGGER.debug(
-                    "Dropping outlier session for %s: speed %.3f too far from baseline %.3f",
-                    profile_id,
-                    speed,
-                    baseline,
-                )
-                return False
+            sample_count = stats.get("count", 0)
+            if baseline and sample_count >= 3:
+                baseline_val = float(baseline)
+                hard_cap = self._clamp_speed(max(baseline_val * 6, baseline_val + 20))
+                if speed > hard_cap:
+                    _LOGGER.debug(
+                        "Dropping outlier session for %s: speed %.3f over cap %.3f (baseline %.3f, samples=%d)",
+                        profile_id,
+                        speed,
+                        hard_cap,
+                        baseline_val,
+                        sample_count,
+                    )
+                    return False
 
             speed = self._clamp_speed(speed)
             timestamp = dt_util.now().isoformat()
