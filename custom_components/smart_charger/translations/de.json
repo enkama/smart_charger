@@ -23,14 +23,11 @@
       },
       "add_device_page_2": {
         "title": "Ladeziele & Predictive-Einstellungen",
-        "description": "Zielwerte, Sicherheitsgrenzen und Vorhersagemodus festlegen. Stelle Lernwerte oder einen Sensor für die Ladegeschwindigkeit bereit, damit Smart Charger die Laufzeit abschätzen kann; ohne Geschwindigkeit wird vorsorglich ein 24h-Fenster angenommen.",
+        "description": "Zielwerte, Sicherheitsgrenzen und Vorhersagemodus festlegen. Detaillierte Vorhersagemargen und Benachrichtigungsgrenzen kannst du später unter den erweiterten Einstellungen anpassen.",
         "data": {
           "target_level": "Ziel-Ladelevel (%)",
           "min_level": "Minimales Sicherheitslevel vor Ladebeginn (%)",
           "precharge_level": "Frühstart-Schwelle (wenn darunter, früher laden)",
-          "precharge_margin_on": "Abschalt-Marge für Frühstart (%)",
-          "precharge_margin_off": "Wiederanlauf-Marge für Frühstart (%)",
-          "smart_start_margin": "SmartStart-Abschlussmarge (%)",
           "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (% pro Stunde, wenn keine Lernwerte vorliegen)",
           "use_predictive_mode": "Vorhersageladen aktivieren"
         }
@@ -49,10 +46,7 @@
           "alarm_entity_saturday": "Wecker am Samstag",
           "alarm_entity_sunday": "Wecker am Sonntag",
           "notify_enabled": "Benachrichtigungen aktivieren",
-          "notify_targets": "Benachrichtigungsziele (durch Komma getrennt)",
-          "suggestion_threshold": "Vorschlags-Schwellenwert",
-          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)",
-          "precharge_countdown_window": "Haltezeit für Frühstart-Freigabe (%)"
+          "notify_targets": "Benachrichtigungsziele (durch Komma getrennt)"
         }
       }
     },
@@ -111,9 +105,7 @@
           "presence_sensor": "Präsenzsensor",
           "use_predictive_mode": "Vorhersageladen aktivieren",
           "notify_enabled": "Benachrichtigungen aktivieren",
-          "notify_targets": "Benachrichtigungsziele",
-          "suggestion_threshold": "Vorschlags-Schwellenwert",
-          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)"
+          "notify_targets": "Benachrichtigungsziele"
         }
       },
       "delete_device": {
@@ -140,12 +132,14 @@
       },
       "advanced_settings_device_details": {
         "title": "Erweiterte Smart Charger Einstellungen",
-        "description": "Vorhersagemargen für {device_name} anpassen.",
+        "description": "Vorhersagemargen und Warnschwellen für {device_name} anpassen.",
         "data": {
           "precharge_margin_on": "Abschalt-Marge für Frühstart (%)",
           "precharge_margin_off": "Wiederanlauf-Marge für Frühstart (%)",
           "smart_start_margin": "SmartStart-Abschlussmarge (%)",
-          "precharge_countdown_window": "Haltezeit für Frühstart-Freigabe (%)"
+          "precharge_countdown_window": "Countdown-Fenster für Frühstart-Freigabe (%)",
+          "suggestion_threshold": "Vorschlags-Schwellenwert",
+          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)"
         }
       },
       "advanced_settings_global": {

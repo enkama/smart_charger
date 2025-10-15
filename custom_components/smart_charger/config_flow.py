@@ -206,6 +206,18 @@ ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
         ),
         default=DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     ),
+    SchemaField(
+        CONF_SUGGESTION_THRESHOLD,
+        selector=NumberSelector(NumberSelectorConfig(min=1, max=10, step=1)),
+        default=DEFAULT_SUGGESTION_THRESHOLD,
+    ),
+    SchemaField(
+        CONF_SENSOR_STALE_SECONDS,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=60, max=3600, step=60, unit_of_measurement="s")
+        ),
+        default=DEFAULT_SENSOR_STALE_SECONDS,
+    ),
 )
 ALARM_FIELDS: tuple[SchemaField, ...] = (
     SchemaField(
@@ -225,18 +237,6 @@ ALARM_FIELDS: tuple[SchemaField, ...] = (
         selector_factory=_notify_selector_from_flow,
         default_factory=list,
     ),
-    SchemaField(
-        CONF_SUGGESTION_THRESHOLD,
-        selector=NumberSelector(NumberSelectorConfig(min=1, max=10, step=1)),
-        default=DEFAULT_SUGGESTION_THRESHOLD,
-    ),
-    SchemaField(
-        CONF_SENSOR_STALE_SECONDS,
-        selector=NumberSelector(
-            NumberSelectorConfig(min=60, max=3600, step=60, unit_of_measurement="s")
-        ),
-        default=DEFAULT_SENSOR_STALE_SECONDS,
-    ),
 )
 
 ADVANCED_FIELD_KEYS = {
@@ -244,6 +244,8 @@ ADVANCED_FIELD_KEYS = {
     CONF_PRECHARGE_MARGIN_OFF,
     CONF_SMART_START_MARGIN,
     CONF_PRECHARGE_COUNTDOWN_WINDOW,
+    CONF_SUGGESTION_THRESHOLD,
+    CONF_SENSOR_STALE_SECONDS,
 }
 
 
@@ -376,7 +378,7 @@ class SmartChargerFlowMixin:
         self,
         device: Optional[Mapping[str, Any]] = None,
         *,
-        include_advanced: bool = True,
+        include_advanced: bool = False,
     ) -> vol.Schema:
         fields: tuple[SchemaField, ...]
         if include_advanced:
@@ -395,7 +397,6 @@ class SmartChargerFlowMixin:
             NAME_FIELD,
             *BASIC_DEVICE_FIELDS,
             *BASIC_TARGET_FIELDS,
-            *ADVANCED_DEVICE_FIELDS,
             *ALARM_FIELDS,
         )
         return self._schema_from_fields(fields, device)

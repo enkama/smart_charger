@@ -622,7 +622,22 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         if observed_rate is None:
             return rate, False
         clamped_observed = max(0.0, min(MAX_OBSERVED_DRAIN_RATE, observed_rate))
-        return clamped_observed, True
+        if clamped_observed <= 0.05:
+            return 0.0, True
+
+        if rate <= 0.0:
+            return clamped_observed, True
+
+        if clamped_observed > rate:
+            if clamped_observed > max(1.5, rate * 2):
+                blend = 0.25
+            else:
+                blend = 0.5
+        else:
+            blend = 0.6
+
+        adjusted = rate + (clamped_observed - rate) * blend
+        return min(MAX_OBSERVED_DRAIN_RATE, adjusted), True
 
     def _smooth_drain_rate(
         self,
@@ -634,7 +649,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         prior = self._drain_rate_cache.get(device.name)
         if prior is None:
             return min(MAX_OBSERVED_DRAIN_RATE, max(0.0, rate)), False
-        weight = 1.0 if observed else 0.5
+        weight = 0.65 if observed else 0.5
         smoothed = prior + (rate - prior) * weight
         smoothed = max(0.0, min(MAX_OBSERVED_DRAIN_RATE, smoothed))
         return smoothed, True
