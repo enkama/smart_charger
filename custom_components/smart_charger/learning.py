@@ -28,7 +28,7 @@ DECAY_HALF_LIFE_HOURS = 48
 SAVE_DEBOUNCE_SECONDS = 10
 SESSION_RETRY_DELAYS: tuple[int, ...] = (30, 90, 300)
 MIN_SESSION_DELTA = 0.2
-PROFILE_SCHEMA_VERSION = 2
+PROFILE_SCHEMA_VERSION = 3
 STORAGE_KEY_LEGACY = f"{DOMAIN}_learning"
 MAX_SAMPLES_DEFAULT = 200
 MAX_CYCLES_DEFAULT = 120
@@ -424,16 +424,17 @@ class SmartChargerLearning:
     ) -> bool:
         """Persist a completed charging cycle and update derived metrics."""
         duration_min = max(0.0, (end_time - start_time).total_seconds() / 60.0)
+        duration_hours = duration_min / 60.0
         try:
             delta = max(0.0, end_level - start_level)
-            speed = delta / duration_min if duration_min > 0 else 0.0
+            speed = delta / duration_hours if duration_hours > 0 else 0.0
         except Exception:
             delta = 0.0
             speed = 0.0
 
-        if delta < MIN_SESSION_DELTA or speed <= 0 or speed > 10:
+        if delta < MIN_SESSION_DELTA or speed <= 0 or speed > 500:
             _LOGGER.debug(
-                "Ignoring implausible session for %s: Δ%.3f%% over %.1fmin (speed=%.3f)",
+                "Ignoring implausible session for %s: Δ%.3f%% over %.1fmin (speed=%.3f%%/h)",
                 profile_id,
                 delta,
                 duration_min,
@@ -479,7 +480,7 @@ class SmartChargerLearning:
 
         if accepted:
             _LOGGER.debug(
-                "Recorded cycle for %s: Δ%.1f%% in %.1fmin (%.3f %%/min)",
+                "Recorded cycle for %s: Δ%.1f%% in %.1fmin (%.3f %%/h)",
                 profile_id,
                 end_level - start_level,
                 duration_min,
@@ -506,8 +507,13 @@ class SmartChargerLearning:
             profiles[profile_id] = pdata
 
         pdata.setdefault("version", PROFILE_SCHEMA_VERSION)
-        if pdata.get("version", 0) < PROFILE_SCHEMA_VERSION:
-            pdata["version"] = PROFILE_SCHEMA_VERSION
+        current_version = int(pdata.get("version", 0))
+        if current_version < 3:
+            self._migrate_profile_to_hourly_speeds(pdata)
+            current_version = 3
+        if current_version < PROFILE_SCHEMA_VERSION:
+            current_version = PROFILE_SCHEMA_VERSION
+        pdata["version"] = current_version
 
         pdata.setdefault("samples", [])
         pdata.setdefault("cycles", [])
@@ -520,6 +526,48 @@ class SmartChargerLearning:
             else:
                 pdata.pop("current_session", None)
         return pdata
+
+    def _migrate_profile_to_hourly_speeds(self, profile: Dict[str, Any]) -> None:
+        def _convert_speed(value: Any) -> Optional[float]:
+            try:
+                return self._clamp_speed(float(value) * 60.0)
+            except (TypeError, ValueError):
+                return None
+
+        samples = profile.get("samples")
+        if isinstance(samples, list):
+            converted_samples: list[Any] = []
+            for entry in samples:
+                if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                    converted = _convert_speed(entry[1])
+                    if converted is not None:
+                        converted_samples.append((entry[0], converted))
+                        continue
+                converted_samples.append(entry)
+            profile["samples"] = converted_samples
+
+        cycles = profile.get("cycles")
+        if isinstance(cycles, list):
+            for entry in cycles:
+                if isinstance(entry, dict) and "speed" in entry:
+                    converted = _convert_speed(entry.get("speed"))
+                    if converted is not None:
+                        entry["speed"] = round(converted, 3)
+
+        stats = profile.get("stats")
+        if isinstance(stats, dict):
+            converted = _convert_speed(stats.get("ema"))
+            if converted is not None:
+                stats["ema"] = converted
+
+        bucket_stats = profile.get("bucket_stats")
+        if isinstance(bucket_stats, dict):
+            for bucket in list(bucket_stats.keys()):
+                entry = bucket_stats.get(bucket)
+                if isinstance(entry, dict):
+                    converted = _convert_speed(entry.get("ema"))
+                    if converted is not None:
+                        entry["ema"] = converted
 
     def _invalidate_cache(self, profile_id: Optional[str]) -> None:
         if not self._avg_cache:

@@ -503,6 +503,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             base_reasons=base_reasons,
         )
 
+        if not base_reasons:
+            base_reasons.append("fallback")
+
         rate, observed_flag = self._apply_observed_adjustment(rate, observed_rate)
         if observed_flag:
             base_reasons.append("observed_drain")
@@ -518,10 +521,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             prior_exists=smoothed_flag,
         )
 
-        self._drain_rate_cache[device.name] = rate
+        clamped_rate = max(0.0, min(MAX_OBSERVED_DRAIN_RATE, rate))
+        self._drain_rate_cache[device.name] = clamped_rate
         self._battery_history[device.name] = (now_local, battery)
 
-        return rate, confidence, base_reasons
+        return clamped_rate, confidence, base_reasons
 
     def _estimate_observed_drain(
         self,
@@ -657,6 +661,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             else:
                 # Without a usable speed we fall back to the longest window to keep charging active.
                 duration_min = 24 * 60
+            duration_min = min(duration_min, hours_until_alarm * 60.0)
         else:
             duration_min = 0.0
 
@@ -667,7 +672,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         )
 
         charger_state = self.hass.states.get(device.charger_switch)
-        charger_is_on = charger_state and str(charger_state.state).lower() in (
+        if charger_state and charger_state.state not in UNKNOWN_STATES:
+            charger_available = True
+            charger_state_value = str(charger_state.state).lower()
+        else:
+            charger_available = False
+            charger_state_value = ""
+        charger_is_on = charger_available and charger_state_value in (
             "on",
             "charging",
             STATE_ON,
@@ -694,6 +705,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             now_local=now_local,
             battery=battery,
             charger_is_on=bool(charger_is_on),
+            charger_available=charger_available,
             is_home=is_home,
             start_time=start_time,
             smart_start_active=smart_start_active,
@@ -887,7 +899,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         *,
         now_local: datetime,
         battery: float,
-        charger_is_on: bool,
+    charger_is_on: bool,
+    charger_available: bool,
         is_home: bool,
         start_time: Optional[datetime],
         smart_start_active: bool,
@@ -921,6 +934,16 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 "switch", "turn_on", service_data, blocking=False
             )
             return True
+
+        if not charger_available:
+            if precharge_required or smart_start_active:
+                self._log_action(
+                    device_name,
+                    logging.DEBUG,
+                    "[Charger] %s unavailable -> skipping control actions",
+                    device_name,
+                )
+            return expected_on
 
         if (
             smart_start_active
