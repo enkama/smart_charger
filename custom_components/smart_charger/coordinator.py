@@ -659,9 +659,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 duration_hours = charge_deficit / avg_speed
                 duration_min = min(duration_hours * 60.0, 24 * 60)
                 if hours_until_alarm > 0:
-                    min_window_hours = max(0.5, hours_until_alarm * 0.2)
-                    if duration_hours < min_window_hours:
-                        duration_min = max(duration_min, min_window_hours * 60.0)
+                    min_window_hours = 0.5
+                    duration_min = max(duration_min, min_window_hours * 60.0)
             else:
                 # Without a usable speed we fall back to the longest window to keep charging active.
                 duration_min = 24 * 60
