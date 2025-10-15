@@ -659,12 +659,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 duration_hours = charge_deficit / avg_speed
                 duration_min = min(duration_hours * 60.0, 24 * 60)
                 if hours_until_alarm > 0:
-                    min_window_hours = 0.5
+                    min_window_hours = 0.25
                     duration_min = max(duration_min, min_window_hours * 60.0)
+                    duration_min = min(duration_min, hours_until_alarm * 60.0)
             else:
                 # Without a usable speed we fall back to the longest window to keep charging active.
                 duration_min = 24 * 60
-            duration_min = min(duration_min, hours_until_alarm * 60.0)
         else:
             duration_min = 0.0
 
@@ -714,6 +714,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             smart_start_active=smart_start_active,
             precharge_required=precharge_required,
             release_level=release_level,
+            margin_on=margin_on,
             smart_margin=smart_margin,
             charge_deficit=charge_deficit,
             predicted_level=predicted_level,
@@ -841,16 +842,29 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
                 if not previously_in_range:
                     if in_range:
-                        release_ready_at = now_local + PRECHARGE_RELEASE_HYSTERESIS
-                        self._precharge_release_ready[device.name] = release_ready_at
-                        self._log_action(
-                            device.name,
-                            logging.DEBUG,
-                            "[Precharge] %s release countdown started; clears at %s",
-                            device.name,
-                            release_ready_at.isoformat(),
-                        )
-                        precharge_required = True
+                        if near_precharge:
+                            release_ready_at = now_local + PRECHARGE_RELEASE_HYSTERESIS
+                            self._precharge_release_ready[device.name] = release_ready_at
+                            self._log_action(
+                                device.name,
+                                logging.DEBUG,
+                                "[Precharge] %s release countdown started; clears at %s",
+                                device.name,
+                                release_ready_at.isoformat(),
+                            )
+                            precharge_required = True
+                        else:
+                            self._precharge_release.pop(device.name, None)
+                            self._precharge_release_ready.pop(device.name, None)
+                            self._log_action(
+                                device.name,
+                                logging.DEBUG,
+                                "[Precharge] %s release cleared (battery %.1f%%, predicted %.1f%%)",
+                                device.name,
+                                battery,
+                                predicted_level,
+                            )
+                            release_level = None
                     else:
                         self._precharge_release_ready.pop(device.name, None)
                         precharge_required = True
@@ -896,6 +910,20 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         return precharge_required, release_level, margin_on, margin_off, smart_margin
 
+    async def _async_switch_call(self, action: str, service_data: Dict[str, Any]) -> bool:
+        entity_id = service_data.get("entity_id")
+        if not self.hass.services.has_service("switch", action):
+            _LOGGER.debug(
+                "Service switch.%s unavailable; skipping request for %s",
+                action,
+                entity_id,
+            )
+            return False
+        await self.hass.services.async_call(
+            "switch", action, service_data, blocking=False
+        )
+        return True
+
     async def _apply_charger_logic(
         self,
         device: DeviceConfig,
@@ -909,6 +937,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         smart_start_active: bool,
         precharge_required: bool,
         release_level: Optional[float],
+        margin_on: float,
         smart_margin: float,
         charge_deficit: float,
         predicted_level: float,
@@ -921,7 +950,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         window_imminent = (
             smart_start_active
             and start_time is not None
-            and now_local + timedelta(seconds=5) >= start_time
+            and start_time > now_local
+            and (start_time - now_local) <= timedelta(seconds=5)
         )
 
         if battery <= device.min_level and not charger_is_on:
@@ -933,9 +963,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 device.min_level,
                 charger_ent,
             )
-            await self.hass.services.async_call(
-                "switch", "turn_on", service_data, blocking=False
-            )
+            await self._async_switch_call("turn_on", service_data)
             return True
 
         if not charger_available:
@@ -962,9 +990,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 device_name,
                 charger_ent,
             )
-            await self.hass.services.async_call(
-                "switch", "turn_on", service_data, blocking=False
-            )
+            await self._async_switch_call("turn_on", service_data)
             return True
 
         if charger_is_on and battery >= device.target_level:
@@ -976,9 +1002,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 battery,
                 charger_ent,
             )
-            await self.hass.services.async_call(
-                "switch", "turn_off", service_data, blocking=False
-            )
+            await self._async_switch_call("turn_off", service_data)
             return False
 
         if (
@@ -999,9 +1023,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self.hass.services.async_call(
-                "switch", "turn_off", service_data, blocking=False
-            )
+            await self._async_switch_call("turn_off", service_data)
             return False
 
         if (
@@ -1022,16 +1044,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self.hass.services.async_call(
-                "switch", "turn_off", service_data, blocking=False
-            )
+            await self._async_switch_call("turn_off", service_data)
             return False
 
         if (
             charger_is_on
             and smart_start_active
             and start_time
-            and now_local < start_time
+            and now_local <= start_time
             and not precharge_required
             and not window_imminent
         ):
@@ -1043,10 +1063,25 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self.hass.services.async_call(
-                "switch", "turn_off", service_data, blocking=False
-            )
+            await self._async_switch_call("turn_off", service_data)
             return False
+
+        if (
+            precharge_required
+            and release_level is None
+            and battery >= device.precharge_level + margin_on
+            and predicted_level >= device.precharge_level + margin_on
+        ):
+            self._log_action(
+                device_name,
+                logging.DEBUG,
+                "[Precharge] %s skipping precharge (battery %.1f%%, predicted %.1f%%, threshold %.1f%%)",
+                device_name,
+                battery,
+                predicted_level,
+                device.precharge_level + margin_on,
+            )
+            precharge_required = False
 
         if precharge_required:
             target_release = (
@@ -1061,9 +1096,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     charger_ent,
                     target_release,
                 )
-                await self.hass.services.async_call(
-                    "switch", "turn_on", service_data, blocking=False
-                )
+                await self._async_switch_call("turn_on", service_data)
                 return True
 
             self._log_action(
