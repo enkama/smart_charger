@@ -158,6 +158,9 @@ class SmartChargePlan:
     target: float
     avg_speed: float
     duration_min: float
+    charge_duration_min: float
+    total_duration_min: float
+    precharge_duration_min: Optional[float]
     alarm_time: datetime
     start_time: Optional[datetime]
     predicted_drain: float
@@ -171,6 +174,7 @@ class SmartChargePlan:
     precharge_margin_off: float
     smart_start_margin: float
     precharge_active: bool
+    precharge_release_level: Optional[float]
     charging_state: str
     presence_state: str
     last_update: datetime
@@ -181,6 +185,13 @@ class SmartChargePlan:
             "target": round(self.target, 1),
             "avg_speed": round(self.avg_speed, 3),
             "duration_min": round(self.duration_min, 1),
+            "charge_duration_min": round(self.charge_duration_min, 1),
+            "total_duration_min": round(self.total_duration_min, 1),
+            "precharge_duration_min": (
+                round(self.precharge_duration_min, 1)
+                if self.precharge_duration_min is not None
+                else None
+            ),
             "alarm_time": dt_util.as_local(self.alarm_time).isoformat(),
             "start_time": (
                 self._display_start_time()
@@ -198,6 +209,11 @@ class SmartChargePlan:
             "precharge_margin_off": round(self.precharge_margin_off, 2),
             "smart_start_margin": round(self.smart_start_margin, 2),
             "precharge_active": self.precharge_active,
+            "precharge_release_level": (
+                round(self.precharge_release_level, 1)
+                if self.precharge_release_level is not None
+                else None
+            ),
             "charging_state": self.charging_state,
             "presence_state": self.presence_state,
             "last_update": dt_util.now().isoformat(),
@@ -759,6 +775,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             duration_min=duration_min,
             charge_deficit=charge_deficit,
         )
+        main_duration_min = duration_min
 
         charger_state = self.hass.states.get(device.charger_switch)
         if charger_state and charger_state.state not in UNKNOWN_STATES:
@@ -815,11 +832,37 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             and now_local < start_time
         )
 
+        total_duration_min = main_duration_min
+        precharge_duration_min: Optional[float] = None
+        if release_level is not None:
+            if avg_speed > 0:
+                precharge_deficit = max(0.0, release_level - battery)
+                if precharge_deficit > 0:
+                    precharge_duration_min = min(
+                        (precharge_deficit / max(avg_speed, 1e-3)) * 60.0,
+                        24 * 60,
+                    )
+            elif precharge_required:
+                precharge_duration_min = 24 * 60
+
+        if precharge_duration_min is not None:
+            total_duration_min = min(total_duration_min + precharge_duration_min, 48 * 60)
+
+        if precharge_active and precharge_duration_min is not None:
+            display_duration_min = precharge_duration_min
+        else:
+            display_duration_min = main_duration_min
+
+        total_duration_min = max(0.0, total_duration_min)
+
         return SmartChargePlan(
             battery=battery,
             target=device.target_level,
             avg_speed=avg_speed,
-            duration_min=duration_min,
+            duration_min=display_duration_min,
+            charge_duration_min=main_duration_min,
+            total_duration_min=total_duration_min,
+            precharge_duration_min=precharge_duration_min,
             alarm_time=alarm_dt,
             start_time=start_time,
             predicted_drain=expected_drain,
@@ -833,6 +876,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             precharge_margin_off=margin_off,
             smart_start_margin=smart_margin,
             precharge_active=precharge_active,
+            precharge_release_level=release_level,
             charging_state=charging_state,
             presence_state=presence_state,
             last_update=dt_util.utcnow(),

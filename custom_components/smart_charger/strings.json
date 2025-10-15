@@ -71,8 +71,8 @@
         "description": "{info}\n\nSelect an action:",
         "menu_options": {
           "edit_device": "⚙️ Edit existing device",
-          "delete_device": "🗑️ Delete device",
-          "advanced_settings": "🔧 Advanced settings"
+          "advanced_settings": "🔧 Advanced settings",
+          "delete_device": "🗑️ Delete device"
         }
       },
       "edit_device": {
@@ -149,6 +149,53 @@
       "options": {
         "single": "One alarm for all days",
         "per_day": "Different alarms per weekday"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_start": {
+        "name": "Smart Charger Next Start"
+      },
+      "learning_stats": {
+        "name": "Smart Charger Learning Stats"
+      },
+      "device_status": {
+        "name": "Smart Charger Device Status",
+        "state": {
+          "waiting": "Waiting",
+          "precharging": "Precharging",
+          "charging": "Charging",
+          "full": "Full",
+          "scheduled": "Scheduled",
+          "skipped": "Skipped",
+          "unknown": "Unknown"
+        },
+        "state_attributes": {
+          "battery": { "name": "Battery level" },
+          "target": { "name": "Target level" },
+          "avg_speed": { "name": "Average speed" },
+          "duration_min": { "name": "Current stage duration (min)" },
+          "charge_duration_min": { "name": "Main charge duration (min)" },
+          "total_duration_min": { "name": "Total duration (min)" },
+          "precharge_duration_min": { "name": "Precharge duration (min)" },
+          "alarm_time": { "name": "Alarm time" },
+          "start_time": { "name": "Start time" },
+          "predicted_drain": { "name": "Predicted drain" },
+          "predicted_level_at_alarm": { "name": "Predicted level at alarm" },
+          "drain_rate": { "name": "Drain rate" },
+          "drain_confidence": { "name": "Drain confidence" },
+          "drain_basis": { "name": "Drain data sources" },
+          "smart_start_active": { "name": "SmartStart active" },
+          "precharge_level": { "name": "Precharge level" },
+          "precharge_release_level": { "name": "Precharge release level" },
+          "precharge_active": { "name": "Precharge active" },
+          "charging_state": { "name": "Charging state" },
+          "presence_state": { "name": "Presence state" },
+          "skipped": { "name": "Plan skipped" },
+          "last_update": { "name": "Last update" },
+          "info": { "name": "Information" }
+        }
       }
     }
   }

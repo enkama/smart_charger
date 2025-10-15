@@ -71,8 +71,8 @@
         "description": "{info}\n\nWähle eine Aktion:",
         "menu_options": {
           "edit_device": "⚙️ Gerät bearbeiten",
-          "delete_device": "🗑️ Gerät löschen",
-          "advanced_settings": "🔧 Erweiterte Einstellungen"
+          "advanced_settings": "🔧 Erweiterte Einstellungen",
+          "delete_device": "🗑️ Gerät löschen"
         }
       },
       "edit_device": {
@@ -149,6 +149,53 @@
       "options": {
         "single": "Ein Wecker für alle Tage",
         "per_day": "Unterschiedliche Wecker je Wochentag"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_start": {
+        "name": "Smart Charger Nächster Start"
+      },
+      "learning_stats": {
+        "name": "Smart Charger Lernstatistiken"
+      },
+      "device_status": {
+        "name": "Smart Charger Gerätestatus",
+        "state": {
+          "waiting": "Warten",
+          "precharging": "Vorladung",
+          "charging": "Laden",
+          "full": "Voll",
+          "scheduled": "Geplant",
+          "skipped": "Übersprungen",
+          "unknown": "Unbekannt"
+        },
+        "state_attributes": {
+          "battery": { "name": "Batteriestand" },
+          "target": { "name": "Zielwert" },
+          "avg_speed": { "name": "Durchschnittsgeschwindigkeit" },
+          "duration_min": { "name": "Aktuelle Phase (Minuten)" },
+          "charge_duration_min": { "name": "Hauptladezeit (Minuten)" },
+          "total_duration_min": { "name": "Gesamtdauer (Minuten)" },
+          "precharge_duration_min": { "name": "Vorladedauer (Minuten)" },
+          "alarm_time": { "name": "Alarmzeit" },
+          "start_time": { "name": "Startzeit" },
+          "predicted_drain": { "name": "Prognostizierter Verbrauch" },
+          "predicted_level_at_alarm": { "name": "Prognostizierter Ladestand zum Alarm" },
+          "drain_rate": { "name": "Entladerate" },
+          "drain_confidence": { "name": "Vertrauen in Entladung" },
+          "drain_basis": { "name": "Datenbasis für Entladung" },
+          "smart_start_active": { "name": "SmartStart aktiv" },
+          "precharge_level": { "name": "Vorladestand" },
+          "precharge_release_level": { "name": "Vorladefreigabe" },
+          "precharge_active": { "name": "Vorladung aktiv" },
+          "charging_state": { "name": "Ladezustand" },
+          "presence_state": { "name": "Präsenzstatus" },
+          "skipped": { "name": "Übersprungen" },
+          "last_update": { "name": "Letzte Aktualisierung" },
+          "info": { "name": "Information" }
+        }
       }
     }
   }

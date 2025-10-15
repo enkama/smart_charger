@@ -42,6 +42,7 @@ class SmartChargerNextStartSensor(SensorEntity):
     _attr_name = "Smart Charger Next Start"
     _attr_icon = "mdi:battery-clock"
     _attr_should_poll = False
+    _attr_translation_key = "next_start"
 
     def __init__(self, coordinator, state_machine) -> None:
         self.coordinator = coordinator
@@ -85,6 +86,9 @@ class SmartChargerNextStartSensor(SensorEntity):
                 "target": data.get("target"),
                 "avg_speed": data.get("avg_speed"),
                 "duration_min": data.get("duration_min"),
+                "charge_duration_min": data.get("charge_duration_min"),
+                "total_duration_min": data.get("total_duration_min"),
+                "precharge_duration_min": data.get("precharge_duration_min"),
                 "alarm_time": data.get("alarm_time"),
                 "start_time": data.get("start_time"),
                 "predicted_drain": data.get("predicted_drain"),
@@ -95,6 +99,7 @@ class SmartChargerNextStartSensor(SensorEntity):
                 "smart_start_active": data.get("smart_start_active"),
                 "precharge_level": data.get("precharge_level"),
                 "precharge_active": data.get("precharge_active"),
+                "precharge_release_level": data.get("precharge_release_level"),
                 "charging_state": data.get("charging_state"),
                 "presence_state": data.get("presence_state", "unknown"),
                 "skipped": data.get("skipped", False),
@@ -120,6 +125,7 @@ class SmartChargerLearningSensor(SensorEntity):
     _attr_name = "Smart Charger Learning Stats"
     _attr_icon = "mdi:chart-line"
     _attr_should_poll = False
+    _attr_translation_key = "learning_stats"
 
     def __init__(self, learning) -> None:
         self.learning = learning
@@ -186,6 +192,7 @@ class SmartChargerDeviceSensor(SensorEntity):
             "info": "No data available"
         }
         self._attr_icon = "mdi:battery-question"
+        self._attr_translation_key = "device_status"
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -242,6 +249,9 @@ class SmartChargerDeviceSensor(SensorEntity):
             "target": data.get("target"),
             "avg_speed": data.get("avg_speed"),
             "duration_min": data.get("duration_min"),
+            "charge_duration_min": data.get("charge_duration_min"),
+            "total_duration_min": data.get("total_duration_min"),
+            "precharge_duration_min": data.get("precharge_duration_min"),
             "alarm_time": data.get("alarm_time"),
             "start_time": data.get("start_time"),
             "predicted_drain": data.get("predicted_drain"),
@@ -252,6 +262,7 @@ class SmartChargerDeviceSensor(SensorEntity):
             "smart_start_active": data.get("smart_start_active"),
             "precharge_level": data.get("precharge_level"),
             "precharge_active": data.get("precharge_active"),
+            "precharge_release_level": data.get("precharge_release_level"),
             "charging_state": data.get("charging_state"),
             "presence_state": data.get("presence_state", "unknown"),
             "skipped": data.get("skipped", False),
