@@ -25,6 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 
 """Half-life (hours) used when decaying older measurements."""
 DECAY_HALF_LIFE_HOURS = 12
+RECENT_SAMPLE_MAX_AGE_HOURS = 4
 SAVE_DEBOUNCE_SECONDS = 10
 SESSION_RETRY_DELAYS: tuple[int, ...] = (30, 90, 300)
 MIN_SESSION_DELTA = 0.2
@@ -253,6 +254,21 @@ class SmartChargerLearning:
             samples.extend(pdata.get("samples", []))
         return samples
 
+    def _latest_sample_speed(
+        self, profile_id: Optional[str], now: datetime
+    ) -> Optional[float]:
+        samples = self._collect_samples(profile_id)
+        if not samples:
+            return None
+        ts, speed = samples[-1]
+        parsed = dt_util.parse_datetime(ts)
+        if not parsed:
+            return None
+        age_hours = (now - parsed).total_seconds() / 3600.0
+        if age_hours <= RECENT_SAMPLE_MAX_AGE_HOURS:
+            return round(self._clamp_speed(float(speed)), 3)
+        return None
+
     def _recent_sample_average(
         self, profile_id: Optional[str], now: datetime
     ) -> Optional[float]:
@@ -280,6 +296,11 @@ class SmartChargerLearning:
             now = dt_util.now()
             bucket_key = _time_bucket(now.hour)
             if profile_id and profile_id in self._profiles:
+                fresh_sample = self._latest_sample_speed(profile_id, now)
+                if fresh_sample is not None:
+                    self._avg_cache_set(profile_id, bucket_key, fresh_sample)
+                    self._avg_cache_set(profile_id, "profile", fresh_sample)
+                    return fresh_sample
                 cached_bucket = self._avg_cache_get(profile_id, bucket_key)
                 if cached_bucket is not None:
                     return cached_bucket
