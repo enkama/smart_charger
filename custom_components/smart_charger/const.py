@@ -54,7 +54,7 @@ DEFAULT_PRECHARGE_COUNTDOWN_WINDOW = 5.0
 # Learning / prediction defaults.
 LEARNING_CACHE_TTL = 60  # seconds
 LEARNING_MIN_SPEED = 0.1
-LEARNING_MAX_SPEED = 5.0
+LEARNING_MAX_SPEED = 30.0
 LEARNING_DEFAULT_SPEED = 1.0
 LEARNING_EMA_ALPHA = 0.35
 # Drain-rate sanity guard to avoid runaway predictions when sensors glitch.
