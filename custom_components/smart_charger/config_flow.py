@@ -757,6 +757,25 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
     async def async_step_advanced_settings(
         self, user_input: Optional[Dict[str, Any]] = None
     ) -> config_entries.ConfigFlowResult:
+        if user_input and user_input.get("next_step_id"):
+            next_step = user_input["next_step_id"]
+            handler = getattr(self, f"async_step_{next_step}", None)
+            if handler is not None:
+                return await handler()
+
+        info = f"{len(self.devices)} Smart Charger device(s) configured."
+        return self.async_show_menu(
+            step_id="advanced_settings",
+            menu_options=[
+                "advanced_settings_device",
+                "advanced_settings_global",
+            ],
+            description_placeholders={"info": info},
+        )
+
+    async def async_step_advanced_settings_global(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
         current = self.config_entry.options.get(
             CONF_LEARNING_RECENT_SAMPLE_HOURS,
             DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
