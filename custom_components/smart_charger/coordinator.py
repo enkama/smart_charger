@@ -802,8 +802,18 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         elif device.precharge_level > device.min_level:
             trigger_threshold = device.precharge_level - margin_on
             predicted_threshold = device.precharge_level + margin_on
+            near_precharge_window = (
+                battery
+                <= device.precharge_level + self._precharge_countdown_window
+            )
 
-            if battery <= trigger_threshold or predicted_level <= trigger_threshold:
+            should_latch = False
+            if battery <= trigger_threshold:
+                should_latch = True
+            elif predicted_level <= trigger_threshold and near_precharge_window:
+                should_latch = True
+
+            if should_latch:
                 extra_margin = max(margin_off, expected_drain * 0.4)
                 release_cap = device.target_level
                 if smart_start_active and start_time and now_local < start_time:
@@ -836,9 +846,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     and battery >= release_level
                     and predicted_level >= predicted_threshold
                 )
-                near_precharge = (
-                    battery <= device.precharge_level + self._precharge_countdown_window
-                )
+                near_precharge = near_precharge_window
 
                 if not previously_in_range:
                     if in_range:

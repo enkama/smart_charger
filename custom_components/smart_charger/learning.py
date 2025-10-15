@@ -24,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 """Half-life (hours) used when decaying older measurements."""
-DECAY_HALF_LIFE_HOURS = 48
+DECAY_HALF_LIFE_HOURS = 12
 SAVE_DEBOUNCE_SECONDS = 10
 SESSION_RETRY_DELAYS: tuple[int, ...] = (30, 90, 300)
 MIN_SESSION_DELTA = 0.2
