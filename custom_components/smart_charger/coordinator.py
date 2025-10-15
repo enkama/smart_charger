@@ -534,7 +534,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         if observed_flag:
             base_reasons.append("observed_drain")
 
-        rate, smoothed_flag = self._smooth_drain_rate(device, rate)
+        rate, smoothed_flag = self._smooth_drain_rate(
+            device,
+            rate,
+            observed=observed_flag,
+        )
         base_reasons.append("ema_smoothing" if smoothed_flag else "seeded")
 
         confidence = self._drain_confidence(
@@ -571,9 +575,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         if charging_active:
             return None, False
         delta = prev_level - battery
-        if delta <= 0.2:
-            return None, False
-        return max(0.0, delta / elapsed_hours), False
+        if delta <= 0:
+            return 0.0, False
+        rate = max(0.0, delta / elapsed_hours)
+        if rate <= 0.02:
+            return 0.0, False
+        return rate, False
 
     def _baseline_drain_rate(
         self,
@@ -615,16 +622,20 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         if observed_rate is None:
             return rate, False
         clamped_observed = max(0.0, min(MAX_OBSERVED_DRAIN_RATE, observed_rate))
-        adjusted = rate + (clamped_observed - rate) * 0.3
-        return min(MAX_OBSERVED_DRAIN_RATE, adjusted), True
+        return clamped_observed, True
 
     def _smooth_drain_rate(
-        self, device: DeviceConfig, rate: float
+        self,
+        device: DeviceConfig,
+        rate: float,
+        *,
+        observed: bool,
     ) -> tuple[float, bool]:
         prior = self._drain_rate_cache.get(device.name)
         if prior is None:
             return min(MAX_OBSERVED_DRAIN_RATE, max(0.0, rate)), False
-        smoothed = prior + (rate - prior) * 0.5
+        weight = 1.0 if observed else 0.5
+        smoothed = prior + (rate - prior) * weight
         smoothed = max(0.0, min(MAX_OBSERVED_DRAIN_RATE, smoothed))
         return smoothed, True
 
