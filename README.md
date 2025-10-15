@@ -10,6 +10,7 @@ Smart Charger is a custom integration for Home Assistant that orchestrates predi
 - Predict required charging windows based on alarm schedules and presence signals
 - Automatically start, stop, or suggest charging via services or notifications
 - Maintain historical charging performance for smarter future suggestions
+- React to fresh charge sessions instantly while decaying older data over time
 - Provide diagnostics data and runtime insights through the Home Assistant UI
 
 ## Installation
@@ -70,7 +71,9 @@ The integration provides a config flow. Each device entry supports the following
 - Alarm entities that define desired ready times per weekday
 - Notification targets and thresholds for charging suggestions
 
-> **Tip:** Provide either a learning source or an average speed sensor so the coordinator can estimate how long charging takes. If neither is available the integration falls back to a conservative 24 hour charging window when it cannot determine a usable speed.
+> **Tip:** Provide either a learning source or an average speed sensor so the coordinator can estimate how long charging takes. Newly finished charge sessions from the last four hours are treated as ground-truth speeds, while older samples decay with a ~12 hour half-life. If neither source is available the integration falls back to a conservative 24 hour charging window.
+
+You can adjust how long those "recent" samples remain authoritative from the options menu under **Advanced settings**. Increasing the window helps when you charge infrequently, while reducing it favors more immediate behaviour at the cost of relying on fallback statistics sooner.
 
 You can build the average speed sensor with Home Assistant helpers if your device does not expose one directly. For example, create a [Template Sensor](https://www.home-assistant.io/integrations/template/) that measures the delta of your battery percentage over time, then wrap it with the [Statistics Sensor](https://www.home-assistant.io/integrations/statistics/) using a mean of the last few charge sessions. Aim to express the result in `%/h`, which Smart Charger interprets as the fallback rate whenever no learned data is available.
 

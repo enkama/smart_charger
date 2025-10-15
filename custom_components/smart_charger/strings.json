@@ -77,7 +77,8 @@
         "description": "{info}\n\nSelect an action:",
         "menu_options": {
           "edit_device": "⚙️ Edit existing device",
-          "delete_device": "🗑️ Delete device"
+          "delete_device": "🗑️ Delete device",
+          "advanced_settings": "🔧 Advanced settings"
         }
       },
       "edit_device": {
@@ -89,7 +90,7 @@
       },
       "edit_device_details": {
         "title": "Edit Smart Charger Device",
-        "description": "Modify sensors, charge limits, and predictive settings for {device_name}.",
+        "description": "Modify sensors, charge limits, and notifications for {device_name}. Advanced predictive margins are available under Advanced settings.",
         "data": {
           "name": "Device name",
           "battery_sensor": "Battery level sensor (%)",
@@ -106,17 +107,13 @@
           "target_level": "Target level (%)",
           "min_level": "Minimum safety level (%)",
           "precharge_level": "Precharge level (%)",
-          "precharge_margin_on": "Precharge release margin (%)",
-          "precharge_margin_off": "Precharge resume margin (%)",
-          "smart_start_margin": "SmartStart finish margin (%)",
           "avg_speed_sensor": "Average charging speed sensor (used when learning is unavailable)",
           "presence_sensor": "Presence sensor",
           "use_predictive_mode": "Enable predictive charging",
           "notify_enabled": "Enable notifications",
           "notify_targets": "Notification targets",
           "suggestion_threshold": "Suggestion threshold",
-          "sensor_stale_seconds": "Sensor timeout (seconds)",
-          "precharge_countdown_window": "Precharge release countdown window (%)"
+          "sensor_stale_seconds": "Sensor timeout (seconds)"
         }
       },
       "delete_device": {
@@ -124,6 +121,38 @@
         "description": "Select a Smart Charger device to remove.",
         "data": {
           "idx": "Select device to delete"
+        }
+      },
+      "advanced_settings": {
+        "title": "Advanced Smart Charger settings",
+        "description": "{info}\n\nChoose what you would like to adjust:",
+        "menu_options": {
+          "advanced_settings_device": "⚙️ Device predictive margins",
+          "advanced_settings_global": "🌐 Global learning window"
+        }
+      },
+      "advanced_settings_device": {
+        "title": "Advanced Smart Charger settings",
+        "description": "Select a Smart Charger device to fine-tune its predictive margins.",
+        "data": {
+          "idx": "Select device to tune"
+        }
+      },
+      "advanced_settings_device_details": {
+        "title": "Advanced Smart Charger settings",
+        "description": "Adjust predictive margins for {device_name}.",
+        "data": {
+          "precharge_margin_on": "Precharge release margin (%)",
+          "precharge_margin_off": "Precharge resume margin (%)",
+          "smart_start_margin": "SmartStart finish margin (%)",
+          "precharge_countdown_window": "Precharge release countdown window (%)"
+        }
+      },
+      "advanced_settings_global": {
+        "title": "Advanced Smart Charger settings",
+        "description": "Tune global predictive behaviour.",
+        "data": {
+          "learning_recent_sample_hours": "Recent sample window (hours)"
         }
       }
     }

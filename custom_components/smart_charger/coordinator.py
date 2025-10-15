@@ -32,6 +32,7 @@ from .const import (
     CONF_PRECHARGE_MARGIN_OFF,
     CONF_PRECHARGE_MARGIN_ON,
     CONF_PRECHARGE_COUNTDOWN_WINDOW,
+    CONF_LEARNING_RECENT_SAMPLE_HOURS,
     CONF_PRESENCE_SENSOR,
     CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
@@ -41,6 +42,7 @@ from .const import (
     DEFAULT_PRECHARGE_MARGIN_ON,
     DEFAULT_SMART_START_MARGIN,
     DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
+    DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
     DISCHARGING_STATES,
     DOMAIN,
     LEARNING_DEFAULT_SPEED,
@@ -222,6 +224,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._precharge_margin_off = DEFAULT_PRECHARGE_MARGIN_OFF
         self._smart_start_margin = DEFAULT_SMART_START_MARGIN
         self._precharge_countdown_window = DEFAULT_PRECHARGE_COUNTDOWN_WINDOW
+        self._learning_recent_sample_hours = DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
 
     @property
     def profiles(self) -> Dict[str, Dict[str, Any]]:
@@ -277,6 +280,25 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._smart_start_margin = self._option_float(
                 CONF_SMART_START_MARGIN, DEFAULT_SMART_START_MARGIN
             )
+            self._learning_recent_sample_hours = max(
+                0.25,
+                self._option_float(
+                    CONF_LEARNING_RECENT_SAMPLE_HOURS,
+                    DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+                ),
+            )
+            if (
+                learning is not None
+                and hasattr(learning, "set_recent_sample_window")
+            ):
+                try:
+                    learning.set_recent_sample_window(
+                        self._learning_recent_sample_hours
+                    )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "Unable to update learning window: %s", err
+                    )
             self._precharge_countdown_window = self._option_float(
                 CONF_PRECHARGE_COUNTDOWN_WINDOW, DEFAULT_PRECHARGE_COUNTDOWN_WINDOW
             )
@@ -489,9 +511,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         charging_active: bool,
     ) -> tuple[float, float, list[str]]:
         base_reasons: list[str] = []
-        observed_rate = self._estimate_observed_drain(
+        observed_rate, stale_history = self._estimate_observed_drain(
             device, now_local=now_local, battery=battery, charging_active=charging_active
         )
+        if stale_history:
+            base_reasons.append("stale_history")
         if charging_active and self._battery_history.get(device.name):
             base_reasons.append("charging_skip")
 
@@ -534,20 +558,22 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         now_local: datetime,
         battery: float,
         charging_active: bool,
-    ) -> Optional[float]:
+    ) -> tuple[Optional[float], bool]:
         last_sample = self._battery_history.get(device.name)
         if not last_sample:
-            return None
-        if charging_active:
-            return None
+            return None, False
         prev_ts, prev_level = last_sample
         elapsed_hours = (now_local - prev_ts).total_seconds() / 3600
         if elapsed_hours <= 0:
-            return None
+            return None, False
+        if elapsed_hours > self._learning_recent_sample_hours:
+            return None, True
+        if charging_active:
+            return None, False
         delta = prev_level - battery
         if delta <= 0.2:
-            return None
-        return max(0.0, delta / elapsed_hours)
+            return None, False
+        return max(0.0, delta / elapsed_hours), False
 
     def _baseline_drain_rate(
         self,
@@ -692,6 +718,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             margin_on,
             margin_off,
             smart_margin,
+            forecast_holdoff,
         ) = self._evaluate_precharge_state(
             device,
             now_local=now_local,
@@ -718,6 +745,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             smart_margin=smart_margin,
             charge_deficit=charge_deficit,
             predicted_level=predicted_level,
+            forecast_holdoff=forecast_holdoff,
         )
 
         precharge_active = (precharge_required and charger_expected_on) or (
@@ -773,7 +801,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         is_home: bool,
         smart_start_active: bool,
         start_time: Optional[datetime],
-    ) -> tuple[bool, Optional[float], float, float, float]:
+    ) -> tuple[bool, Optional[float], float, float, float, bool]:
         precharge_required = False
         release_level = self._precharge_release.get(device.name)
         previous_release = release_level
@@ -793,6 +821,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             if device.smart_start_margin is not None
             else self._smart_start_margin
         )
+        forecast_holdoff = False
 
         if not is_home:
             if release_level is not None:
@@ -916,7 +945,23 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     release_level,
                 )
 
-        return precharge_required, release_level, margin_on, margin_off, smart_margin
+        if (
+            device.use_predictive_mode
+            and not precharge_required
+            and release_level is None
+            and battery > device.precharge_level + self._precharge_countdown_window
+            and predicted_level <= device.precharge_level - margin_on
+        ):
+            forecast_holdoff = True
+
+        return (
+            precharge_required,
+            release_level,
+            margin_on,
+            margin_off,
+            smart_margin,
+            forecast_holdoff,
+        )
 
     async def _async_switch_call(self, action: str, service_data: Dict[str, Any]) -> bool:
         entity_id = service_data.get("entity_id")
@@ -949,6 +994,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         smart_margin: float,
         charge_deficit: float,
         predicted_level: float,
+        forecast_holdoff: bool,
     ) -> bool:
         charger_ent = device.charger_switch
         expected_on = charger_is_on
@@ -985,11 +1031,41 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             return expected_on
 
         if (
+            forecast_holdoff
+            and smart_start_active
+            and not precharge_required
+        ):
+            window_threshold = device.precharge_level + self._precharge_countdown_window
+            if charger_is_on:
+                self._log_action(
+                    device_name,
+                    logging.INFO,
+                    "[SmartStart] %s deferring predictive start until within %.1f%% window -> pausing charger (%s)",
+                    device_name,
+                    window_threshold,
+                    charger_ent,
+                )
+                await self._async_switch_call("turn_off", service_data)
+                return False
+
+            if start_time and now_local >= start_time:
+                self._log_action(
+                    device_name,
+                    logging.DEBUG,
+                    "[SmartStart] %s ignoring distant drain forecast (battery %.1f%%, guard %.1f%%)",
+                    device_name,
+                    battery,
+                    window_threshold,
+                )
+                return expected_on
+
+        if (
             smart_start_active
             and start_time
             and now_local >= start_time
             and not charger_is_on
             and not precharge_required
+            and not forecast_holdoff
         ):
             self._log_action(
                 device_name,

@@ -77,7 +77,8 @@
         "description": "{info}\n\nWähle eine Aktion:",
         "menu_options": {
           "edit_device": "⚙️ Gerät bearbeiten",
-          "delete_device": "🗑️ Gerät löschen"
+          "delete_device": "🗑️ Gerät löschen",
+          "advanced_settings": "🔧 Erweiterte Einstellungen"
         }
       },
       "edit_device": {
@@ -89,7 +90,7 @@
       },
       "edit_device_details": {
         "title": "Smart Charger Gerät bearbeiten",
-        "description": "Passe Sensoren, Ladegrenzen und Vorhersageeinstellungen für {device_name} an.",
+        "description": "Passe Sensoren, Ladegrenzen und Benachrichtigungen für {device_name} an. Erweiterte Vorhersage-Margen findest du unter den erweiterten Einstellungen.",
         "data": {
           "name": "Gerätename",
           "battery_sensor": "Batteriestand-Sensor (%)",
@@ -106,17 +107,13 @@
           "target_level": "Ziel-Ladelevel (%)",
           "min_level": "Minimales Sicherheitslevel (%)",
           "precharge_level": "Frühstart-Schwelle (%)",
-          "precharge_margin_on": "Abschalt-Marge für Frühstart (%)",
-          "precharge_margin_off": "Wiederanlauf-Marge für Frühstart (%)",
-          "smart_start_margin": "SmartStart-Abschlussmarge (%)",
           "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (wird genutzt, wenn keine Lernwerte verfügbar sind)",
           "presence_sensor": "Präsenzsensor",
           "use_predictive_mode": "Vorhersageladen aktivieren",
           "notify_enabled": "Benachrichtigungen aktivieren",
           "notify_targets": "Benachrichtigungsziele",
           "suggestion_threshold": "Vorschlags-Schwellenwert",
-          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)",
-          "precharge_countdown_window": "Haltezeit für Frühstart-Freigabe (%)"
+          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)"
         }
       },
       "delete_device": {
@@ -124,6 +121,38 @@
         "description": "Wähle ein Gerät zum Entfernen aus.",
         "data": {
           "idx": "Gerät zum Löschen auswählen"
+        }
+      },
+      "advanced_settings": {
+        "title": "Erweiterte Smart Charger Einstellungen",
+        "description": "{info}\n\nWähle, was du anpassen möchtest:",
+        "menu_options": {
+          "advanced_settings_device": "⚙️ Gerätespezifische Vorhersagemargen",
+          "advanced_settings_global": "🌐 Globales Lernfenster"
+        }
+      },
+      "advanced_settings_device": {
+        "title": "Erweiterte Smart Charger Einstellungen",
+        "description": "Wähle ein Smart Charger Gerät aus, um dessen Vorhersagemargen zu justieren.",
+        "data": {
+          "idx": "Gerät zum Feinjustieren auswählen"
+        }
+      },
+      "advanced_settings_device_details": {
+        "title": "Erweiterte Smart Charger Einstellungen",
+        "description": "Vorhersagemargen für {device_name} anpassen.",
+        "data": {
+          "precharge_margin_on": "Abschalt-Marge für Frühstart (%)",
+          "precharge_margin_off": "Wiederanlauf-Marge für Frühstart (%)",
+          "smart_start_margin": "SmartStart-Abschlussmarge (%)",
+          "precharge_countdown_window": "Haltezeit für Frühstart-Freigabe (%)"
+        }
+      },
+      "advanced_settings_global": {
+        "title": "Erweiterte Smart Charger Einstellungen",
+        "description": "Globale Vorhersageparameter anpassen.",
+        "data": {
+          "learning_recent_sample_hours": "Fenster für aktuelle Ladesamples (Stunden)"
         }
       }
     }

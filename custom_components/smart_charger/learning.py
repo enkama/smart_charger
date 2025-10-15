@@ -17,6 +17,7 @@ from .const import (
     LEARNING_EMA_ALPHA,
     LEARNING_MAX_SPEED,
     LEARNING_MIN_SPEED,
+    DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
     UNKNOWN_STATES,
 )
 
@@ -25,7 +26,6 @@ _LOGGER = logging.getLogger(__name__)
 
 """Half-life (hours) used when decaying older measurements."""
 DECAY_HALF_LIFE_HOURS = 12
-RECENT_SAMPLE_MAX_AGE_HOURS = 4
 SAVE_DEBOUNCE_SECONDS = 10
 SESSION_RETRY_DELAYS: tuple[int, ...] = (30, 90, 300)
 MIN_SESSION_DELTA = 0.2
@@ -85,6 +85,7 @@ class SmartChargerLearning:
         self._avg_cache: Dict[str, Tuple[float, float]] = {}
         self._lock = asyncio.Lock()
         self._migrated_from_legacy = False
+        self._recent_sample_max_age_hours = DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
 
     def _default_meta(self) -> Dict[str, Any]:
         now_iso = dt_util.utcnow().isoformat()
@@ -265,7 +266,7 @@ class SmartChargerLearning:
         if not parsed:
             return None
         age_hours = (now - parsed).total_seconds() / 3600.0
-        if age_hours <= RECENT_SAMPLE_MAX_AGE_HOURS:
+        if age_hours <= self._recent_sample_max_age_hours:
             return round(self._clamp_speed(float(speed)), 3)
         return None
 
@@ -298,6 +299,7 @@ class SmartChargerLearning:
             if profile_id and profile_id in self._profiles:
                 fresh_sample = self._latest_sample_speed(profile_id, now)
                 if fresh_sample is not None:
+                    self._invalidate_cache(profile_id)
                     self._avg_cache_set(profile_id, bucket_key, fresh_sample)
                     self._avg_cache_set(profile_id, "profile", fresh_sample)
                     return fresh_sample
@@ -331,6 +333,18 @@ class SmartChargerLearning:
         except Exception:
             _LOGGER.exception("Adaptive avg_speed calculation failed")
             return LEARNING_DEFAULT_SPEED
+
+    def set_recent_sample_window(self, hours: float) -> None:
+        """Update the time window considered "recent" for charge samples."""
+        try:
+            value = float(hours)
+        except (TypeError, ValueError):
+            return
+        value = max(0.25, min(48.0, value))
+        if abs(value - self._recent_sample_max_age_hours) < 1e-6:
+            return
+        self._recent_sample_max_age_hours = value
+        self._avg_cache.clear()
 
     async def async_start_session(
         self, profile_id: str, level_now: float, sensor: Optional[str] = None

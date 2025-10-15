@@ -40,6 +40,7 @@ from .const import (
     CONF_PRECHARGE_MARGIN_OFF,
     CONF_PRECHARGE_MARGIN_ON,
     CONF_PRECHARGE_COUNTDOWN_WINDOW,
+    CONF_LEARNING_RECENT_SAMPLE_HOURS,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_TARGETS,
     CONF_PRECHARGE_LEVEL,
@@ -52,6 +53,7 @@ from .const import (
     DEFAULT_PRECHARGE_MARGIN_OFF,
     DEFAULT_PRECHARGE_MARGIN_ON,
     DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
+    DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
     DEFAULT_SMART_START_MARGIN,
     DEFAULT_SENSOR_STALE_SECONDS,
     DEFAULT_SUGGESTION_THRESHOLD,
@@ -160,7 +162,7 @@ BASIC_DEVICE_FIELDS: tuple[SchemaField, ...] = (
     SchemaField(CONF_CHARGING_SENSOR, selector=CHARGING_SELECTOR, existing_only=True),
     SchemaField(CONF_PRESENCE_SENSOR, selector=PRESENCE_SELECTOR, existing_only=True),
 )
-TARGET_FIELDS: tuple[SchemaField, ...] = (
+BASIC_TARGET_FIELDS: tuple[SchemaField, ...] = (
     SchemaField(
         CONF_TARGET_LEVEL,
         validator=vol.Coerce(float),
@@ -172,6 +174,10 @@ TARGET_FIELDS: tuple[SchemaField, ...] = (
         validator=vol.Coerce(float),
         default=50,
     ),
+    SchemaField(CONF_AVG_SPEED_SENSOR, selector=SENSOR_SELECTOR, existing_only=True),
+    SchemaField(CONF_USE_PREDICTIVE_MODE, validator=bool, default=True),
+)
+ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
     SchemaField(
         CONF_PRECHARGE_MARGIN_ON,
         selector=NumberSelector(
@@ -193,8 +199,13 @@ TARGET_FIELDS: tuple[SchemaField, ...] = (
         ),
         default=DEFAULT_SMART_START_MARGIN,
     ),
-    SchemaField(CONF_AVG_SPEED_SENSOR, selector=SENSOR_SELECTOR, existing_only=True),
-    SchemaField(CONF_USE_PREDICTIVE_MODE, validator=bool, default=True),
+    SchemaField(
+        CONF_PRECHARGE_COUNTDOWN_WINDOW,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=0, max=20, step=0.5, unit_of_measurement="%")
+        ),
+        default=DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
+    ),
 )
 ALARM_FIELDS: tuple[SchemaField, ...] = (
     SchemaField(
@@ -226,14 +237,14 @@ ALARM_FIELDS: tuple[SchemaField, ...] = (
         ),
         default=DEFAULT_SENSOR_STALE_SECONDS,
     ),
-    SchemaField(
-        CONF_PRECHARGE_COUNTDOWN_WINDOW,
-        selector=NumberSelector(
-            NumberSelectorConfig(min=0, max=20, step=0.5, unit_of_measurement="%")
-        ),
-        default=DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
-    ),
 )
+
+ADVANCED_FIELD_KEYS = {
+    CONF_PRECHARGE_MARGIN_ON,
+    CONF_PRECHARGE_MARGIN_OFF,
+    CONF_SMART_START_MARGIN,
+    CONF_PRECHARGE_COUNTDOWN_WINDOW,
+}
 
 
 def _notify_selector(hass: HomeAssistant) -> SelectSelector:
@@ -362,9 +373,17 @@ class SmartChargerFlowMixin:
         return self._schema_from_fields(fields, device)
 
     def _build_target_schema(
-        self, device: Optional[Mapping[str, Any]] = None
+        self,
+        device: Optional[Mapping[str, Any]] = None,
+        *,
+        include_advanced: bool = True,
     ) -> vol.Schema:
-        return self._schema_from_fields(TARGET_FIELDS, device)
+        fields: tuple[SchemaField, ...]
+        if include_advanced:
+            fields = (*BASIC_TARGET_FIELDS, *ADVANCED_DEVICE_FIELDS)
+        else:
+            fields = BASIC_TARGET_FIELDS
+        return self._schema_from_fields(fields, device)
 
     def _build_alarm_schema(
         self, device: Optional[Mapping[str, Any]] = None
@@ -372,8 +391,28 @@ class SmartChargerFlowMixin:
         return self._schema_from_fields(ALARM_FIELDS, device)
 
     def _build_full_schema(self, device: Mapping[str, Any]) -> vol.Schema:
-        fields = (NAME_FIELD, *BASIC_DEVICE_FIELDS, *TARGET_FIELDS, *ALARM_FIELDS)
+        fields = (
+            NAME_FIELD,
+            *BASIC_DEVICE_FIELDS,
+            *BASIC_TARGET_FIELDS,
+            *ADVANCED_DEVICE_FIELDS,
+            *ALARM_FIELDS,
+        )
         return self._schema_from_fields(fields, device)
+
+    def _build_basic_options_schema(self, device: Mapping[str, Any]) -> vol.Schema:
+        fields = (
+            NAME_FIELD,
+            *BASIC_DEVICE_FIELDS,
+            *BASIC_TARGET_FIELDS,
+            *ALARM_FIELDS,
+        )
+        return self._schema_from_fields(fields, device)
+
+    def _build_device_advanced_schema(
+        self, device: Mapping[str, Any]
+    ) -> vol.Schema:
+        return self._schema_from_fields(ADVANCED_DEVICE_FIELDS, device)
 
     async def _async_remove_from_registry(self, name: str) -> None:
         try:
@@ -528,11 +567,12 @@ class SmartChargerConfigFlow(
             elif self._duplicate_name(devices, name, skip_idx=idx):
                 errors["name"] = "name_exists"
 
-            errors.update(self._level_errors(user_input))
-            errors.update(self._alarm_errors(user_input))
+            merged = {**device, **user_input}
+            errors.update(self._level_errors(merged))
+            errors.update(self._alarm_errors(merged))
 
             if not errors:
-                updated = self._sanitize_optional_entities(dict(user_input))
+                updated = self._sanitize_optional_entities({**device, **user_input})
                 devices[idx] = updated
                 self._save_devices(devices)
                 return await self.async_step_user()
@@ -620,12 +660,14 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 return await self.async_step_edit_device()
             if action == "delete_device":
                 return await self.async_step_delete_device()
+            if action == "advanced_settings":
+                return await self.async_step_advanced_settings()
             return self.async_create_entry(title="", data={})
 
         info = f"{len(self.devices)} Smart Charger device(s) configured."
         return self.async_show_menu(
             step_id="init",
-            menu_options=["edit_device", "delete_device"],
+            menu_options=["edit_device", "delete_device", "advanced_settings"],
             description_placeholders={"info": info},
         )
 
@@ -657,7 +699,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             return self.async_abort(reason="invalid_device")
 
         device = self.devices[idx]
-        schema = self._build_full_schema(device)
+        schema = self._build_basic_options_schema(device)
         errors: dict[str, str] = {}
 
         if len(user_input) > 1:
@@ -667,11 +709,13 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             elif self._duplicate_name(self.devices, name, skip_idx=idx):
                 errors["name"] = "name_exists"
 
-            errors.update(self._level_errors(user_input))
-            errors.update(self._alarm_errors(user_input))
+            merged = {**device, **user_input}
+            errors.update(self._level_errors(merged))
+            errors.update(self._alarm_errors(merged))
 
             if not errors:
-                self.devices[idx] = self._sanitize_optional_entities(dict(user_input))
+                updated = self._sanitize_optional_entities({**device, **user_input})
+                self.devices[idx] = updated
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, data={"devices": deepcopy(self.devices)}
                 )
@@ -709,3 +753,108 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 return self.async_create_entry(title="", data={})
 
         return self.async_show_form(step_id="delete_device", data_schema=schema)
+
+    async def async_step_advanced_settings(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
+        current = self.config_entry.options.get(
+            CONF_LEARNING_RECENT_SAMPLE_HOURS,
+            DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+        )
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_LEARNING_RECENT_SAMPLE_HOURS,
+                    default=current,
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0.5,
+                        max=48,
+                        step=0.5,
+                        unit_of_measurement="h",
+                    )
+                )
+            }
+        )
+
+        if user_input:
+            try:
+                value = float(user_input[CONF_LEARNING_RECENT_SAMPLE_HOURS])
+            except (TypeError, ValueError):
+                value = DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
+            value = max(0.5, min(48.0, value))
+            new_options = {**self.config_entry.options}
+            new_options[CONF_LEARNING_RECENT_SAMPLE_HOURS] = value
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                options=new_options,
+            )
+            return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="advanced_settings_global",
+            data_schema=schema,
+        )
+
+    async def async_step_advanced_settings_device(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
+        if not self.devices:
+            return self.async_abort(reason="no_devices")
+
+        schema = vol.Schema(
+            {
+                vol.Required("idx"): vol.In(
+                    {i: d["name"] for i, d in enumerate(self.devices)}
+                )
+            }
+        )
+
+        if user_input and "idx" in user_input:
+            idx = int(user_input["idx"])
+            if 0 <= idx < len(self.devices):
+                self._advanced_idx = idx
+                return await self.async_step_advanced_settings_device_details()
+
+        return self.async_show_form(
+            step_id="advanced_settings_device",
+            data_schema=schema,
+        )
+
+    async def async_step_advanced_settings_device_details(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
+        idx = getattr(self, "_advanced_idx", None)
+        if idx is None or idx >= len(self.devices):
+            return self.async_abort(reason="invalid_device")
+
+        device = self.devices[idx]
+        schema = self._build_device_advanced_schema(device)
+        errors: dict[str, str] = {}
+
+        if user_input:
+            merged = {**device, **user_input}
+            errors = {
+                key: value
+                for key, value in self._level_errors(merged).items()
+                if key in ADVANCED_FIELD_KEYS
+            }
+
+            if not errors:
+                updated = self._sanitize_optional_entities(merged)
+                self.devices[idx] = updated
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data={"devices": deepcopy(self.devices)}
+                )
+                self._advanced_idx = None
+                return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="advanced_settings_device_details",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "device_name": device.get("name", ""),
+            },
+        )
