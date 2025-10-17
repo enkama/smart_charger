@@ -24,7 +24,6 @@ class SmartChargerStateMachine:
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
-        """Map profile IDs to their current charging state."""
         self.states: Dict[str, str] = {}
         self.error_history: Dict[str, list[str]] = {}
         self.error_message: Optional[str] = None
@@ -223,10 +222,8 @@ async def handle_auto_manage(
         except ValueError:
             battery = 0.0
 
-        """Evaluate whether the charger currently reports an active session."""
         currently_charging = _is_charging_state(charging_state)
 
-        """Handle the start of a detected charging session."""
         if learning and currently_charging and sm.states.get(pid) != "charging":
             await learning.async_start_session(
                 pid,
@@ -235,7 +232,6 @@ async def handle_auto_manage(
             )
             sm.set_state(pid, "charging")
 
-        """Handle the end of a detected charging session."""
         if learning and not currently_charging and sm.states.get(pid) == "charging":
             await learning.end_session(
                 pid,
@@ -244,7 +240,6 @@ async def handle_auto_manage(
             )
             sm.set_state(pid, "idle")
 
-        """Stop charging automatically once the target level is reached."""
         if battery >= target and charger_ent:
             charger_state = _get_state(hass, charger_ent)
             if charger_state == STATE_ON:
@@ -290,5 +285,4 @@ async def handle_load_model(
         await learning.async_load(pid)
         _LOGGER.info("Learning model reloaded for %s", pid or "all")
 
-    """Clean up outdated learning samples after handling the request."""
     await learning.async_cleanup_old_data()

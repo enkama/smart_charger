@@ -27,7 +27,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
         SmartChargerLearningSensor(learning),
     ]
 
-    """Create a dynamic status sensor for every configured device."""
     for device in devices:
         name = device.get("name")
         if name:
@@ -185,8 +184,6 @@ class SmartChargerDeviceSensor(SensorEntity):
         self._attr_unique_id = (
             f"{DOMAIN}_{device_name.lower().replace(' ', '_')}_status"
         )
-
-        """Associate the sensor with the device registry entry."""
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device_name.lower().replace(" ", "_"))},
             name=f"Smart Charger – {device_name}",

@@ -59,8 +59,6 @@ LEARNING_MIN_SPEED = 0.1
 LEARNING_MAX_SPEED = 80.0
 LEARNING_DEFAULT_SPEED = 1.0
 LEARNING_EMA_ALPHA = 0.6
-# Backwards-compatible alias until references are migrated.
-LEARNING_RECENT_SAMPLE_HOURS = DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
 # Drain-rate sanity guard to avoid runaway predictions when sensors glitch.
 MAX_OBSERVED_DRAIN_RATE = 6.0
 

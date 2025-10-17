@@ -24,7 +24,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-"""Half-life (hours) used when decaying older measurements."""
+# Half-life (hours) used when decaying older measurements.
 DECAY_HALF_LIFE_HOURS = 12
 SAVE_DEBOUNCE_SECONDS = 10
 SESSION_RETRY_DELAYS: tuple[int, ...] = (30, 90, 300)
