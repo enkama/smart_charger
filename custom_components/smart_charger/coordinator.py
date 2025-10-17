@@ -608,6 +608,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             device,
             rate,
             observed=observed_flag,
+            charging_active=charging_active,
+            stale_history=stale_history,
         )
         base_reasons.append("ema_smoothing" if smoothed_flag else "seeded")
 
@@ -720,13 +722,22 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         rate: float,
         *,
         observed: bool,
+        charging_active: bool,
+        stale_history: bool,
     ) -> tuple[float, bool]:
         prior = self._drain_rate_cache.get(device.name)
         if prior is None:
             return min(MAX_OBSERVED_DRAIN_RATE, max(0.0, rate)), False
-        weight = 0.65 if observed else 0.5
+        if charging_active and not observed:
+            weight = 0.3
+        elif stale_history and not observed:
+            weight = 0.4
+        else:
+            weight = 0.65 if observed else 0.5
         smoothed = prior + (rate - prior) * weight
         smoothed = max(0.0, min(MAX_OBSERVED_DRAIN_RATE, smoothed))
+        if charging_active and not observed:
+            smoothed = min(smoothed, rate + 0.2)
         return smoothed, True
 
     def _drain_confidence(
