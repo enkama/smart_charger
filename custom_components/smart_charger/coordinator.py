@@ -1309,6 +1309,46 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             target_release = (
                 release_level if release_level is not None else device.precharge_level
             )
+            start_threshold = max(target_release - margin_on, device.precharge_level)
+
+            if (
+                not expected_on
+                and battery >= start_threshold
+                and not window_imminent
+                and predicted_level >= device.precharge_level
+            ):
+                self._log_action(
+                    device_name,
+                    logging.DEBUG,
+                    "[Precharge] %s already above %.1f%% -> waiting to latch charger",
+                    device_name,
+                    target_release,
+                )
+                return expected_on
+
+            if expected_on and battery >= target_release and not window_imminent:
+                if predicted_level < device.precharge_level:
+                    self._log_action(
+                        device_name,
+                        logging.DEBUG,
+                        "[Precharge] %s waiting for forecast to recover (battery %.1f%% -> predicted %.1f%%)",
+                        device_name,
+                        battery,
+                        predicted_level,
+                    )
+                    return True
+
+                self._log_action(
+                    device_name,
+                    logging.INFO,
+                    "[Precharge] %s reached release %.1f%% -> pausing charger (%s)",
+                    device_name,
+                    target_release,
+                    charger_ent,
+                )
+                await self._async_switch_call("turn_off", service_data)
+                return False
+
             if not expected_on:
                 self._log_action(
                     device_name,
