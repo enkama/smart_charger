@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from datetime import timedelta
-
 import pytest
 
 from homeassistant.util import dt as dt_util
@@ -29,3 +26,4 @@ async def test_confirmation_debounce():
     # you'd use the homeassistant test helpers. Here we only exercise the
     # coordinator helper methods in isolation where possible.
     assert True
+

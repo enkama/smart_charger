@@ -341,8 +341,8 @@ async def test_observed_drain_ignores_recent_charging_sample(hass) -> None:
     await hass.async_block_till_done()
 
     coordinator._battery_history[device_dict["name"]] = (
-    now - timedelta(minutes=1),
-    60.0,
+        now - timedelta(minutes=1),
+        60.0,
         True,
     )
 

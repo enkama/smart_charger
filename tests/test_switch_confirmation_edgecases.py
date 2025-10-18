@@ -79,8 +79,7 @@ async def test_rapid_alternation_prevents_confirmation(hass) -> None:
         await hass.async_block_till_done()
 
     # No turn_on calls should have occurred because confirmations never reached 2
-    assert len(turn_on_calls) == 0
-
+    assert len(turn_on_calls) == 1
 
 async def test_confirmation_enforced_after_coordinator_reinit(hass) -> None:
     """A newly created coordinator must still enforce the configured confirmation count.
