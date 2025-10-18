@@ -1,3 +1,6 @@
 pytest==8.3.4
-pytest-asyncio==0.20.3
-pytest-homeassistant-custom-component==0.13.205
+# Allow pytest-homeassistant-custom-component to select a compatible
+# pytest-asyncio for the runner's Python version. Pin a compatible range
+# instead of a single hard pin to avoid resolution failures on the CI
+# matrix.
+pytest-homeassistant-custom-component>=0.12,<0.14
