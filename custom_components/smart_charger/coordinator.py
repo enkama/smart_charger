@@ -224,11 +224,7 @@ class SmartChargePlan:
             "total_duration_min": total_duration_display,
             "precharge_duration_min": precharge_duration_display,
             "alarm_time": dt_util.as_local(self.alarm_time).isoformat(),
-            "start_time": (
-                self._display_start_time()
-                if self.start_time
-                else None
-            ),
+            "start_time": (self._display_start_time() if self.start_time else None),
             "predicted_drain": round(self.predicted_drain, 2),
             "predicted_level_at_alarm": round(self.predicted_level_at_alarm, 1),
             "drain_rate": round(self.drain_rate, 3),
@@ -411,14 +407,20 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             1.0, float(device.switch_throttle_seconds)
                         )
                     else:
-                        self._device_switch_throttle[ent] = self._default_switch_throttle_seconds
+                        self._device_switch_throttle[ent] = (
+                            self._default_switch_throttle_seconds
+                        )
                     # confirmation count
                     if device.switch_confirmation_count is not None:
                         self._desired_state_history.setdefault(ent, (False, 0))
                         # store per-entity confirmation requirement
-                        self._device_switch_throttle.setdefault(f"{ent}::confirm", float(device.switch_confirmation_count))
+                        self._device_switch_throttle.setdefault(
+                            f"{ent}::confirm", float(device.switch_confirmation_count)
+                        )
                     else:
-                        self._device_switch_throttle.setdefault(f"{ent}::confirm", float(self._confirmation_required))
+                        self._device_switch_throttle.setdefault(
+                            f"{ent}::confirm", float(self._confirmation_required)
+                        )
                 except Exception as err:
                     _LOGGER.debug(
                         "Unable to configure throttle/confirmation for %s: %s",
@@ -603,9 +605,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 speed = learning.avg_speed(device.name)
                 if speed and float(speed) > 0:
                     return (
-                        max(
-                            LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, float(speed))
-                        ),
+                        max(LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, float(speed))),
                         True,
                     )
             except Exception:
@@ -989,7 +989,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 precharge_duration_min = 24 * 60
 
         if precharge_duration_min is not None:
-            total_duration_min = min(total_duration_min + precharge_duration_min, 48 * 60)
+            total_duration_min = min(
+                total_duration_min + precharge_duration_min, 48 * 60
+            )
 
         if precharge_active and precharge_duration_min is not None:
             display_duration_min = precharge_duration_min
@@ -1079,8 +1081,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             trigger_threshold = device.precharge_level - margin_on
             predicted_threshold = device.precharge_level + margin_on
             near_precharge_window = (
-                battery
-                <= device.precharge_level + self._precharge_countdown_window
+                battery <= device.precharge_level + self._precharge_countdown_window
             )
 
             should_latch = False
@@ -1128,7 +1129,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     if in_range:
                         if near_precharge:
                             release_ready_at = now_local + PRECHARGE_RELEASE_HYSTERESIS
-                            self._precharge_release_ready[device.name] = release_ready_at
+                            self._precharge_release_ready[device.name] = (
+                                release_ready_at
+                            )
                             self._log_action(
                                 device.name,
                                 logging.DEBUG,
@@ -1154,7 +1157,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         precharge_required = True
                 else:
                     if in_range and near_precharge:
-                        if release_ready_at is not None and now_local >= release_ready_at:
+                        if (
+                            release_ready_at is not None
+                            and now_local >= release_ready_at
+                        ):
                             self._precharge_release.pop(device.name, None)
                             self._precharge_release_ready.pop(device.name, None)
                             self._log_action(
@@ -1210,7 +1216,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             forecast_holdoff,
         )
 
-    async def _async_switch_call(self, action: str, service_data: Dict[str, Any]) -> bool:
+    async def _async_switch_call(
+        self, action: str, service_data: Dict[str, Any]
+    ) -> bool:
         entity_id = service_data.get("entity_id")
         if not self.hass.services.has_service("switch", action):
             _LOGGER.debug(
@@ -1252,7 +1260,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         confirm_key = f"{entity_id}::confirm"
         required = int(
-            self._device_switch_throttle.get(confirm_key, float(self._confirmation_required))
+            self._device_switch_throttle.get(
+                confirm_key, float(self._confirmation_required)
+            )
         )
         hist = self._desired_state_history.get(entity_id, (desired, 0))
         if hist[0] == desired:
@@ -1261,7 +1271,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             count = 1
         self._desired_state_history[entity_id] = (desired, count)
 
-    async def _maybe_switch(self, action: str, service_data: Dict[str, Any], desired: bool, force: bool = False, bypass_throttle: bool = False) -> bool:
+    async def _maybe_switch(
+        self,
+        action: str,
+        service_data: Dict[str, Any],
+        desired: bool,
+        force: bool = False,
+        bypass_throttle: bool = False,
+    ) -> bool:
         """Issue a switch call after throttle and confirmation debounce.
 
         If force is True, bypass confirmation and throttle (for emergency actions).
@@ -1303,7 +1320,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._record_desired_state(entity_id, desired)
             confirm_key = f"{entity_id}::confirm"
             required = int(
-                self._device_switch_throttle.get(confirm_key, float(self._confirmation_required))
+                self._device_switch_throttle.get(
+                    confirm_key, float(self._confirmation_required)
+                )
             )
             hist = self._desired_state_history.get(entity_id, (desired, 0))
             count = hist[1]
@@ -1329,7 +1348,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             # deterministic tests that pass a simulated ``now_local`` control
             # throttle evaluation. Fall back to real UTC otherwise.
             if last:
-                now_for_cmp = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                now_for_cmp = (
+                    getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                )
                 elapsed = (now_for_cmp - last).total_seconds()
                 _LOGGER.debug(
                     "Throttle check for %s: last=%s elapsed=%.3fs throttle=%.1fs",
@@ -1433,11 +1454,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 )
             return expected_on
 
-        if (
-            forecast_holdoff
-            and smart_start_active
-            and not precharge_required
-        ):
+        if forecast_holdoff and smart_start_active and not precharge_required:
             window_threshold = device.precharge_level + self._precharge_countdown_window
             if charger_is_on:
                 self._log_action(
@@ -1448,7 +1465,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     window_threshold,
                     charger_ent,
                 )
-                await self._maybe_switch("turn_off", service_data, desired=False, bypass_throttle=True)
+                await self._maybe_switch(
+                    "turn_off", service_data, desired=False, bypass_throttle=True
+                )
                 return False
 
             if start_time and now_local >= start_time:
@@ -1512,7 +1531,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self._maybe_switch("turn_off", service_data, desired=False, bypass_throttle=True)
+            await self._maybe_switch(
+                "turn_off", service_data, desired=False, bypass_throttle=True
+            )
             return False
 
         if (
@@ -1533,7 +1554,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self._maybe_switch("turn_off", service_data, desired=False, bypass_throttle=True)
+            await self._maybe_switch(
+                "turn_off", service_data, desired=False, bypass_throttle=True
+            )
             return False
 
         if (
@@ -1617,7 +1640,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     target_release,
                     charger_ent,
                 )
-                await self._maybe_switch("turn_off", service_data, desired=False)
+                # When precharge release conditions are met, bypass the
+                # standard throttle so the charger can be paused immediately
+                # even if it was switched on in the same coordinator run.
+                await self._maybe_switch("turn_off", service_data, desired=False, bypass_throttle=True)
                 return False
 
             if not expected_on:
