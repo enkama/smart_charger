@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
 import logging
-from types import SimpleNamespace
-from pathlib import Path
 import tempfile
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 def _configure_test_logging() -> None:

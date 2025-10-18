@@ -11,13 +11,13 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
     DOMAIN,
     LEARNING_CACHE_TTL,
     LEARNING_DEFAULT_SPEED,
     LEARNING_EMA_ALPHA,
     LEARNING_MAX_SPEED,
     LEARNING_MIN_SPEED,
-    DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
     UNKNOWN_STATES,
 )
 

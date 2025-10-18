@@ -5,28 +5,27 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
-    async_mock_service,
     async_fire_time_changed,
+    async_mock_service,
 )
 
 from custom_components.smart_charger.const import (
-    CONF_BATTERY_SENSOR,
-    CONF_CHARGER_SWITCH,
-    CONF_TARGET_LEVEL,
-    CONF_MIN_LEVEL,
-    CONF_PRECHARGE_LEVEL,
-    CONF_PRECHARGE_MARGIN_ON,
-    CONF_PRECHARGE_MARGIN_OFF,
-    CONF_USE_PREDICTIVE_MODE,
+    ALARM_MODE_SINGLE,
     CONF_ALARM_ENTITY,
     CONF_ALARM_MODE,
-    ALARM_MODE_SINGLE,
-    CONF_SWITCH_THROTTLE_SECONDS,
+    CONF_BATTERY_SENSOR,
+    CONF_CHARGER_SWITCH,
+    CONF_MIN_LEVEL,
+    CONF_PRECHARGE_LEVEL,
+    CONF_PRECHARGE_MARGIN_OFF,
+    CONF_PRECHARGE_MARGIN_ON,
     CONF_SWITCH_CONFIRMATION_COUNT,
+    CONF_SWITCH_THROTTLE_SECONDS,
+    CONF_TARGET_LEVEL,
+    CONF_USE_PREDICTIVE_MODE,
     DOMAIN,
 )
 from custom_components.smart_charger.coordinator import (

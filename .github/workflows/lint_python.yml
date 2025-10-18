@@ -22,8 +22,4 @@ jobs:
       - run: isort --check-only --profile black . || true
       - run: mkdir --parents --verbose .mypy_cache
       - run: mypy --ignore-missing-imports --install-types --non-interactive --disable-error-code=call-arg . || true
-  # Tests are not executed in this lint job because Home Assistant and
-  # related test dependencies are not installed here. Tests are run in
-  # the dedicated CI test workflow which installs the required test
-  # environment.
       - run: shopt -s globstar && pyupgrade --py36-plus **/*.py || true

@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -18,8 +17,8 @@ from custom_components.smart_charger.const import (
     CONF_ALARM_MODE,
     CONF_AVG_SPEED_SENSOR,
     CONF_BATTERY_SENSOR,
-    CONF_CHARGING_SENSOR,
     CONF_CHARGER_SWITCH,
+    CONF_CHARGING_SENSOR,
     CONF_MIN_LEVEL,
     CONF_PRECHARGE_LEVEL,
     CONF_PRECHARGE_MARGIN_OFF,
