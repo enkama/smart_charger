@@ -31,7 +31,10 @@ from custom_components.smart_charger.const import (
     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
     DOMAIN,
 )
-from custom_components.smart_charger.coordinator import DeviceConfig, SmartChargerCoordinator
+from custom_components.smart_charger.coordinator import (
+    DeviceConfig,
+    SmartChargerCoordinator,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -158,7 +161,10 @@ async def test_plan_hides_optional_durations_without_precharge(hass) -> None:
     assert exported["duration_min"] > 0
     assert exported.get("charge_duration_min") is None
     assert exported.get("total_duration_min") is None
-    assert "precharge_duration_min" not in exported or exported["precharge_duration_min"] is None
+    assert (
+        "precharge_duration_min" not in exported
+        or exported["precharge_duration_min"] is None
+    )
 
 
 async def test_plan_exposes_precharge_durations_when_active(hass) -> None:
@@ -456,7 +462,10 @@ async def test_precharge_guard_allows_buffer_when_forecast_low(hass) -> None:
 
     assert plan_initial is not None
     assert len(turn_on_calls) == 1
-    assert coordinator._precharge_release[device_dict["name"]] > device_config.precharge_level
+    assert (
+        coordinator._precharge_release[device_dict["name"]]
+        > device_config.precharge_level
+    )
 
     turn_on_calls.clear()
 
@@ -530,7 +539,9 @@ async def test_drain_rate_softens_whilst_charging(hass) -> None:
     assert plan.drain_rate == pytest.approx(0.6, abs=1e-3)
 
 
-async def test_precharge_ignores_projection_when_far_above_window(hass, monkeypatch) -> None:
+async def test_precharge_ignores_projection_when_far_above_window(
+    hass, monkeypatch
+) -> None:
     """A distant forecast below precharge must not start charging when the battery is high."""
 
     device_dict = {
@@ -555,7 +566,9 @@ async def test_precharge_ignores_projection_when_far_above_window(hass, monkeypa
     hass.states.async_set("sensor.forecast_battery", "65")
     hass.states.async_set("switch.forecast_charger", "off")
     hass.states.async_set("binary_sensor.forecast_charging", "off")
-    hass.states.async_set("sensor.forecast_alarm", (now + timedelta(hours=12)).isoformat())
+    hass.states.async_set(
+        "sensor.forecast_alarm", (now + timedelta(hours=12)).isoformat()
+    )
     await hass.async_block_till_done()
 
     turn_on_calls = async_mock_service(hass, "switch", "turn_on")
@@ -608,7 +621,9 @@ async def test_precharge_release_clears_when_reaching_threshold(hass) -> None:
     hass.states.async_set("sensor.threshold_battery", "55")
     hass.states.async_set("switch.threshold_charger", "off")
     hass.states.async_set("binary_sensor.threshold_charging", "off")
-    hass.states.async_set("sensor.threshold_alarm", (now + timedelta(hours=1)).isoformat())
+    hass.states.async_set(
+        "sensor.threshold_alarm", (now + timedelta(hours=1)).isoformat()
+    )
     await hass.async_block_till_done()
 
     turn_on_calls = async_mock_service(hass, "switch", "turn_on")
@@ -673,7 +688,9 @@ async def test_emergency_charge_triggers_below_min_level(hass) -> None:
     now = dt_util.now()
     hass.states.async_set("sensor.emergency_battery", "10")
     hass.states.async_set("switch.emergency_charger", "off")
-    hass.states.async_set("sensor.emergency_alarm", (now + timedelta(hours=6)).isoformat())
+    hass.states.async_set(
+        "sensor.emergency_alarm", (now + timedelta(hours=6)).isoformat()
+    )
     await hass.async_block_till_done()
 
     turn_on_calls = async_mock_service(hass, "switch", "turn_on")
@@ -724,7 +741,9 @@ async def test_precharge_drops_when_presence_leaves_home(hass) -> None:
     hass.states.async_set("switch.presence_charger", "off")
     hass.states.async_set("binary_sensor.presence_charging", "off")
     hass.states.async_set("device_tracker.presence_car", "home")
-    hass.states.async_set("sensor.presence_alarm", (now + timedelta(hours=5)).isoformat())
+    hass.states.async_set(
+        "sensor.presence_alarm", (now + timedelta(hours=5)).isoformat()
+    )
     await hass.async_block_till_done()
 
     turn_on_calls = async_mock_service(hass, "switch", "turn_on")
@@ -842,7 +861,9 @@ async def test_smart_start_turns_on_when_window_opens(hass) -> None:
     hass.states.async_set("switch.smartstart_charger", "off")
     hass.states.async_set("binary_sensor.smartstart_charging", "off")
     # Alarm in 30 minutes; with avg speed 0.5, duration 40 minutes -> start_time already passed.
-    hass.states.async_set("sensor.smartstart_alarm", (now + timedelta(minutes=30)).isoformat())
+    hass.states.async_set(
+        "sensor.smartstart_alarm", (now + timedelta(minutes=30)).isoformat()
+    )
     await hass.async_block_till_done()
 
     turn_on_calls = async_mock_service(hass, "switch", "turn_on")
@@ -944,7 +965,9 @@ async def test_manual_avg_speed_fallback_when_learning_fails(hass) -> None:
     hass.states.async_set("switch.fallback_charger", "off")
     hass.states.async_set("binary_sensor.fallback_charging", "off")
     hass.states.async_set("sensor.fallback_speed", "2.4")
-    hass.states.async_set("sensor.fallback_alarm", (now + timedelta(hours=3)).isoformat())
+    hass.states.async_set(
+        "sensor.fallback_alarm", (now + timedelta(hours=3)).isoformat()
+    )
     await hass.async_block_till_done()
 
     class _LearningBroken:
@@ -989,7 +1012,9 @@ async def test_zero_speed_uses_available_window(hass) -> None:
     hass.states.async_set("sensor.zerospeed_battery", "60")
     hass.states.async_set("switch.zerospeed_charger", "off")
     hass.states.async_set("binary_sensor.zerospeed_charging", "off")
-    hass.states.async_set("sensor.zerospeed_alarm", (now + timedelta(hours=6)).isoformat())
+    hass.states.async_set(
+        "sensor.zerospeed_alarm", (now + timedelta(hours=6)).isoformat()
+    )
     await hass.async_block_till_done()
 
     turn_on_calls = async_mock_service(hass, "switch", "turn_on")

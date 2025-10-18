@@ -47,16 +47,19 @@ async def test_recent_sample_short_circuits_to_fresh_speed() -> None:
     now = dt_util.utcnow()
 
     # Seed slow historic data.
-    learning._profiles.setdefault(profile_id, {  # type: ignore[attr-defined]
-        "samples": [
-            ((now - timedelta(hours=10)).isoformat(), 5.0),
-            ((now - timedelta(hours=6)).isoformat(), 6.0),
-        ],
-        "stats": {
-            "ema": 6.0,
-            "last_sample": (now - timedelta(hours=6)).isoformat(),
+    learning._profiles.setdefault(
+        profile_id,
+        {  # type: ignore[attr-defined]
+            "samples": [
+                ((now - timedelta(hours=10)).isoformat(), 5.0),
+                ((now - timedelta(hours=6)).isoformat(), 6.0),
+            ],
+            "stats": {
+                "ema": 6.0,
+                "last_sample": (now - timedelta(hours=6)).isoformat(),
+            },
         },
-    })
+    )
 
     # Add fast recent sample inside freshness window.
     fresh_speed = 30.0
@@ -78,17 +81,20 @@ async def test_fallback_to_recent_average_when_sample_outside_window() -> None:
     now = dt_util.utcnow()
     stale_age = timedelta(hours=DEFAULT_LEARNING_RECENT_SAMPLE_HOURS + 1)
 
-    learning._profiles.setdefault(profile_id, {  # type: ignore[attr-defined]
-        "samples": [
-            ((now - timedelta(hours=10)).isoformat(), 5.0),
-            ((now - timedelta(hours=4)).isoformat(), 8.0),
-            ((now - stale_age).isoformat(), 20.0),
-        ],
-        "stats": {
-            "ema": 9.0,
-            "last_sample": (now - stale_age).isoformat(),
+    learning._profiles.setdefault(
+        profile_id,
+        {  # type: ignore[attr-defined]
+            "samples": [
+                ((now - timedelta(hours=10)).isoformat(), 5.0),
+                ((now - timedelta(hours=4)).isoformat(), 8.0),
+                ((now - stale_age).isoformat(), 20.0),
+            ],
+            "stats": {
+                "ema": 9.0,
+                "last_sample": (now - stale_age).isoformat(),
+            },
         },
-    })
+    )
 
     result = learning.avg_speed(profile_id)
     assert result > LEARNING_DEFAULT_SPEED
@@ -103,10 +109,12 @@ async def test_cycle_outlier_rejection_respects_high_speed_cap() -> None:
     now = dt_util.utcnow()
 
     await learning.ensure_profile(profile_id)
-    learning._profiles[profile_id]["stats"].update({  # type: ignore[index]
-        "ema": 8.0,
-        "count": 2,
-    })
+    learning._profiles[profile_id]["stats"].update(
+        {  # type: ignore[index]
+            "ema": 8.0,
+            "count": 2,
+        }
+    )
 
     accepted = await learning.record_cycle(
         profile_id=profile_id,

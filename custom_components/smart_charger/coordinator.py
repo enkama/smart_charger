@@ -1643,7 +1643,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 # When precharge release conditions are met, bypass the
                 # standard throttle so the charger can be paused immediately
                 # even if it was switched on in the same coordinator run.
-                await self._maybe_switch("turn_off", service_data, desired=False, bypass_throttle=True)
+                await self._maybe_switch(
+                    "turn_off", service_data, desired=False, bypass_throttle=True
+                )
                 return False
 
             if not expected_on:

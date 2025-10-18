@@ -117,7 +117,9 @@ async def test_throttle_suppresses_quick_second_call(hass) -> None:
     assert len(turn_off_calls) == 0
 
     # Advance time beyond throttle and try again -> now allowed
-    coord._last_switch_time[device[CONF_CHARGER_SWITCH]] = dt_util.utcnow() - timedelta(seconds=6)
+    coord._last_switch_time[device[CONF_CHARGER_SWITCH]] = dt_util.utcnow() - timedelta(
+        seconds=6
+    )
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=6))
     hass.states.async_set("sensor.ut_batt", "95")
     await coord.async_refresh()

@@ -243,9 +243,7 @@ ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
     ),
     SchemaField(
         CONF_SWITCH_CONFIRMATION_COUNT,
-        selector=NumberSelector(
-            NumberSelectorConfig(min=1, max=5, step=1)
-        ),
+        selector=NumberSelector(NumberSelectorConfig(min=1, max=5, step=1)),
         default=DEFAULT_SWITCH_CONFIRMATION_COUNT,
     ),
 )

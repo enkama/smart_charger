@@ -14,18 +14,14 @@ def _configure_test_logging() -> None:
 
     Set the smart_charger logger to WARNING so CI logs focus on failures.
     """
-    logging.getLogger("custom_components.smart_charger").setLevel(
-        logging.WARNING
-    )
+    logging.getLogger("custom_components.smart_charger").setLevel(logging.WARNING)
 
 
 # Apply conservative logging level immediately so logs emitted during imports
 # or early setup don't flood test output.
 logging.getLogger("custom_components.smart_charger").setLevel(logging.WARNING)
 # Silence the learning module errors that occur when running in the test harness.
-logging.getLogger("custom_components.smart_charger.learning").setLevel(
-    logging.CRITICAL
-)
+logging.getLogger("custom_components.smart_charger.learning").setLevel(logging.CRITICAL)
 
 
 def pytest_sessionstart(session):
