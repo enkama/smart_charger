@@ -29,7 +29,10 @@ from custom_components.smart_charger.const import (
     CONF_SWITCH_CONFIRMATION_COUNT,
     DOMAIN,
 )
-from custom_components.smart_charger.coordinator import DeviceConfig, SmartChargerCoordinator
+from custom_components.smart_charger.coordinator import (
+    DeviceConfig,
+    SmartChargerCoordinator,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -230,7 +233,11 @@ async def test_confirmation_counter_resets_on_opposite_observation(hass) -> None
     hass.states.async_set("sensor.reset_battery", "45")
     # Ensure per-device confirmation count is registered in the coordinator (deterministic)
     ent = device_dict[CONF_CHARGER_SWITCH]
-    coordinator._device_switch_throttle[f"{ent}::confirm"] = float(device_dict.get(CONF_SWITCH_CONFIRMATION_COUNT, coordinator._confirmation_required))
+    coordinator._device_switch_throttle[f"{ent}::confirm"] = float(
+        device_dict.get(
+            CONF_SWITCH_CONFIRMATION_COUNT, coordinator._confirmation_required
+        )
+    )
     coordinator._desired_state_history.setdefault(ent, (False, 0))
     await coordinator.async_refresh()
     await hass.async_block_till_done()
@@ -319,4 +326,3 @@ async def test_multi_device_independence(hass) -> None:
     await hass.async_block_till_done()
     # Two calls should be present, one per device
     assert len(turn_on_calls) == 2
-
