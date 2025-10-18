@@ -1226,7 +1226,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         if entity_id:
             # Record the actual time the service was invoked to ensure the
             # throttle check uses a consistent, real-world timestamp.
-            ts = dt_util.utcnow()
+            # Prefer the coordinator's logical evaluation time when present
+            # (used by deterministic tests). Fall back to real UTC if not set.
+            ts = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
             self._last_switch_time[entity_id] = ts
             _LOGGER.debug(
                 "Recorded last_switch_time for %s = %s (utcnow)",
@@ -1323,11 +1325,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             # confirmation count, do not issue switches while inside the throttle
             # window. The confirmation counter will continue to advance in the
             # background and the next coordinator evaluation after the throttle
-            # expires will proceed to call the switch. Use real UTC time for the
-            # comparison to avoid mismatches with any simulated evaluation time
-            # used in deterministic tests.
+            # expires will proceed to call the switch.
+            # Use the coordinator's logical evaluation time when available so
+            # deterministic tests that pass a simulated ``now_local`` control
+            # throttle evaluation. Fall back to real UTC otherwise.
             if last:
-                elapsed = (dt_util.utcnow() - last).total_seconds()
+                now_for_cmp = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                elapsed = (now_for_cmp - last).total_seconds()
                 _LOGGER.debug(
                     "Throttle check for %s: last=%s elapsed=%.3fs throttle=%.1fs",
                     entity_id,
@@ -1358,9 +1362,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         # Clear history and call switch. Pre-record the switch time so tests
         # that simulate immediate state changes observe a consistent last
-        # switch timestamp for throttle checks.
+        # switch timestamp for throttle checks. Prefer the coordinator's
+        # logical evaluation time when present to keep tests deterministic.
         self._desired_state_history.pop(entity_id, None)
-        pre_ts = dt_util.utcnow()
+        pre_ts = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
         self._last_switch_time[entity_id] = pre_ts
         _LOGGER.debug(
             "Pre-recording last_switch_time for %s = %s",
