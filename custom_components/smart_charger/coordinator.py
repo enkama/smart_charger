@@ -306,7 +306,6 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._current_eval_id = 0
         self._last_recorded_eval: Dict[str, int] = {}
 
-
     @property
     def profiles(self) -> Dict[str, Dict[str, Any]]:
         return self._state or {}

@@ -33,7 +33,7 @@ from custom_components.smart_charger.const import (
     CONF_SWITCH_THROTTLE_SECONDS,
     DOMAIN,
 )
-from custom_components.smart_charger.coordinator import DeviceConfig, SmartChargerCoordinator
+from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 
 pytestmark = pytest.mark.asyncio
 

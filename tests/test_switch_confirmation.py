@@ -4,11 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from homeassistant.util import dt as dt_util
-
-from custom_components.smart_charger.coordinator import SmartChargerCoordinator
-from custom_components.smart_charger.learning import SmartChargerLearning
-from custom_components.smart_charger.const import DEFAULT_SWITCH_THROTTLE_SECONDS
 from types import SimpleNamespace
 
 pytestmark = pytest.mark.asyncio

@@ -239,7 +239,6 @@ async def test_smart_start_waits_until_window_when_not_precharging(hass) -> None
 
     turn_off_calls = async_mock_service(hass, "switch", "turn_off")
 
-
     device_config = DeviceConfig.from_dict(device_dict)
     plan = await _build_plan_for_test(
         coordinator,

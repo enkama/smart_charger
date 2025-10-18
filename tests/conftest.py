@@ -37,6 +37,7 @@ def pytest_sessionstart(session):
         enable_socket()
         # pytest-asyncio spins up the loop before pytest-socket gives tests a
         # chance to opt-in, so coerce the disable hook to stay a no-op.
+
         def _noop_disable_socket(*_args, **_kwargs):
             enable_socket()
 
