@@ -2,6 +2,10 @@
 .venv/
 venv/
 env/
+# Python cache and build artifacts
+.venv/
+venv/
+env/
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -28,3 +32,7 @@ pytest.log
 # OS generated files
 Thumbs.db
 .DS_Store
+
+# local admin helper files
+branch-ruleset.json
+branch-protection.json

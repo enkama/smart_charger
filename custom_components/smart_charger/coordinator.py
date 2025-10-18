@@ -1486,7 +1486,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self._async_switch_call("turn_off", service_data)
+            # Use _maybe_switch so throttle and confirmation debounce apply
+            # (previously used _async_switch_call here which bypassed throttling
+            # and could cause repeated immediate turn_off calls during precharge
+            # pause conditions).
+            await self._maybe_switch("turn_off", service_data, desired=False)
             return False
 
         if (
