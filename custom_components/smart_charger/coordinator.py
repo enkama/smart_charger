@@ -420,8 +420,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         self._device_switch_throttle.setdefault(f"{ent}::confirm", float(device.switch_confirmation_count))
                     else:
                         self._device_switch_throttle.setdefault(f"{ent}::confirm", float(self._confirmation_required))
-                except Exception:
-                    pass
+                except Exception as err:
+                    _LOGGER.debug(
+                        "Unable to configure throttle/confirmation for %s: %s",
+                        device.name,
+                        err,
+                    )
 
                 plan = await self._build_plan(
                     device,
@@ -957,9 +961,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # service was invoked during this run.
         try:
             self._record_desired_state(device.charger_switch, bool(charger_expected_on))
-        except Exception:
+        except Exception as err:
             # Non-critical; avoid failing the whole plan generation on record
-            pass
+            _LOGGER.debug(
+                "Failed to record desired state for %s: %s",
+                device.name,
+                err,
+            )
 
         precharge_active = (precharge_required and charger_expected_on) or (
             charger_expected_on
@@ -1216,10 +1224,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             "switch", action, service_data, blocking=False
         )
         if entity_id:
-            # Prefer the coordinator's logical evaluation time when set so
-            # tests that pass a simulated now_local compare consistently.
-            self._last_switch_time[entity_id] = getattr(
-                self, "_current_eval_time", dt_util.utcnow()
+            # Record the actual time the service was invoked to ensure the
+            # throttle check uses a consistent, real-world timestamp.
+            ts = dt_util.utcnow()
+            self._last_switch_time[entity_id] = ts
+            _LOGGER.debug(
+                "Recorded last_switch_time for %s = %s (utcnow)",
+                entity_id,
+                ts.isoformat(),
             )
         return True
 
@@ -1248,7 +1260,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             count = 1
         self._desired_state_history[entity_id] = (desired, count)
 
-    async def _maybe_switch(self, action: str, service_data: Dict[str, Any], desired: bool, force: bool = False) -> bool:
+    async def _maybe_switch(self, action: str, service_data: Dict[str, Any], desired: bool, force: bool = False, bypass_throttle: bool = False) -> bool:
         """Issue a switch call after throttle and confirmation debounce.
 
         If force is True, bypass confirmation and throttle (for emergency actions).
@@ -1261,6 +1273,21 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # tests that simulate future times behave deterministically. Fall
         # back to real time if not set.
         now = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+
+        _LOGGER.debug(
+            "_maybe_switch called: action=%s entity=%s desired=%s force=%s now=%s",
+            action,
+            entity_id,
+            desired,
+            force,
+            now.isoformat(),
+        )
+        _LOGGER.info(
+            "_maybe_switch state: last_switch=%s device_throttle=%s confirm=%s",
+            self._last_switch_time.get(entity_id),
+            self._device_switch_throttle.get(entity_id),
+            self._device_switch_throttle.get(f"{entity_id}::confirm"),
+        )
 
         # Throttle check (per-device configured)
         if not force:
@@ -1296,23 +1323,56 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             # confirmation count, do not issue switches while inside the throttle
             # window. The confirmation counter will continue to advance in the
             # background and the next coordinator evaluation after the throttle
-            # expires will proceed to call the switch.
-            if last and (now - last).total_seconds() < float(throttle):
+            # expires will proceed to call the switch. Use real UTC time for the
+            # comparison to avoid mismatches with any simulated evaluation time
+            # used in deterministic tests.
+            if last:
+                elapsed = (dt_util.utcnow() - last).total_seconds()
                 _LOGGER.debug(
-                    "Throttling switch.%s for %s (last %.1fs ago, throttle=%.1fs)",
-                    action,
+                    "Throttle check for %s: last=%s elapsed=%.3fs throttle=%.1fs",
                     entity_id,
-                    (now - last).total_seconds(),
+                    last.isoformat(),
+                    elapsed,
                     float(throttle),
                 )
-                return False
+                if elapsed < float(throttle):
+                    # Only bypass throttle for explicitly requested precharge-related
+                    # pauses. Other scenarios (rapid toggling) should continue to be
+                    # throttled to prevent flapping.
+                    if bypass_throttle and action == "turn_off":
+                        _LOGGER.debug(
+                            "Bypassing throttle for turn_off on %s (last %.1fs ago, throttle=%.1fs)",
+                            entity_id,
+                            elapsed,
+                            float(throttle),
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "Throttling switch.%s for %s (last %.1fs ago, throttle=%.1fs)",
+                            action,
+                            entity_id,
+                            elapsed,
+                            float(throttle),
+                        )
+                        return False
 
-        # Clear history and call switch
+        # Clear history and call switch. Pre-record the switch time so tests
+        # that simulate immediate state changes observe a consistent last
+        # switch timestamp for throttle checks.
         self._desired_state_history.pop(entity_id, None)
+        pre_ts = dt_util.utcnow()
+        self._last_switch_time[entity_id] = pre_ts
+        _LOGGER.debug(
+            "Pre-recording last_switch_time for %s = %s",
+            entity_id,
+            pre_ts.isoformat(),
+        )
         result = await self._async_switch_call(action, service_data)
         if result:
-            self._last_switch_time[entity_id] = getattr(
-                self, "_current_eval_time", dt_util.utcnow()
+            # _async_switch_call also records the time; keep the later timestamp
+            # if it differs.
+            self._last_switch_time[entity_id] = self._last_switch_time.get(
+                entity_id, pre_ts
             )
         return result
 
@@ -1384,7 +1444,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     window_threshold,
                     charger_ent,
                 )
-                await self._maybe_switch("turn_off", service_data, desired=False)
+                await self._maybe_switch("turn_off", service_data, desired=False, bypass_throttle=True)
                 return False
 
             if start_time and now_local >= start_time:
@@ -1425,6 +1485,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 battery,
                 charger_ent,
             )
+            # Respect configured throttle for SmartStop to avoid rapid toggling;
+            # do not bypass the throttle here.
             await self._maybe_switch("turn_off", service_data, desired=False)
             return False
 
@@ -1446,7 +1508,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self._maybe_switch("turn_off", service_data, desired=False)
+            await self._maybe_switch("turn_off", service_data, desired=False, bypass_throttle=True)
             return False
 
         if (
@@ -1467,7 +1529,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self._maybe_switch("turn_off", service_data, desired=False)
+            await self._maybe_switch("turn_off", service_data, desired=False, bypass_throttle=True)
             return False
 
         if (

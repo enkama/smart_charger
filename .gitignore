@@ -32,7 +32,3 @@ pytest.log
 # OS generated files
 Thumbs.db
 .DS_Store
-
-# local admin helper files
-branch-ruleset.json
-branch-protection.json
