@@ -34,6 +34,8 @@ from .const import (
     CONF_PRECHARGE_MARGIN_ON,
     CONF_PRECHARGE_COUNTDOWN_WINDOW,
     CONF_LEARNING_RECENT_SAMPLE_HOURS,
+    CONF_SWITCH_THROTTLE_SECONDS,
+    CONF_SWITCH_CONFIRMATION_COUNT,
     CONF_PRESENCE_SENSOR,
     CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
@@ -44,6 +46,8 @@ from .const import (
     DEFAULT_SMART_START_MARGIN,
     DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+    DEFAULT_SWITCH_THROTTLE_SECONDS,
+    DEFAULT_SWITCH_CONFIRMATION_COUNT,
     DISCHARGING_STATES,
     DOMAIN,
     DEFAULT_FALLBACK_MINUTES_PER_PERCENT,
@@ -83,6 +87,8 @@ class DeviceConfig:
     precharge_margin_on: Optional[float] = None
     precharge_margin_off: Optional[float] = None
     smart_start_margin: Optional[float] = None
+    switch_throttle_seconds: Optional[float] = None
+    switch_confirmation_count: Optional[int] = None
     charging_sensor: Optional[str] = None
     avg_speed_sensor: Optional[str] = None
     presence_sensor: Optional[str] = None
@@ -126,6 +132,15 @@ class DeviceConfig:
             clamped = max(0.25, min(48.0, parsed))
             return clamped
 
+        def _coerce_confirmation(value: Any) -> Optional[int]:
+            if value in (None, ""):
+                return None
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                return None
+            return max(1, min(10, parsed))
+
         return cls(
             name=name,
             battery_sensor=battery_sensor,
@@ -142,6 +157,12 @@ class DeviceConfig:
             smart_start_margin=_coerce_margin(raw.get(CONF_SMART_START_MARGIN)),
             alarm_mode=alarm_mode,
             alarm_entity=raw.get(CONF_ALARM_ENTITY),
+            switch_throttle_seconds=_coerce_learning_window(
+                raw.get(CONF_SWITCH_THROTTLE_SECONDS)
+            ),
+            switch_confirmation_count=_coerce_confirmation(
+                raw.get(CONF_SWITCH_CONFIRMATION_COUNT)
+            ),
             learning_recent_sample_hours=_coerce_learning_window(
                 raw.get(CONF_LEARNING_RECENT_SAMPLE_HOURS)
             ),
@@ -267,6 +288,24 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._default_learning_recent_sample_hours = (
             DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
         )
+        # Default throttle (seconds) used when device doesn't specify one
+        self._default_switch_throttle_seconds = DEFAULT_SWITCH_THROTTLE_SECONDS
+        # Per-device last switch timestamp to avoid rapid on/off flapping
+        self._last_switch_time: Dict[str, datetime] = {}
+        # Per-device configured throttle values (entity_id -> seconds)
+        self._device_switch_throttle: Dict[str, float] = {}
+        # Confirmation debounce: require N consecutive coordinator evaluations
+        # that request a different desired state before issuing a switch.
+        # Default is read from the central constants to remain consistent.
+        self._confirmation_required = DEFAULT_SWITCH_CONFIRMATION_COUNT
+        # per-device recent desired-state history: tuple(last_desired_bool, count)
+        self._desired_state_history: Dict[str, tuple[bool, int]] = {}
+        # Per-refresh evaluation id used to avoid double-recording within the
+        # same coordinator run when multiple code paths may record the desired
+        # state for an entity.
+        self._current_eval_id = 0
+        self._last_recorded_eval: Dict[str, int] = {}
+
 
     @property
     def profiles(self) -> Dict[str, Dict[str, Any]]:
@@ -305,14 +344,28 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
     async def _async_update_data(self) -> Dict[str, Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
+        # New evaluation - advance the eval id to avoid duplicate recordings
+        # within the same refresh cycle.
+        try:
+            self._current_eval_id += 1
+        except Exception:
+            self._current_eval_id = getattr(self, "_current_eval_id", 1)
+        # Record the logical evaluation time so switch throttling and
+        # confirmation can be evaluated against the same simulated time used
+        # by the plan builder (useful for deterministic tests which pass a
+        # custom ``now_local`` into _build_plan).
+        now_local = dt_util.now()
+        self._current_eval_time = now_local
         domain_data = self.hass.data.get(DOMAIN, {})
         entries: Dict[str, Dict[str, Any]] = domain_data.get("entries", {})
         entry_data = entries.get(self.entry.entry_id, {})
         learning = entry_data.get("learning")
-        now_local = dt_util.now()
 
         try:
             raw_config = self._raw_config()
+            # Use the configured coordinator-level default already stored in
+            # self._confirmation_required; per-device overrides are applied
+            # below when parsing devices. No global option is used.
             self._precharge_margin_on = self._option_float(
                 CONF_PRECHARGE_MARGIN_ON, DEFAULT_PRECHARGE_MARGIN_ON
             )
@@ -350,6 +403,25 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             device.name,
                             err,
                         )
+
+                # configure per-device switch throttle from device options
+                try:
+                    ent = device.charger_switch
+                    if device.switch_throttle_seconds is not None:
+                        self._device_switch_throttle[ent] = max(
+                            1.0, float(device.switch_throttle_seconds)
+                        )
+                    else:
+                        self._device_switch_throttle[ent] = self._default_switch_throttle_seconds
+                    # confirmation count
+                    if device.switch_confirmation_count is not None:
+                        self._desired_state_history.setdefault(ent, (False, 0))
+                        # store per-entity confirmation requirement
+                        self._device_switch_throttle.setdefault(f"{ent}::confirm", float(device.switch_confirmation_count))
+                    else:
+                        self._device_switch_throttle.setdefault(f"{ent}::confirm", float(self._confirmation_required))
+                except Exception:
+                    pass
 
                 plan = await self._build_plan(
                     device,
@@ -769,6 +841,16 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         learning,
         learning_window_hours: float,
     ) -> Optional[SmartChargePlan]:
+        # When this helper is invoked directly (tests often call it with a
+        # simulated ``now_local``), ensure we advance the per-evaluation
+        # id and record the evaluation time so confirmation and throttle
+        # logic use the same logical timebase.
+        try:
+            self._current_eval_id += 1
+        except Exception:
+            self._current_eval_id = getattr(self, "_current_eval_id", 1)
+        self._current_eval_time = now_local
+
         battery = self._float_state(device.battery_sensor)
         if battery is None:
             _LOGGER.debug("No valid battery value for %s", device.name)
@@ -869,6 +951,15 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             predicted_level=predicted_level,
             forecast_holdoff=forecast_holdoff,
         )
+
+        # Record the observed desired state so confirmation counters are
+        # maintained across coordinator evaluations even when no switch
+        # service was invoked during this run.
+        try:
+            self._record_desired_state(device.charger_switch, bool(charger_expected_on))
+        except Exception:
+            # Non-critical; avoid failing the whole plan generation on record
+            pass
 
         precharge_active = (precharge_required and charger_expected_on) or (
             charger_expected_on
@@ -1124,7 +1215,106 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         await self.hass.services.async_call(
             "switch", action, service_data, blocking=False
         )
+        if entity_id:
+            # Prefer the coordinator's logical evaluation time when set so
+            # tests that pass a simulated now_local compare consistently.
+            self._last_switch_time[entity_id] = getattr(
+                self, "_current_eval_time", dt_util.utcnow()
+            )
         return True
+
+    def _record_desired_state(self, entity_id: str, desired: bool) -> None:
+        """Record an observed desired state for confirmation counting.
+
+        This increments the consecutive observation counter for the given
+        entity, or resets it to 1 when the desired state changes.
+        """
+        if not entity_id:
+            return
+        # Avoid recording more than once per coordinator evaluation.
+        last = self._last_recorded_eval.get(entity_id)
+        if last == self._current_eval_id:
+            return
+        self._last_recorded_eval[entity_id] = self._current_eval_id
+
+        confirm_key = f"{entity_id}::confirm"
+        required = int(
+            self._device_switch_throttle.get(confirm_key, float(self._confirmation_required))
+        )
+        hist = self._desired_state_history.get(entity_id, (desired, 0))
+        if hist[0] == desired:
+            count = min(required, hist[1] + 1)
+        else:
+            count = 1
+        self._desired_state_history[entity_id] = (desired, count)
+
+    async def _maybe_switch(self, action: str, service_data: Dict[str, Any], desired: bool, force: bool = False) -> bool:
+        """Issue a switch call after throttle and confirmation debounce.
+
+        If force is True, bypass confirmation and throttle (for emergency actions).
+        """
+        entity_id = service_data.get("entity_id")
+        if not entity_id:
+            return False
+
+        # Use the coordinator's current evaluation time when available so
+        # tests that simulate future times behave deterministically. Fall
+        # back to real time if not set.
+        now = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+
+        # Throttle check (per-device configured)
+        if not force:
+            throttle = self._device_switch_throttle.get(
+                entity_id, self._default_switch_throttle_seconds
+            )
+            last = self._last_switch_time.get(entity_id)
+
+            # Confirmation debounce: per-device override available. Record the
+            # observed desired state for confirmation counting. The helper will
+            # increment or reset the consecutive counter as appropriate.
+            self._record_desired_state(entity_id, desired)
+            confirm_key = f"{entity_id}::confirm"
+            required = int(
+                self._device_switch_throttle.get(confirm_key, float(self._confirmation_required))
+            )
+            hist = self._desired_state_history.get(entity_id, (desired, 0))
+            count = hist[1]
+
+            # If we haven't yet observed the required number of consecutive
+            # confirmations, wait (regardless of throttle state).
+            if count < required:
+                _LOGGER.debug(
+                    "Waiting for confirmation for %s -> desired=%s (count=%d/%d)",
+                    entity_id,
+                    desired,
+                    count,
+                    required,
+                )
+                return False
+
+            # Throttle check (per-device configured): even if we've reached the
+            # confirmation count, do not issue switches while inside the throttle
+            # window. The confirmation counter will continue to advance in the
+            # background and the next coordinator evaluation after the throttle
+            # expires will proceed to call the switch.
+            if last and (now - last).total_seconds() < float(throttle):
+                _LOGGER.debug(
+                    "Throttling switch.%s for %s (last %.1fs ago, throttle=%.1fs)",
+                    action,
+                    entity_id,
+                    (now - last).total_seconds(),
+                    float(throttle),
+                )
+                return False
+
+        # Clear history and call switch
+        self._desired_state_history.pop(entity_id, None)
+        result = await self._async_switch_call(action, service_data)
+        if result:
+            self._last_switch_time[entity_id] = getattr(
+                self, "_current_eval_time", dt_util.utcnow()
+            )
+        return result
 
     async def _apply_charger_logic(
         self,
@@ -1166,7 +1356,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 device.min_level,
                 charger_ent,
             )
-            await self._async_switch_call("turn_on", service_data)
+            await self._maybe_switch("turn_on", service_data, desired=True, force=True)
             return True
 
         if not charger_available:
@@ -1194,7 +1384,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     window_threshold,
                     charger_ent,
                 )
-                await self._async_switch_call("turn_off", service_data)
+                await self._maybe_switch("turn_off", service_data, desired=False)
                 return False
 
             if start_time and now_local >= start_time:
@@ -1223,7 +1413,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 device_name,
                 charger_ent,
             )
-            await self._async_switch_call("turn_on", service_data)
+            await self._maybe_switch("turn_on", service_data, desired=True)
             return True
 
         if charger_is_on and battery >= device.target_level:
@@ -1235,7 +1425,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 battery,
                 charger_ent,
             )
-            await self._async_switch_call("turn_off", service_data)
+            await self._maybe_switch("turn_off", service_data, desired=False)
             return False
 
         if (
@@ -1256,7 +1446,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self._async_switch_call("turn_off", service_data)
+            await self._maybe_switch("turn_off", service_data, desired=False)
             return False
 
         if (
@@ -1277,7 +1467,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 start_time.isoformat(),
                 charger_ent,
             )
-            await self._async_switch_call("turn_off", service_data)
+            await self._maybe_switch("turn_off", service_data, desired=False)
             return False
 
         if (
@@ -1357,7 +1547,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     target_release,
                     charger_ent,
                 )
-                await self._async_switch_call("turn_off", service_data)
+                await self._maybe_switch("turn_off", service_data, desired=False)
                 return False
 
             if not expected_on:
@@ -1369,7 +1559,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     charger_ent,
                     target_release,
                 )
-                await self._async_switch_call("turn_on", service_data)
+                await self._maybe_switch("turn_on", service_data, desired=True)
                 return True
 
             self._log_action(
@@ -1382,6 +1572,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             return True
 
         return expected_on
+
+    # NOTE: unreachable - kept for clarity
 
     def _log_action(
         self, device_name: str, level: int, message: str, *args: Any

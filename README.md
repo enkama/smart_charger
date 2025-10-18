@@ -68,6 +68,9 @@ The integration provides a config flow. Each device entry supports the following
 - Predictive mode with target, minimum, and precharge levels
 - Tune precharge hysteresis (release/resume margins) and SmartStart finish buffers
 - Configure a precharge release countdown window to avoid charger flapping
+- Configure a per-device switch throttle (seconds) and confirmation count to avoid rapid toggles:
+  - `switch_throttle_seconds` (default 30s): minimum seconds between issuing switch commands for the same charger entity.
+  - `switch_confirmation_count` (default 2): number of consecutive coordinator evaluations that must request the same desired state before the integration will send the switch command. This helps prevent toggles caused by short-lived sensor noise.
 - Alarm entities that define desired ready times per weekday
 - Notification targets and thresholds for charging suggestions
 

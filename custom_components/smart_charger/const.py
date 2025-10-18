@@ -24,6 +24,7 @@ CONF_PRECHARGE_MARGIN_OFF = "precharge_margin_off"
 CONF_SMART_START_MARGIN = "smart_start_margin"
 CONF_PRECHARGE_COUNTDOWN_WINDOW = "precharge_countdown_window"
 CONF_LEARNING_RECENT_SAMPLE_HOURS = "learning_recent_sample_hours"
+CONF_SWITCH_THROTTLE_SECONDS = "switch_throttle_seconds"
 CONF_NOTIFY_ENABLED = "notify_enabled"
 CONF_NOTIFY_TARGETS = "notify_targets"
 CONF_SUGGESTION_THRESHOLD = "suggestion_threshold"
@@ -52,6 +53,12 @@ DEFAULT_PRECHARGE_MARGIN_OFF = 1.5
 DEFAULT_SMART_START_MARGIN = 2.0
 DEFAULT_PRECHARGE_COUNTDOWN_WINDOW = 5.0
 DEFAULT_LEARNING_RECENT_SAMPLE_HOURS = 4.0
+DEFAULT_SWITCH_THROTTLE_SECONDS = 30.0
+CONF_SWITCH_CONFIRMATION_COUNT = "switch_confirmation_count"
+# Default confirmation count required before issuing a switch call. Set to 1
+# for backwards compatibility so existing behavior (immediate actions) is
+# preserved unless users explicitly configure a higher value.
+DEFAULT_SWITCH_CONFIRMATION_COUNT = 1
 
 # Learning / prediction defaults.
 LEARNING_CACHE_TTL = 60  # seconds

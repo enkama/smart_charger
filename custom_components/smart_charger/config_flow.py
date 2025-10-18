@@ -41,6 +41,8 @@ from .const import (
     CONF_PRECHARGE_MARGIN_ON,
     CONF_PRECHARGE_COUNTDOWN_WINDOW,
     CONF_LEARNING_RECENT_SAMPLE_HOURS,
+    CONF_SWITCH_THROTTLE_SECONDS,
+    CONF_SWITCH_CONFIRMATION_COUNT,
     CONF_NOTIFY_ENABLED,
     CONF_NOTIFY_TARGETS,
     CONF_PRECHARGE_LEVEL,
@@ -54,6 +56,8 @@ from .const import (
     DEFAULT_PRECHARGE_MARGIN_ON,
     DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+    DEFAULT_SWITCH_THROTTLE_SECONDS,
+    DEFAULT_SWITCH_CONFIRMATION_COUNT,
     DEFAULT_SMART_START_MARGIN,
     DEFAULT_SENSOR_STALE_SECONDS,
     DEFAULT_SUGGESTION_THRESHOLD,
@@ -229,6 +233,20 @@ ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
             )
         ),
         default=DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+    ),
+    SchemaField(
+        CONF_SWITCH_THROTTLE_SECONDS,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=1, max=600, step=1, unit_of_measurement="s")
+        ),
+        default=DEFAULT_SWITCH_THROTTLE_SECONDS,
+    ),
+    SchemaField(
+        CONF_SWITCH_CONFIRMATION_COUNT,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=1, max=5, step=1)
+        ),
+        default=DEFAULT_SWITCH_CONFIRMATION_COUNT,
     ),
 )
 ALARM_FIELDS: tuple[SchemaField, ...] = (
