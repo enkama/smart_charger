@@ -19,7 +19,6 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.smart_charger.coordinator import SmartChargerCoordinator
-from custom_components.smart_charger.coordinator import DeviceConfig
 from custom_components.smart_charger.const import (
     CONF_BATTERY_SENSOR,
     CONF_CHARGER_SWITCH,
