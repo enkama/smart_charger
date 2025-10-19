@@ -1456,7 +1456,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 except Exception:
                     # On error, be conservative and do not override the
                     # observed entity state.
-                    pass
+                    _ignored_exc()
         (
             precharge_required,
             release_level,
@@ -2146,7 +2146,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 return False
         except Exception:
             # On any error in the helper, continue with normal processing
-            pass
+            _ignored_exc()
 
         # Use the coordinator's current evaluation time when available so
         # tests that simulate future times behave deterministically. Fall
@@ -2445,7 +2445,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             _LOGGER.info("_maybe_switch raw entity repr: %r (type=%s)", raw_entity, type(raw_entity))
         except Exception:
-            pass
+            _ignored_exc()
         # Log at INFO so test runs with default logging will show the
         # coordinator's decision inputs for easier triage.
         _LOGGER.info(
@@ -2502,7 +2502,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 hist,
             )
         except Exception:
-            pass
+            _ignored_exc()
         _LOGGER.debug("_maybe_switch debug: should_check=%s", should_check)
 
         # Throttle/confirmation check (per-device configured)
@@ -2803,7 +2803,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         self._last_switch_time.get(norm),
                     )
                 except Exception:
-                    pass
+                    _ignored_exc()
                 current_last = self._last_switch_time.get(norm)
                 throttle = self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds)
                 if current_last is not None:
@@ -2850,7 +2850,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             return False
             except Exception:
                 # On any error, continue to pre-record and attempt the switch.
-                pass
+                _ignored_exc()
         # Extra deterministic pre-record check: avoid overwriting the
         # previously recorded last-switch timestamp until we've ensured
         # this planned action is not an immediate reversal. Compare the
@@ -2923,7 +2923,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 getattr(self, "_current_eval_id", None),
             )
         except Exception:
-            pass
+            _ignored_exc()
         # Record the intended action state now that final guards passed so
         # other code paths can assume the coordinator's intended switch
         # state. Do not record the authoritative last-switch timestamp
@@ -2932,13 +2932,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             self._last_action_state[norm] = bool(desired)
         except Exception:
-            pass
+            _ignored_exc()
         # Mark the intended action as in-flight so other checks in the same
         # coordinator evaluation will avoid issuing a reversal.
         try:
             self._inflight_switches[norm] = bool(desired)
         except Exception:
-            pass
+            _ignored_exc()
         # Final pre-call authoritative guard: double-check using the
         # captured previous_last_action and the stored last-switch
         # timestamp to ensure we don't issue an immediate reversal that
@@ -2962,7 +2962,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         desired,
                     )
                 except Exception:
-                    pass
+                    _ignored_exc()
+
                 stored = self._last_switch_time.get(norm)
                 if stored is not None:
                     if isinstance(stored, (int, float)):
@@ -2974,6 +2975,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         stored_epoch_final = float(dt_util.as_timestamp(stored))
                 else:
                     stored_epoch_final = None
+
                 throttle_final = float(self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds)
                 if stored_epoch_final is not None and pre_epoch is not None:
                     elapsed_final = float(pre_epoch) - float(stored_epoch_final)
@@ -2984,20 +2986,38 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             last_action_for_final = bool(st and st.state == STATE_ON)
                         except Exception:
                             last_action_for_final = None
-                    if last_action_for_final is not None and elapsed_final >= 0 and elapsed_final < float(throttle_final) and bool(last_action_for_final) != bool(desired):
+
+                    if (
+                        last_action_for_final is not None
+                        and elapsed_final >= 0
+                        and elapsed_final < float(throttle_final)
+                        and bool(last_action_for_final) != bool(desired)
+                    ):
                         try:
-                            print(f"DBG_FINAL_GUARD_SUPPRESS: entity={norm} elapsed={elapsed_final:.3f} throttle={throttle_final} last_action={last_action_for_final} desired={desired} previous_last_action={previous_last_action}")
+                            print(
+                                f"DBG_FINAL_GUARD_SUPPRESS: entity={norm} elapsed={elapsed_final:.3f} throttle={throttle_final} last_action={last_action_for_final} desired={desired} previous_last_action={previous_last_action}"
+                            )
                         except Exception:
-                            pass
-                        _LOGGER.info("FINAL_GUARD_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_action=%r desired=%s", norm, elapsed_final, throttle_final, last_action_for_final, desired)
+                            _ignored_exc()
+
+                        _LOGGER.info(
+                            "FINAL_GUARD_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_action=%r desired=%s",
+                            norm,
+                            elapsed_final,
+                            throttle_final,
+                            last_action_for_final,
+                            desired,
+                        )
+
                         # Clear inflight marker since we're not proceeding
                         try:
                             self._inflight_switches.pop(norm, None)
                         except Exception:
-                            pass
+                            _ignored_exc()
+
                         return False
             except Exception:
-                pass
+                _ignored_exc()
         result = await self._async_switch_call(
             action,
             call_data,
@@ -3052,7 +3072,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             else:
                 self._forecast_holdoff.pop(device.name, None)
         except Exception:
-            pass
+            _ignored_exc()
 
         service_data = {"entity_id": charger_ent}
         device_name = device.name
@@ -3066,7 +3086,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 {"release": list(self._precharge_release.keys()), "ready": list(self._precharge_release_ready.keys())},
             )
         except Exception:
-            pass
+            _ignored_exc()
         window_imminent = (
             smart_start_active
             and start_time is not None
@@ -3112,7 +3132,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         list(self._precharge_release_ready.keys()),
                     )
                 except Exception:
-                    pass
+                    _ignored_exc()
                 if (
                     charger_is_on
                     and not precharge_required
@@ -3169,20 +3189,20 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     return False
                     return False
             except Exception:
-                pass
-            try:
-                _LOGGER.info(
-                    "DEBUG_PRECHARGE_RELEASE_CHECK: device=%s charger_is_on=%s precharge_required=%s release_level=%s predicted_level=%.3f battery=%.3f had_precharge_latch=%s",
-                    device.name,
-                    charger_is_on,
-                    precharge_required,
-                    release_level,
-                    float(predicted_level),
-                    float(battery),
-                    had_precharge_latch,
-                )
-            except Exception:
-                pass
+                _ignored_exc()
+                try:
+                    _LOGGER.info(
+                        "DEBUG_PRECHARGE_RELEASE_CHECK: device=%s charger_is_on=%s precharge_required=%s release_level=%s predicted_level=%.3f battery=%.3f had_precharge_latch=%s",
+                        device.name,
+                        charger_is_on,
+                        precharge_required,
+                        release_level,
+                        float(predicted_level),
+                        float(battery),
+                        had_precharge_latch,
+                    )
+                except Exception:
+                    _ignored_exc()
             if (
                 charger_is_on
                 and not precharge_required
@@ -3361,10 +3381,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             return expected_on
                     except Exception:
                         # If throttle check fails, fall back to normal behavior.
-                        pass
+                        _ignored_exc()
             except Exception:
                 # If throttle check fails, fall back to normal behavior.
-                pass
+                _ignored_exc()
             await self._maybe_switch("turn_off", service_data, desired=False)
             return False
 
