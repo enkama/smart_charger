@@ -157,6 +157,8 @@
           "adaptive_throttle_mode": "Choose how aggressively the coordinator should increase temporary switch throttles when repeated flip-flop events are detected. 'Conservative' grows the multiplier slowly, 'Normal' uses the configured backoff step, and 'Aggressive' increases it faster.",
           "adaptive_throttle_backoff_step": "Amount to increase the adaptive multiplier for each flip-flop event above the warn threshold. Higher values make the mitigation stronger per event.",
           "adaptive_throttle_max_multiplier": "Maximum allowed multiplier applied to the configured switch throttle. This caps how aggressive the adaptive mitigation can become."
+          ,
+          "adaptive_telemetry": "This sensor exposes runtime metrics about adaptive flip-flop mitigation: per-entity recent flip-flop counts, derived rates (events/sec and events/min), an EWMA rolling average of the event rate, and any active adaptive throttle overrides (applied seconds and expiration). Use this sensor to monitor and tune adaptive mitigation behavior."
         }
       }
     }
