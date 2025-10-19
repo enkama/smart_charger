@@ -181,8 +181,7 @@
         "name": "Smart Charger Adaptive Telemetry"
       },
       "adaptive_telemetry_help": {
-        "name": "Adaptive Telemetry Help",
-        "description": "This sensor exposes runtime metrics about adaptive flip-flop mitigation: per-entity recent flip-flop counts, derived rates (events/sec and events/min), an EWMA rolling average of the event rate, and any active adaptive throttle overrides (applied seconds and expiration). Use this sensor to monitor and tune adaptive mitigation behavior."
+        "name": "Adaptive Telemetry Help"
       },
       "device_status": {
         "name": "Smart Charger Device Status",
