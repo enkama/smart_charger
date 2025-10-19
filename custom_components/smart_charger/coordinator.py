@@ -1126,7 +1126,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
                     prev = getattr(self, "_flipflop_ewma", 0.0)
                     ewma = prev + alpha * (rate_per_sec - prev)
-                    setattr(self, "_flipflop_ewma", ewma)
+                    self._flipflop_ewma = ewma
                 except Exception:
                     _ignored_exc()
             except Exception:

@@ -49,10 +49,10 @@ def real_coordinator_logger():
             try:
                 coordinator._LOGGER = real
             except Exception:
-                    logging.getLogger(__name__).debug(
-                        "real_coordinator_logger: failed to restore _LOGGER",
-                        exc_info=True,
-                    )
+                logging.getLogger(__name__).debug(
+                    "real_coordinator_logger: failed to restore _LOGGER",
+                    exc_info=True,
+                )
 
 
 def _configure_test_logging() -> None:

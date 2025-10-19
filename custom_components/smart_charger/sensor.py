@@ -317,7 +317,7 @@ class SmartChargerAdaptiveSensor(SensorEntity):
         # Initialize coordinator-side EWMA state if missing
         if not hasattr(self.coordinator, "_flipflop_ewma"):
             # store as events/sec EWMA
-            setattr(self.coordinator, "_flipflop_ewma", 0.0)
+            self.coordinator._flipflop_ewma = 0.0
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -359,9 +359,13 @@ class SmartChargerAdaptiveSensor(SensorEntity):
                 alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
         except Exception:
             alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
-        prev = getattr(self.coordinator, "_flipflop_ewma", 0.0)
-        ewma = prev + alpha * (rate_per_sec - prev)
-        setattr(self.coordinator, "_flipflop_ewma", ewma)
+            prev = getattr(self.coordinator, "_flipflop_ewma", 0.0)
+            ewma = prev
+            try:
+                ewma = prev + alpha * (rate_per_sec - prev)
+            except Exception:
+                ewma = prev
+            self.coordinator._flipflop_ewma = ewma
 
         self._attr_native_value = total_events
         self._attr_extra_state_attributes = {
