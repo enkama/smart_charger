@@ -137,7 +137,7 @@ async def test_throttle_prevents_rapid_toggling(hass) -> None:
     turn_on_calls = async_mock_service(hass, "switch", "turn_on")
     turn_off_calls = async_mock_service(hass, "switch", "turn_off")
 
-    device_config = DeviceConfig.from_dict(device_dict)
+    # device configuration parsed for debugging; not used directly in this test
 
     # First: desired on -> should call immediately
     hass.states.async_set("sensor.throttle_battery", "45")
@@ -307,8 +307,7 @@ async def test_multi_device_independence(hass) -> None:
 
     turn_on_calls = async_mock_service(hass, "switch", "turn_on")
 
-    dev_a = DeviceConfig.from_dict(device_a)
-    dev_b = DeviceConfig.from_dict(device_b)
+    # parsed devices not needed for assertions here
 
     # First evaluation: both want to turn on -> no calls yet
     hass.states.async_set("sensor.a_batt", "45")

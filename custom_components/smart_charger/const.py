@@ -48,17 +48,50 @@ CONF_ALARM_SUNDAY = "alarm_entity_sunday"
 DEFAULT_SUGGESTION_THRESHOLD = 3
 DEFAULT_SENSOR_STALE_SECONDS = 600
 DEFAULT_TARGET_LEVEL = 95.0
-DEFAULT_PRECHARGE_MARGIN_ON = 0.5
-DEFAULT_PRECHARGE_MARGIN_OFF = 1.5
+DEFAULT_PRECHARGE_MARGIN_ON = 1.0
+DEFAULT_PRECHARGE_MARGIN_OFF = 2.0
 DEFAULT_SMART_START_MARGIN = 2.0
 DEFAULT_PRECHARGE_COUNTDOWN_WINDOW = 5.0
 DEFAULT_LEARNING_RECENT_SAMPLE_HOURS = 4.0
-DEFAULT_SWITCH_THROTTLE_SECONDS = 30.0
+DEFAULT_SWITCH_THROTTLE_SECONDS = 120.0
 CONF_SWITCH_CONFIRMATION_COUNT = "switch_confirmation_count"
 # Default confirmation count required before issuing a switch call. Set to 1
 # for backwards compatibility so existing behavior (immediate actions) is
 # preserved unless users explicitly configure a higher value.
 DEFAULT_SWITCH_CONFIRMATION_COUNT = 1
+
+# Adaptive throttle tuning defaults
+CONF_ADAPTIVE_THROTTLE_ENABLED = "adaptive_throttle_enabled"
+CONF_ADAPTIVE_THROTTLE_MULTIPLIER = "adaptive_throttle_multiplier"
+CONF_ADAPTIVE_THROTTLE_MIN_SECONDS = "adaptive_throttle_min_seconds"
+CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS = "adaptive_throttle_duration_seconds"
+CONF_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS = "adaptive_flipflop_window_seconds"
+CONF_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD = "adaptive_flipflop_warn_threshold"
+
+DEFAULT_ADAPTIVE_THROTTLE_ENABLED = True
+DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER = 2.0
+DEFAULT_ADAPTIVE_THROTTLE_MIN_SECONDS = 120.0
+DEFAULT_ADAPTIVE_THROTTLE_DURATION_SECONDS = 600.0
+DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS = 300.0
+DEFAULT_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD = 3
+
+# Backoff / variable multiplier tuning
+CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP = "adaptive_throttle_backoff_step"
+CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER = "adaptive_throttle_max_multiplier"
+
+DEFAULT_ADAPTIVE_THROTTLE_BACKOFF_STEP = 0.5
+DEFAULT_ADAPTIVE_THROTTLE_MAX_MULTIPLIER = 5.0
+
+# Adaptive mode presets to tune conservativeness/aggressiveness
+CONF_ADAPTIVE_THROTTLE_MODE = "adaptive_throttle_mode"
+ADAPTIVE_MODE_CONSERVATIVE = "conservative"
+ADAPTIVE_MODE_NORMAL = "normal"
+ADAPTIVE_MODE_AGGRESSIVE = "aggressive"
+DEFAULT_ADAPTIVE_THROTTLE_MODE = ADAPTIVE_MODE_NORMAL
+
+# EWMA smoothing factor used to compute rolling average of flip-flop rate
+CONF_ADAPTIVE_EWMA_ALPHA = "adaptive_ewma_alpha"
+DEFAULT_ADAPTIVE_EWMA_ALPHA = 0.3
 
 # Learning / prediction defaults.
 LEARNING_CACHE_TTL = 60  # seconds

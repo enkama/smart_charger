@@ -347,6 +347,20 @@ def _capture_coordinator_state(
             "precharge_active": precharge_active,
             "smart_start_active": smart_active,
             "precharge_release_levels": release_map,
+            # Expose flip-flop telemetry if the coordinator records it
+            "flipflop_events": {
+                ent: len(evts)
+                for ent, evts in dict(getattr(coordinator, "_flipflop_events", {}) or {}).items()
+            },
+            # Expose active adaptive throttle overrides (original, applied, expires)
+            "adaptive_throttle_overrides": dict(
+                getattr(coordinator, "_adaptive_throttle_overrides", {}) or {}
+            ),
+            # Expose runtime EWMA alpha and current EWMA value if available
+            "adaptive_ewma_alpha": (
+                getattr(getattr(coordinator, "entry", None), "options", {}).get("adaptive_ewma_alpha")
+            ),
+            "flipflop_ewma": getattr(coordinator, "_flipflop_ewma", None),
         }
 
     return coordinator_state, coordinator_plans, coordinator_insights

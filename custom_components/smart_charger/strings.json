@@ -139,8 +139,20 @@
           "precharge_countdown_window": "Precharge release countdown window (%)",
           "suggestion_threshold": "Suggestion threshold",
           "sensor_stale_seconds": "Sensor timeout (seconds)",
-          "learning_recent_sample_hours": "Recent sample window (hours)"
-        }
+          "learning_recent_sample_hours": "Recent sample window (hours)",
+          "adaptive_throttle_enabled": "Enable adaptive throttle mitigation",
+          "adaptive_throttle_multiplier": "Adaptive throttle multiplier",
+          "adaptive_throttle_min_seconds": "Adaptive throttle minimum (seconds)",
+          "adaptive_throttle_duration_seconds": "Adaptive throttle duration (seconds)",
+          "adaptive_flipflop_window_seconds": "Flip-flop detection window (seconds)",
+          "adaptive_flipflop_warn_threshold": "Flip-flop warn threshold",
+          "adaptive_throttle_backoff_step": "Adaptive throttle backoff step",
+          "adaptive_throttle_max_multiplier": "Adaptive throttle max multiplier",
+          "adaptive_throttle_mode": "Adaptive throttle mode",
+          "adaptive_throttle_mode_conservative": "Conservative",
+          "adaptive_throttle_mode_normal": "Normal",
+          "adaptive_throttle_mode_aggressive": "Aggressive"
+  }
       }
     }
   },
@@ -159,6 +171,12 @@
       },
       "learning_stats": {
         "name": "Smart Charger Learning Stats"
+      },
+      "adaptive_telemetry": {
+        "name": "Smart Charger Adaptive Telemetry"
+      },
+      "adaptive_telemetry_help": {
+        "name": "Adaptive Telemetry Help"
       },
       "device_status": {
         "name": "Smart Charger Device Status",
