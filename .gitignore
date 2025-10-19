@@ -23,6 +23,7 @@ htmlcov/
 pytest.xml
 coverage.xml
 pytest.log
+bandit_report.json
 
 # IDE and editor settings
 .vscode/
