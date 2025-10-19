@@ -1,0 +1,10 @@
+# Allow the test harness package to select a compatible pytest version
+# across CI matrix Python versions. Pin a minimum pytest to avoid very
+# old versions but do not enforce an exact micro version which conflicts
+# with many `pytest-homeassistant-custom-component` releases.
+pytest>=7.2.0, <8.4
+# Allow pytest-homeassistant-custom-component to select a compatible
+# pytest-asyncio for the runner's Python version. Pin a compatible range
+# instead of a single hard pin to avoid resolution failures on the CI
+# matrix.
+pytest-homeassistant-custom-component>=0.12,<0.14

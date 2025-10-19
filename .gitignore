@@ -2,6 +2,10 @@
 .venv/
 venv/
 env/
+# Python cache and build artifacts
+.venv/
+venv/
+env/
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -16,8 +20,9 @@ pip-wheel-metadata/
 .coverage
 .flake8
 htmlcov/
-tests/
-pytest.ini
+pytest.xml
+coverage.xml
+pytest.log
 
 # IDE and editor settings
 .vscode/
