@@ -104,6 +104,25 @@ class _QuietInfoLogger:
 
 _LOGGER = _QuietInfoLogger(_REAL_LOGGER)
 
+
+def _ignored_exc() -> None:
+    """Log an ignored exception at DEBUG with traceback for auditing.
+
+    Many internal guards intentionally suppress non-fatal exceptions to
+    preserve coordinator uptime and avoid failing the whole evaluation.
+    Bandit flags bare ``except: pass`` as unsafe; centralize a small
+    helper that records the ignored exception at DEBUG level so we keep
+    the original behaviour while satisfying static analysis.
+    """
+    try:
+        _LOGGER.debug("Ignored exception (suppressed); enable DEBUG for traceback", exc_info=True)
+    except Exception:
+        # If logging itself fails, there's nothing else useful we can do.
+        try:
+            _REAL_LOGGER.debug("Ignored exception (suppressed) and logging failed")
+        except Exception:
+            _ignored_exc()
+
 PRECHARGE_RELEASE_HYSTERESIS = timedelta(minutes=10)
 
 WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
@@ -392,6 +411,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             return str(raw_entity)
         except Exception:
+            _ignored_exc()
             return None
 
     def _device_name_for_entity(self, entity_id: str) -> Optional[str]:
@@ -412,9 +432,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     if cs and str(cs) == str(entity_id):
                         return dev_name
                 except Exception:
+                    _ignored_exc()
                     continue
         except Exception:
-            pass
+            _ignored_exc()
         return None
 
     def _early_suppress_checks(self, norm: str, desired: bool, force: bool, bypass_throttle: bool) -> bool:
@@ -439,6 +460,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     else:
                         stored_epoch_auth = float(dt_util.as_timestamp(stored_raw))
                 except Exception:
+                    _ignored_exc()
                     stored_epoch_auth = None
 
             throttle_cfg_auth = float(
@@ -454,6 +476,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         st = self.hass.states.get(norm)
                         last_act_auth = bool(st and st.state == STATE_ON)
                     except Exception:
+                        _ignored_exc()
                         last_act_auth = None
                 if last_act_auth is not None and elapsed_auth >= 0 and elapsed_auth < float(throttle_cfg_auth) and bool(last_act_auth) != bool(desired):
                     _LOGGER.info(
@@ -466,7 +489,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     )
                     return True
         except Exception:
-            pass
+            _ignored_exc()
 
         # Very-early deterministic quick-suppress
         try:
@@ -483,12 +506,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     else:
                         last_epoch_q = float(dt_util.as_timestamp(last_raw_quick))
                 except Exception:
+                    _ignored_exc()
                     last_epoch_q = None
                 if last_epoch_q is not None:
                     now_epoch_q = float(dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow()))
                     try:
                         thr_q = float(throttle_quick)
                     except Exception:
+                        _ignored_exc()
                         thr_q = float(self._default_switch_throttle_seconds)
                     elapsed_q = now_epoch_q - last_epoch_q
                     if elapsed_q >= 0 and elapsed_q < thr_q:
@@ -502,7 +527,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             _LOGGER.info("VERY_EARLY_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s", norm, elapsed_q, thr_q, last_act_quick, desired)
                             return True
         except Exception:
-            pass
+            _ignored_exc()
 
         return False
 
@@ -521,7 +546,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 _LOGGER.debug("SUPPRESS_INFLIGHT: entity=%s pending=%s desired=%s", norm, pending, desired)
                 return True
         except Exception:
-            pass
+            _ignored_exc()
 
         # Early authoritative throttle/reversal suppression
         if should_check:
@@ -564,7 +589,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             )
                             return True
             except Exception:
-                pass
+                _ignored_exc()
 
         # Canonical throttle/reversal guard
         if should_check:
@@ -577,7 +602,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     self._device_switch_throttle.get(norm),
                 )
             except Exception:
-                pass
+                _ignored_exc()
             try:
                 last_raw = self._last_switch_time.get(norm)
                 last_act = self._last_action_state.get(norm)
@@ -620,7 +645,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 getattr(self, "_current_eval_id", None),
                             )
                         except Exception:
-                            pass
+                            _ignored_exc()
                         if elapsed >= 0 and elapsed < float(throttle_val) and last_act is not None and bool(last_act) != bool(desired):
                             _LOGGER.debug("CANONICAL_THROTTLE_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s", norm, elapsed, throttle_val, last_act, desired)
                             try:
@@ -631,7 +656,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             except Exception:
                                 return True
             except Exception:
-                pass
+                _ignored_exc()
 
         # Recent-eval suppression guard
         if should_check:
@@ -661,7 +686,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     _LOGGER.debug("SUPPRESS_RECENT_EVAL: entity=%s cur_eval=%s last_eval=%s last_act=%r desired=%s", norm, cur_eval, last_eval, last_act, desired)
                     return True
             except Exception:
-                pass
+                _ignored_exc()
 
         # Defensive early throttle/reversal guard
         if should_check:
@@ -708,7 +733,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             )
                             return True
             except Exception:
-                pass
+                _ignored_exc()
 
         return False
 
@@ -762,10 +787,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         else:
                             rendered[k] = getattr(v, "isoformat", lambda: repr(v))()
                     except Exception:
+                        _ignored_exc()
                         rendered[k] = repr(v)
                 _LOGGER.debug("SNAPSHOT(last_switch_time): %s", rendered)
             except Exception:
-                pass
+                _ignored_exc()
             self._current_eval_id += 1
             # Clear any in-flight markers at the start of a new evaluation so
             # they only protect against reversals within the same coordinator
@@ -773,7 +799,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             try:
                 self._inflight_switches = {}
             except Exception:
-                pass
+                _ignored_exc()
         except Exception:
             self._current_eval_id = getattr(self, "_current_eval_id", 1)
         # Record the logical evaluation time so switch throttling and
@@ -894,7 +920,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     readable = {k: repr(v) for k, v in self._last_switch_time.items()}
                 _LOGGER.debug("last_switch_time snapshot: %s", readable)
             except Exception:
-                pass
+                _ignored_exc()
             return results
 
         except Exception:
@@ -1803,9 +1829,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     device_thr,
                 )
             except Exception:
-                pass
+                _ignored_exc()
         except Exception:
-            pass
+            _ignored_exc()
         # Minimal internal bypass check: some coordinator-driven events
         # should be allowed to bypass the configured throttle in
         # well-defined, 'intelligent' situations (for example a
@@ -1848,11 +1874,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 if dev_name in self._precharge_release or dev_name in self._precharge_release_ready or dev_name in self._forecast_holdoff:
                                     local_effective_bypass = True
                         except Exception:
-                            pass
+                            _ignored_exc()
                 except Exception:
-                    pass
+                    _ignored_exc()
         except Exception:
-            pass
+            _ignored_exc()
 
         # Authoritative early suppression: if this call would reverse the
         # previous action inside the per-device throttle window, and the
@@ -1870,6 +1896,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             try:
                 caller_fn = inspect.stack()[1].function
             except Exception:
+                _ignored_exc()
                 caller_fn = None
 
             if entity_id and not force and previous_last_action is not None and caller_fn != "_maybe_switch":
@@ -1880,6 +1907,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 try:
                     dev_name = self._device_name_for_entity(entity_id)
                 except Exception:
+                    _ignored_exc()
                     dev_name = None
 
                 legitimate_internal_bypass = False
@@ -1891,6 +1919,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     ):
                         legitimate_internal_bypass = True
                 except Exception:
+                    _ignored_exc()
                     legitimate_internal_bypass = False
 
                 stored = self._last_switch_time.get(entity_id)
@@ -1904,6 +1933,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         else:
                             stored_epoch = float(dt_util.as_timestamp(stored))
                     except Exception:
+                        _ignored_exc()
                         stored_epoch = None
                 else:
                     stored_epoch = None
@@ -1929,11 +1959,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 action,
                             )
                         except Exception:
-                            pass
+                            _ignored_exc()
                         _LOGGER.info("ASYNC_CALL_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f prev_action=%r action=%s", entity_id, elapsed, throttle_cfg, previous_last_action, action)
                         return False
         except Exception:
-            pass
+            _ignored_exc()
         try:
             # Log caller info to aid debugging in tests when unexpected
             # service calls are recorded.
@@ -1990,7 +2020,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 else:
                     self._last_action_state[entity_id] = bool(action == "turn_on")
             except Exception:
-                pass
+                _ignored_exc()
             # Record the evaluation id when this service was invoked so
             # subsequent checks can detect reversals that happen inside the
             # same coordinator evaluation.
@@ -2004,9 +2034,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         val,
                     )
                 except Exception:
-                    pass
+                    _ignored_exc()
             except Exception:
-                pass
+                _ignored_exc()
             # Log a human-friendly isoformat for diagnostics
             try:
                 _LOGGER.debug(
@@ -2020,7 +2050,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             try:
                 _LOGGER.debug("last_switch_time keys after set: %s", list(self._last_switch_time.keys()))
             except Exception:
-                pass
+                _ignored_exc()
         return True
 
     def _record_desired_state(self, entity_id: Any, desired: bool) -> None:
@@ -2092,7 +2122,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 self._last_switch_time.get(norm),
             )
         except Exception:
-            pass
+            _ignored_exc()
         # Trace the immediate caller and bypass flag for debugging
         try:
             caller_name = None
@@ -2107,7 +2137,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 bypass_throttle,
             )
         except Exception:
-            pass
+            _ignored_exc()
 
         # Consolidate initial early suppression checks into a helper to
         # reduce function complexity while preserving behavior.
@@ -2159,7 +2189,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 self._device_switch_throttle.get(norm),
             )
         except Exception:
-            pass
+            _ignored_exc()
         # Demoted diagnostic: snapshot used during triage (kept at DEBUG level)
         try:
             _LOGGER.debug(
@@ -2174,7 +2204,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 should_check,
             )
         except Exception:
-            pass
+            _ignored_exc()
         # Early suppression gate: if the last recorded action for this
         # entity differs from the currently desired state and that last
         # action occurred within the configured throttle window, suppress
@@ -2198,7 +2228,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     )
                     return False
             except Exception:
-                pass
+                _ignored_exc()
             try:
                 _LOGGER.debug(
                     "DBG_ENTER_SHOULD_CHECK: entity=%s should_check=%s last_switch_time_raw=%r last_action_state=%r last_switch_eval=%r current_eval=%r",
@@ -2210,7 +2240,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     getattr(self, "_current_eval_id", None),
                 )
             except Exception:
-                pass
+                _ignored_exc()
             # Consolidated robust quick-gate: compute normalized epoch values
             # and decisively suppress immediate reversals. This is a more
             # defensive check that avoids subtle type/timebase mismatches
@@ -2224,7 +2254,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         self._last_switch_time.get(norm),
                     )
                 except Exception:
-                    pass
+                    _ignored_exc()
                 last_raw = self._last_switch_time.get(norm)
                 if last_raw is not None:
                     # Normalize last timestamp to epoch float
@@ -2262,7 +2292,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 desired,
                             )
                         except Exception:
-                            pass
+                            _ignored_exc()
                         _LOGGER.debug(
                             "CONSOLIDATED_QUICK_GATE_INPUTS: entity=%s last_epoch=%.3f now_epoch=%.3f elapsed=%.3f throttle=%.3f last_action=%r desired=%s",
                             norm,
@@ -2335,7 +2365,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 getattr(self, "_current_eval_time", None),
                             )
                         except Exception:
-                            pass
+                            _ignored_exc()
                         # Evaluate suppression regardless of whether last_act_quick
                         # was retrieved from the coordinator or inferred from the
                         # entity state.
@@ -2343,7 +2373,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             _LOGGER.info("EARLY_SUPPRESS_V2: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s", norm, now_e - last_e, throttle_val_quick, last_act_quick, desired)
                             return False
             except Exception:
-                pass
+                _ignored_exc()
             try:
                 last_raw = self._last_switch_time.get(norm)
                 throttle_cfg = self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds)
@@ -2393,7 +2423,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                     desired,
                                 )
                         except Exception:
-                            pass
+                            _ignored_exc()
                         if elapsed_early is not None and elapsed_early < throttle_val and last_act is not None and bool(last_act) != bool(desired):
                             _LOGGER.info(
                                 "EARLY_SUPPRESS: entity=%s last_action=%s desired=%s elapsed=%.3f throttle=%s",
@@ -2456,7 +2486,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             try:
                 _LOGGER.info("last_switch_time keys before check: %s", list(self._last_switch_time.keys()))
             except Exception:
-                pass
+                _ignored_exc()
             last = self._last_switch_time.get(norm)
             _LOGGER.debug("throttle: last raw=%r type=%s truthy=%s", last, type(last), bool(last))
             throttle = self._device_switch_throttle.get(
@@ -2870,10 +2900,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 desired,
                             )
                         except Exception:
-                            pass
+                            _ignored_exc()
                         return False
             except Exception:
-                pass
+                _ignored_exc()
         _LOGGER.info("Pre-record: intended action for %s (pre_epoch=%.3f)", norm, pre_epoch)
         _LOGGER.info("PROCEED: calling switch.%s for %s", action, norm)
         # Ensure the service_data contains a normalized entity id for
