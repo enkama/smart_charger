@@ -1,10 +1,6 @@
 """Regression test: coordinator must not overwrite _last_action_state before final throttle check."""
 from __future__ import annotations
 
-from __future__ import annotations
-
-"""Regression test: coordinator must not overwrite _last_action_state before final throttle check."""
-
 from datetime import timedelta
 
 from pytest_homeassistant_custom_component.common import (

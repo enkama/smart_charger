@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from contextlib import contextmanager
+# contextmanager not required in current fixtures
 
 
 @pytest.fixture()

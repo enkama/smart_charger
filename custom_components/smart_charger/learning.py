@@ -572,46 +572,61 @@ class SmartChargerLearning:
         return pdata
 
     def _migrate_profile_to_hourly_speeds(self, profile: Dict[str, Any]) -> None:
-        def _convert_speed(value: Any) -> Optional[float]:
-            try:
-                return self._clamp_speed(float(value) * 60.0)
-            except (TypeError, ValueError):
-                return None
+        # Delegate migration steps to smaller helpers to reduce cyclomatic
+        # complexity and make each step easier to test.
+        self._migrate_profile_samples_to_hourly(profile)
+        self._migrate_profile_cycles_to_hourly(profile)
+        self._migrate_profile_stats_to_hourly(profile)
+        self._migrate_profile_bucket_stats_to_hourly(profile)
 
+    def _convert_speed_value(self, value: Any) -> Optional[float]:
+        try:
+            return self._clamp_speed(float(value) * 60.0)
+        except (TypeError, ValueError):
+            return None
+
+    def _migrate_profile_samples_to_hourly(self, profile: Dict[str, Any]) -> None:
         samples = profile.get("samples")
-        if isinstance(samples, list):
-            converted_samples: list[Any] = []
-            for entry in samples:
-                if isinstance(entry, (list, tuple)) and len(entry) >= 2:
-                    converted = _convert_speed(entry[1])
-                    if converted is not None:
-                        converted_samples.append((entry[0], converted))
-                        continue
-                converted_samples.append(entry)
-            profile["samples"] = converted_samples
+        if not isinstance(samples, list):
+            return
+        converted_samples: list[Any] = []
+        for entry in samples:
+            if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                converted = self._convert_speed_value(entry[1])
+                if converted is not None:
+                    converted_samples.append((entry[0], converted))
+                    continue
+            converted_samples.append(entry)
+        profile["samples"] = converted_samples
 
+    def _migrate_profile_cycles_to_hourly(self, profile: Dict[str, Any]) -> None:
         cycles = profile.get("cycles")
-        if isinstance(cycles, list):
-            for entry in cycles:
-                if isinstance(entry, dict) and "speed" in entry:
-                    converted = _convert_speed(entry.get("speed"))
-                    if converted is not None:
-                        entry["speed"] = round(converted, 3)
+        if not isinstance(cycles, list):
+            return
+        for entry in cycles:
+            if isinstance(entry, dict) and "speed" in entry:
+                converted = self._convert_speed_value(entry.get("speed"))
+                if converted is not None:
+                    entry["speed"] = round(converted, 3)
 
+    def _migrate_profile_stats_to_hourly(self, profile: Dict[str, Any]) -> None:
         stats = profile.get("stats")
-        if isinstance(stats, dict):
-            converted = _convert_speed(stats.get("ema"))
-            if converted is not None:
-                stats["ema"] = converted
+        if not isinstance(stats, dict):
+            return
+        converted = self._convert_speed_value(stats.get("ema"))
+        if converted is not None:
+            stats["ema"] = converted
 
+    def _migrate_profile_bucket_stats_to_hourly(self, profile: Dict[str, Any]) -> None:
         bucket_stats = profile.get("bucket_stats")
-        if isinstance(bucket_stats, dict):
-            for bucket in list(bucket_stats.keys()):
-                entry = bucket_stats.get(bucket)
-                if isinstance(entry, dict):
-                    converted = _convert_speed(entry.get("ema"))
-                    if converted is not None:
-                        entry["ema"] = converted
+        if not isinstance(bucket_stats, dict):
+            return
+        for bucket in list(bucket_stats.keys()):
+            entry = bucket_stats.get(bucket)
+            if isinstance(entry, dict):
+                converted = self._convert_speed_value(entry.get("ema"))
+                if converted is not None:
+                    entry["ema"] = converted
 
     def _invalidate_cache(self, profile_id: Optional[str]) -> None:
         if not self._avg_cache:

@@ -123,7 +123,40 @@ def _ignored_exc() -> None:
         except Exception:
             _ignored_exc()
 
+
+def _coerce_margin(value: Any) -> Optional[float]:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, parsed)
+
+
+def _coerce_learning_window(value: Any) -> Optional[float]:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    clamped = max(0.25, min(48.0, parsed))
+    return clamped
+
+
+def _coerce_confirmation(value: Any) -> Optional[int]:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(1, min(10, parsed))
+
+
 PRECHARGE_RELEASE_HYSTERESIS = timedelta(minutes=10)
+
 
 WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
     CONF_ALARM_MONDAY,
@@ -174,33 +207,7 @@ class DeviceConfig:
             if ent:
                 weekday_map[idx] = ent
 
-        def _coerce_margin(value: Any) -> Optional[float]:
-            if value in (None, ""):
-                return None
-            try:
-                parsed = float(value)
-            except (TypeError, ValueError):
-                return None
-            return max(0.0, parsed)
-
-        def _coerce_learning_window(value: Any) -> Optional[float]:
-            if value in (None, ""):
-                return None
-            try:
-                parsed = float(value)
-            except (TypeError, ValueError):
-                return None
-            clamped = max(0.25, min(48.0, parsed))
-            return clamped
-
-        def _coerce_confirmation(value: Any) -> Optional[int]:
-            if value in (None, ""):
-                return None
-            try:
-                parsed = int(value)
-            except (TypeError, ValueError):
-                return None
-            return max(1, min(10, parsed))
+        # Use module-level coercion helpers to keep this constructor small.
 
         return cls(
             name=name,
@@ -438,7 +445,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             _ignored_exc()
         return None
 
-    def _early_suppress_checks(self, norm: str, desired: bool, force: bool, bypass_throttle: bool) -> bool:
+    def _early_suppress_checks(self, norm: str, desired: bool, force: bool, bypass_throttle: bool) -> bool:  # noqa: C901
         """Run initial authoritative and quick suppression checks.
 
         Returns True when the action should be suppressed.
@@ -531,7 +538,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         return False
 
-    def _should_suppress_switch(self, norm: str, desired: bool, force: bool, bypass_throttle: bool) -> bool:
+    def _should_suppress_switch(self, norm: str, desired: bool, force: bool, bypass_throttle: bool) -> bool:  # noqa: C901
         """Comprehensive suppression helper extracted from _maybe_switch.
 
         Returns True when the switch should be suppressed, False otherwise.
@@ -772,7 +779,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     "Skipping invalid device configuration %s: %s", raw, err
                 )
 
-    async def _async_update_data(self) -> Dict[str, Dict[str, Any]]:
+    async def _async_update_data(self) -> Dict[str, Dict[str, Any]]:  # noqa: C901
         results: Dict[str, Dict[str, Any]] = {}
         # New evaluation - advance the eval id to avoid duplicate recordings
         # within the same refresh cycle.
@@ -785,7 +792,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         if isinstance(v, (int, float)):
                             rendered[k] = datetime.fromtimestamp(float(v)).isoformat()
                         else:
-                            rendered[k] = getattr(v, "isoformat", lambda: repr(v))()
+                            iso = getattr(v, "isoformat", None)
+                            rendered[k] = iso() if callable(iso) else repr(v)
                     except Exception:
                         _ignored_exc()
                         rendered[k] = repr(v)
@@ -915,7 +923,17 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             try:
                 _LOGGER.debug("Desired state history snapshot: %s", self._desired_state_history)
                 try:
-                    readable = {k: (datetime.fromtimestamp(float(v)).isoformat() if isinstance(v, (int, float)) else getattr(v, 'isoformat', lambda: repr(v))()) for k, v in self._last_switch_time.items()}
+                    readable = {}
+                    for k, v in self._last_switch_time.items():
+                        try:
+                            if isinstance(v, (int, float)):
+                                readable[k] = datetime.fromtimestamp(float(v)).isoformat()
+                            else:
+                                # Use getattr with a safe default callable bound in a local scope
+                                iso = getattr(v, "isoformat", None)
+                                readable[k] = iso() if callable(iso) else repr(v)
+                        except Exception:
+                            readable[k] = repr(v)
                 except Exception:
                     readable = {k: repr(v) for k, v in self._last_switch_time.items()}
                 _LOGGER.debug("last_switch_time snapshot: %s", readable)
@@ -1309,7 +1327,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             confidence += 0.1
         return max(0.2, min(0.95, confidence))
 
-    async def _build_plan(
+    async def _build_plan(  # noqa: C901
         self,
         device: DeviceConfig,
         now_local: datetime,
@@ -1652,110 +1670,31 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 should_latch = True
 
             if should_latch:
-                extra_margin = max(margin_off, expected_drain * 0.4)
-                release_cap = device.target_level
-                if smart_start_active and start_time and now_local < start_time:
-                    release_cap = max(
-                        device.precharge_level,
-                        device.target_level - smart_margin,
-                    )
-                release_level = min(
-                    release_cap,
-                    device.precharge_level + extra_margin,
+                release_level, precharge_required = self._handle_precharge_latch(
+                    device,
+                    expected_drain,
+                    smart_start_active,
+                    start_time,
+                    now_local,
+                    margin_on,
+                    margin_off,
+                    smart_margin,
+                    previous_release,
                 )
-                release_level = max(device.precharge_level, release_level)
-                self._precharge_release[device.name] = release_level
-                self._precharge_release_ready.pop(device.name, None)
-                if previous_release != release_level:
-                    self._log_action(
-                        device.name,
-                        logging.DEBUG,
-                        "[Precharge] %s latched until %.1f%% (margins on %.2f/off %.2f)",
-                        device.name,
-                        release_level,
-                        margin_on,
-                        margin_off,
-                    )
-                precharge_required = True
             elif release_level is not None:
-                previously_in_range = release_ready_at is not None
-                in_range = (
-                    release_level is not None
-                    and battery >= release_level
-                    and predicted_level >= predicted_threshold
+                (
+                    precharge_required,
+                    release_level,
+                    release_ready_at,
+                ) = self._handle_existing_release(
+                    device,
+                    battery,
+                    predicted_level,
+                    predicted_threshold,
+                    near_precharge_window,
+                    release_ready_at,
+                    now_local,
                 )
-                near_precharge = near_precharge_window
-
-                if not previously_in_range:
-                    if in_range:
-                        if near_precharge:
-                            release_ready_at = now_local + PRECHARGE_RELEASE_HYSTERESIS
-                            self._precharge_release_ready[device.name] = release_ready_at
-                            self._log_action(
-                                device.name,
-                                logging.DEBUG,
-                                "[Precharge] %s release countdown started; clears at %s",
-                                device.name,
-                                release_ready_at.isoformat(),
-                            )
-                            precharge_required = True
-                        else:
-                            # Cleared because we're no longer near precharge
-                            # and the battery/prediction are in a safe range.
-                            # Mark this so the caller can pause the charger
-                            # immediately in the same evaluation if needed.
-                            self._precharge_release_cleared_by_threshold[device.name] = True
-                            self._precharge_release.pop(device.name, None)
-                            self._precharge_release_ready.pop(device.name, None)
-                            self._log_action(
-                                device.name,
-                                logging.DEBUG,
-                                "[Precharge] %s release cleared (battery %.1f%%, predicted %.1f%%)",
-                                device.name,
-                                battery,
-                                predicted_level,
-                            )
-                            release_level = None
-                    else:
-                        self._precharge_release_ready.pop(device.name, None)
-                        precharge_required = True
-                else:
-                    if in_range and near_precharge:
-                        if (
-                            release_ready_at is not None
-                            and now_local >= release_ready_at
-                        ):
-                            # Countdown finished; release cleared by threshold
-                            self._precharge_release_cleared_by_threshold[device.name] = True
-                            self._precharge_release.pop(device.name, None)
-                            self._precharge_release_ready.pop(device.name, None)
-                            self._log_action(
-                                device.name,
-                                logging.DEBUG,
-                                "[Precharge] %s release window cleared",
-                                device.name,
-                            )
-                            release_level = None
-                        else:
-                            precharge_required = True
-                    elif not near_precharge:
-                        # Cleared because we're no longer within the precharge
-                        # proximity window; mark as threshold-cleared so the
-                        # caller can act immediately.
-                        self._precharge_release_cleared_by_threshold[device.name] = True
-                        self._precharge_release.pop(device.name, None)
-                        self._precharge_release_ready.pop(device.name, None)
-                        self._log_action(
-                            device.name,
-                            logging.DEBUG,
-                            "[Precharge] %s release cleared immediately (battery %.1f%%)",
-                            device.name,
-                            battery,
-                        )
-                        release_level = None
-                    else:
-                        # Keep countdown running even if the level briefly dips again.
-                        precharge_required = True
 
         if release_level is not None and not precharge_required and is_home:
             if battery < release_level or predicted_level < device.precharge_level:
@@ -1786,27 +1725,208 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             forecast_holdoff,
         )
 
-    async def _async_switch_call(
+    def _handle_precharge_latch(
         self,
+        device: DeviceConfig,
+        expected_drain: float,
+        smart_start_active: bool,
+        start_time: Optional[datetime],
+        now_local: datetime,
+        margin_on: float,
+        margin_off: float,
+        smart_margin: float,
+        previous_release: Optional[float],
+    ) -> tuple[Optional[float], bool]:
+        """Compute and set release_level when a precharge latch should occur.
+
+        Returns (release_level, precharge_required).
+        """
+        extra_margin = max(margin_off, expected_drain * 0.4)
+        release_cap = device.target_level
+        if smart_start_active and start_time and now_local < start_time:
+            release_cap = max(device.precharge_level, device.target_level - smart_margin)
+        release_level = min(release_cap, device.precharge_level + extra_margin)
+        release_level = max(device.precharge_level, release_level)
+        self._precharge_release[device.name] = release_level
+        self._precharge_release_ready.pop(device.name, None)
+        if previous_release != release_level:
+            self._log_action(
+                device.name,
+                logging.DEBUG,
+                "[Precharge] %s latched until %.1f%% (margins on %.2f/off %.2f)",
+                device.name,
+                release_level,
+                margin_on,
+                margin_off,
+            )
+        return release_level, True
+
+    def _handle_existing_release(
+        self,
+        device: DeviceConfig,
+        battery: float,
+        predicted_level: float,
+        predicted_threshold: float,
+        near_precharge_window: bool,
+        release_ready_at: Optional[datetime],
+        now_local: datetime,
+    ) -> tuple[bool, Optional[float], Optional[datetime]]:
+        """Handle logic for when a release_level already exists.
+
+        Returns (precharge_required, release_level, release_ready_at).
+        """
+        previously_in_range = release_ready_at is not None
+        in_range = (
+            release_ready_at is not None
+            or (device.name in self._precharge_release and battery >= self._precharge_release[device.name] and predicted_level >= predicted_threshold)
+        )
+        near_precharge = near_precharge_window
+
+        if not previously_in_range:
+            if in_range:
+                if near_precharge:
+                    release_ready_at = now_local + PRECHARGE_RELEASE_HYSTERESIS
+                    self._precharge_release_ready[device.name] = release_ready_at
+                    self._log_action(
+                        device.name,
+                        logging.DEBUG,
+                        "[Precharge] %s release countdown started; clears at %s",
+                        device.name,
+                        release_ready_at.isoformat(),
+                    )
+                    return True, self._precharge_release.get(device.name), release_ready_at
+                else:
+                    # Cleared because we're no longer near precharge
+                    self._precharge_release_cleared_by_threshold[device.name] = True
+                    self._precharge_release.pop(device.name, None)
+                    self._precharge_release_ready.pop(device.name, None)
+                    self._log_action(
+                        device.name,
+                        logging.DEBUG,
+                        "[Precharge] %s release cleared (battery %.1f%%, predicted %.1f%%)",
+                        device.name,
+                        battery,
+                        predicted_level,
+                    )
+                    return False, None, None
+            else:
+                self._precharge_release_ready.pop(device.name, None)
+                return True, self._precharge_release.get(device.name), release_ready_at
+        else:
+            if in_range and near_precharge:
+                if release_ready_at is not None and now_local >= release_ready_at:
+                    self._precharge_release_cleared_by_threshold[device.name] = True
+                    self._precharge_release.pop(device.name, None)
+                    self._precharge_release_ready.pop(device.name, None)
+                    self._log_action(
+                        device.name,
+                        logging.DEBUG,
+                        "[Precharge] %s release window cleared",
+                        device.name,
+                    )
+                    return False, None, None
+                else:
+                    return True, self._precharge_release.get(device.name), release_ready_at
+            elif not near_precharge:
+                self._precharge_release_cleared_by_threshold[device.name] = True
+                self._precharge_release.pop(device.name, None)
+                self._precharge_release_ready.pop(device.name, None)
+                self._log_action(
+                    device.name,
+                    logging.DEBUG,
+                    "[Precharge] %s release cleared immediately (battery %.1f%%)",
+                    device.name,
+                    battery,
+                )
+                return False, None, None
+            else:
+                return True, self._precharge_release.get(device.name), release_ready_at
+
+    def _should_authoritatively_suppress(
+        self,
+        caller_fn: Optional[str],
+        entity_id: Optional[str],
+        pre_epoch: Optional[float],
+        previous_last_action: Optional[bool],
         action: str,
-        service_data: Dict[str, Any],
-        pre_epoch: Optional[float] = None,
-        previous_last_action: Optional[bool] = None,
-        *,
-        bypass_throttle: bool = False,
-        force: bool = False,
+        bypass_throttle: bool,
+        force: bool,
     ) -> bool:
-        raw_entity = service_data.get("entity_id")
-        entity_id = self._normalize_entity_id(raw_entity)
-        # Ensure service_data contains the normalized id when calling the service
-        call_data = dict(service_data)
-        call_data["entity_id"] = entity_id
-        # Diagnostic: always print the key inputs for authoritative suppression.
-        # Guard lookups when entity_id may be None to avoid type-checker/linter
-        # complaints and accidental KeyError-like behavior in some runtimes.
+        """Return True when an authoritative early suppression should occur.
+
+        The caller must provide the immediate caller function name so the
+        suppression logic can correctly decide when `_maybe_switch` already
+        vetted the call. This avoids inspecting the stack from inside the
+        helper which would change the observed caller.
+        """
         try:
-            stored_val = None
-            device_thr = None
+            if entity_id and not force and previous_last_action is not None and caller_fn != "_maybe_switch":
+                try:
+                    dev_name = self._device_name_for_entity(entity_id)
+                except Exception:
+                    _ignored_exc()
+                    dev_name = None
+
+                try:
+                    legitimate_internal_bypass = self._is_device_in_latch_maps(dev_name)
+                except Exception:
+                    _ignored_exc()
+                    legitimate_internal_bypass = False
+
+                stored_epoch = self._parse_stored_epoch(entity_id)
+                throttle_cfg = float(
+                    self._device_switch_throttle.get(entity_id, self._default_switch_throttle_seconds)
+                    or self._default_switch_throttle_seconds
+                )
+                if stored_epoch is not None and pre_epoch is not None:
+                    elapsed = float(pre_epoch) - float(stored_epoch)
+                    if (
+                        elapsed >= 0
+                        and elapsed < float(throttle_cfg)
+                        and bool(previous_last_action) != bool(action == "turn_on")
+                        and not (bypass_throttle and legitimate_internal_bypass)
+                    ):
+                        try:
+                            _LOGGER.debug(
+                                "DBG_ASYNC_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f prev_action=%r action=%s",
+                                entity_id,
+                                elapsed,
+                                throttle_cfg,
+                                previous_last_action,
+                                action,
+                            )
+                        except Exception:
+                            _ignored_exc()
+                        _LOGGER.info(
+                            "ASYNC_CALL_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f prev_action=%r action=%s",
+                            entity_id,
+                            elapsed,
+                            throttle_cfg,
+                            previous_last_action,
+                            action,
+                        )
+                        return True
+        except Exception:
+            _ignored_exc()
+        return False
+
+    def _gather_async_call_debug_info(
+        self,
+        entity_id: Optional[str],
+        pre_epoch: Optional[float],
+        bypass_throttle: bool,
+        force: bool,
+        previous_last_action: Optional[bool],
+        action: str,
+    ) -> tuple[Any, Any]:
+        """Gather debug values used by _async_switch_call.
+
+        Returns (stored_val, device_thr). Exceptions are caught and
+        suppressed using _ignored_exc so callers remain safe.
+        """
+        stored_val = None
+        device_thr = None
+        try:
             if entity_id:
                 try:
                     stored_val = self._last_switch_time.get(entity_id)
@@ -1832,6 +1952,94 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 _ignored_exc()
         except Exception:
             _ignored_exc()
+        return stored_val, device_thr
+
+    def _parse_stored_epoch(self, entity_id: Optional[str]) -> Optional[float]:
+        """Parse stored last-switch time into an epoch float or return None.
+
+        This isolates the datetime parsing branch so the parent function can
+        remain small and focused.
+        """
+        if not entity_id:
+            return None
+        stored = self._last_switch_time.get(entity_id)
+        if stored is None:
+            return None
+        try:
+            if isinstance(stored, (int, float)):
+                return float(stored)
+            if isinstance(stored, str):
+                parsed = dt_util.parse_datetime(stored)
+                return float(dt_util.as_timestamp(parsed)) if parsed else None
+            return float(dt_util.as_timestamp(stored))
+        except Exception:
+            _ignored_exc()
+            return None
+
+    def _is_device_in_latch_maps(self, dev_name: Optional[str]) -> bool:
+        """Return True if the device name is present in any precharge/forecast maps.
+
+        Isolating this lookup reduces code duplication and keeps the
+        suppression helper concise.
+        """
+        if not dev_name:
+            return False
+        try:
+            return (
+                dev_name in self._precharge_release
+                or dev_name in self._precharge_release_ready
+                or dev_name in self._forecast_holdoff
+            )
+        except Exception:
+            _ignored_exc()
+            return False
+
+    def _compute_local_effective_bypass(self, entity_id: Optional[str], bypass_throttle: bool, force: bool) -> bool:
+        """Compute whether this call should locally bypass throttle.
+
+        This encapsulates the logic that inspects precharge maps and resolves
+        entity -> device name mappings.
+        """
+        local_effective_bypass = bool(bypass_throttle or force)
+        try:
+            if entity_id:
+                try:
+                    ent = str(entity_id)
+                    if ent in self._precharge_release or ent in self._precharge_release_ready:
+                        return True
+                    try:
+                        dev_name = self._device_name_for_entity(ent)
+                        if self._is_device_in_latch_maps(dev_name):
+                            return True
+                    except Exception:
+                        _ignored_exc()
+                except Exception:
+                    _ignored_exc()
+        except Exception:
+            _ignored_exc()
+        return local_effective_bypass
+
+    async def _async_switch_call(
+        self,
+        action: str,
+        service_data: Dict[str, Any],
+        pre_epoch: Optional[float] = None,
+        previous_last_action: Optional[bool] = None,
+        *,
+        bypass_throttle: bool = False,
+        force: bool = False,
+    ) -> bool:
+        raw_entity = service_data.get("entity_id")
+        entity_id = self._normalize_entity_id(raw_entity)
+        # Ensure service_data contains the normalized id when calling the service
+        call_data = dict(service_data)
+        call_data["entity_id"] = entity_id
+        # Diagnostic: always print the key inputs for authoritative suppression.
+        # Guard lookups when entity_id may be None to avoid type-checker/linter
+        # complaints and accidental KeyError-like behavior in some runtimes.
+        stored_val, device_thr = self._gather_async_call_debug_info(
+            entity_id, pre_epoch, bypass_throttle, force, previous_last_action, action
+        )
         # Minimal internal bypass check: some coordinator-driven events
         # should be allowed to bypass the configured throttle in
         # well-defined, 'intelligent' situations (for example a
@@ -1840,128 +2048,24 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # remain authoritative but internal precharge-release events can
         # proceed.
         local_effective_bypass = bool(bypass_throttle or force)
-        try:
-            # If this entity corresponds to a device that currently has a
-            # precharge release latched (or a pending ready release), allow
-            # the coordinator to bypass throttle for this specific call.
-            # This uses the existing coordinator maps and keeps the change
-            # minimal and deterministic for tests.
-            if entity_id:
-                # Normalize to device name by searching known precharge maps.
-                # We store precharge_release keyed by device.name elsewhere
-                # in the coordinator. Try to find any matching device name
-                # that maps to this entity by inspecting the configured
-                # device list stored in the coordinator state if present.
-                try:
-                    # Fast path: if the raw entity_id appears to be one of the
-                    # recorded charger switches in the precharge maps, honor it.
-                    # Otherwise, try a suffix match against device names.
-                    # Keep this conservative: only enable bypass when an exact
-                    # mapping is obvious.
-                    ent = str(entity_id)
-                    # Check direct membership in precharge_release keys.
-                    if ent in self._precharge_release or ent in self._precharge_release_ready:
-                        local_effective_bypass = True
-                    else:
-                        # Try a strict resolution from entity -> device name
-                        # using the current coordinator snapshot. If the
-                        # entity maps to a device that has a precharge or
-                        # forecast holdoff flag, honor the bypass for this
-                        # call.
-                        try:
-                            dev_name = self._device_name_for_entity(ent)
-                            if dev_name:
-                                if dev_name in self._precharge_release or dev_name in self._precharge_release_ready or dev_name in self._forecast_holdoff:
-                                    local_effective_bypass = True
-                        except Exception:
-                            _ignored_exc()
-                except Exception:
-                    _ignored_exc()
-        except Exception:
-            _ignored_exc()
+        local_effective_bypass = self._compute_local_effective_bypass(entity_id, bypass_throttle, force)
 
-        # Authoritative early suppression: if this call would reverse the
-        # previous action inside the per-device throttle window, and the
-        # caller has not requested force, skip calling the service unless
-        # the bypass was explicitly requested for a precharge/forecast
-        # related device. This prevents accidental bypasses caused by
-        # a misplaced bypass_throttle flag in other code paths while still
-        # allowing urgent precharge-driven bypasses to function.
+        # Authoritative early suppression: delegate to helper to keep this
+        # function small and testable.
         try:
-            # Determine immediate caller to avoid double-suppressing calls
-            # that were already vetted by _maybe_switch. If the caller is
-            # _maybe_switch, trust its decision and skip this authoritative
-            # early suppression so the previously allowed call proceeds.
-            caller_fn = None
+            # Determine immediate caller and delegate suppression decision to
+            # the extracted helper. Passing caller_fn avoids inspecting the
+            # stack inside the helper which would produce incorrect results.
             try:
                 caller_fn = inspect.stack()[1].function
             except Exception:
                 _ignored_exc()
                 caller_fn = None
 
-            if entity_id and not force and previous_last_action is not None and caller_fn != "_maybe_switch":
-                # Determine whether this bypass was legitimately requested
-                # for a device that the coordinator recognises as having a
-                # precharge latch or forecast holdoff. Only in that case
-                # should bypass_throttle skip the authoritative suppression.
-                try:
-                    dev_name = self._device_name_for_entity(entity_id)
-                except Exception:
-                    _ignored_exc()
-                    dev_name = None
-
-                legitimate_internal_bypass = False
-                try:
-                    if dev_name and (
-                        dev_name in self._precharge_release
-                        or dev_name in self._precharge_release_ready
-                        or dev_name in self._forecast_holdoff
-                    ):
-                        legitimate_internal_bypass = True
-                except Exception:
-                    _ignored_exc()
-                    legitimate_internal_bypass = False
-
-                stored = self._last_switch_time.get(entity_id)
-                if stored is not None:
-                    try:
-                        if isinstance(stored, (int, float)):
-                            stored_epoch = float(stored)
-                        elif isinstance(stored, str):
-                            parsed = dt_util.parse_datetime(stored)
-                            stored_epoch = float(dt_util.as_timestamp(parsed)) if parsed else None
-                        else:
-                            stored_epoch = float(dt_util.as_timestamp(stored))
-                    except Exception:
-                        _ignored_exc()
-                        stored_epoch = None
-                else:
-                    stored_epoch = None
-                throttle_cfg = float(self._device_switch_throttle.get(entity_id, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds)
-                if stored_epoch is not None and pre_epoch is not None:
-                    elapsed = float(pre_epoch) - float(stored_epoch)
-                    # If previous action is opposite of this action and we're
-                    # inside the throttle window, skip unless this call was
-                    # an intentional internal bypass for precharge/forecast.
-                    if (
-                        elapsed >= 0
-                        and elapsed < float(throttle_cfg)
-                        and bool(previous_last_action) != bool(action == "turn_on")
-                        and not (bypass_throttle and legitimate_internal_bypass)
-                    ):
-                        try:
-                            _LOGGER.debug(
-                                "DBG_ASYNC_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f prev_action=%r action=%s",
-                                entity_id,
-                                elapsed,
-                                throttle_cfg,
-                                previous_last_action,
-                                action,
-                            )
-                        except Exception:
-                            _ignored_exc()
-                        _LOGGER.info("ASYNC_CALL_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f prev_action=%r action=%s", entity_id, elapsed, throttle_cfg, previous_last_action, action)
-                        return False
+            if self._should_authoritatively_suppress(
+                caller_fn, entity_id, pre_epoch, previous_last_action, action, bypass_throttle, force
+            ):
+                return False
         except Exception:
             _ignored_exc()
         try:
@@ -1989,69 +2093,81 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 err,
             )
             return False
-        if entity_id:
-            # Record the actual time the service was invoked to ensure the
-            # throttle check uses a consistent, real-world timestamp.
-            # Prefer the coordinator's logical evaluation time when present
-            # (used by deterministic tests). Fall back to real UTC if not set.
-            ts = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
-            # Use provided pre_epoch when available to make tests
-            # deterministic and to preserve the coordinator's logical
-            # evaluation ordering.
-            try:
-                epoch = float(pre_epoch) if pre_epoch is not None else float(dt_util.as_timestamp(ts))
-            except Exception:
-                try:
-                    epoch = float(dt_util.as_timestamp(ts))
-                except Exception:
-                    epoch = float(dt_util.as_timestamp(dt_util.utcnow()))
-            self._last_switch_time[entity_id] = epoch
-            # Also record the last intended action so future evaluations
-            # can reason deterministically about the coordinator's
-            # intended switch state even if the external entity state
-            # hasn't updated yet.
-            try:
-                # Use the explicit previous_last_action when provided so the
-                # coordinator's intended state reflects what was planned
-                # at the time the call was initiated. Fall back to the
-                # actual action derived from the service call.
-                if previous_last_action is not None:
-                    self._last_action_state[entity_id] = bool(previous_last_action)
-                else:
-                    self._last_action_state[entity_id] = bool(action == "turn_on")
-            except Exception:
-                _ignored_exc()
-            # Record the evaluation id when this service was invoked so
-            # subsequent checks can detect reversals that happen inside the
-            # same coordinator evaluation.
-            try:
-                val = int(getattr(self, "_current_eval_id", 0) or 0)
-                self._last_switch_eval[entity_id] = val
-                try:
-                    _LOGGER.debug(
-                        "DBG_SET_LAST_SWITCH_EVAL: entity=%s set_last_switch_eval=%s",
-                        entity_id,
-                        val,
-                    )
-                except Exception:
-                    _ignored_exc()
-            except Exception:
-                _ignored_exc()
-            # Log a human-friendly isoformat for diagnostics
+        # Record switch invocation metadata and leave the function small by
+        # delegating the recording behavior.
+        try:
+            if entity_id:
+                self._record_switch_invocation(entity_id, action, previous_last_action, pre_epoch)
+        except Exception:
+            _ignored_exc()
+        return True
+
+    def _record_switch_invocation(
+        self,
+        entity_id: str,
+        action: str,
+        previous_last_action: Optional[bool],
+        pre_epoch: Optional[float],
+    ) -> None:
+        """Record switch invocation time, intended action, and eval id.
+
+        Isolated to simplify the caller and make testing/refactoring easier.
+        """
+        # Record the actual time the service was invoked to ensure the
+        # throttle check uses a consistent, real-world timestamp.
+        # Prefer the coordinator's logical evaluation time when present
+        # (used by deterministic tests). Fall back to real UTC if not set.
+        epoch = self._resolve_epoch_for_invocation(pre_epoch)
+        self._last_switch_time[entity_id] = epoch
+        self._set_last_action_state(entity_id, action, previous_last_action)
+        try:
+            val = int(getattr(self, "_current_eval_id", 0) or 0)
+            self._last_switch_eval[entity_id] = val
             try:
                 _LOGGER.debug(
-                    "Recorded last_switch_time for %s = %s (epoch=%.3f)",
+                    "DBG_SET_LAST_SWITCH_EVAL: entity=%s set_last_switch_eval=%s",
                     entity_id,
-                    datetime.fromtimestamp(epoch).isoformat(),
-                    epoch,
+                    val,
                 )
             except Exception:
-                _LOGGER.debug("Recorded last_switch_time for %s = epoch %.3f", entity_id, epoch)
-            try:
-                _LOGGER.debug("last_switch_time keys after set: %s", list(self._last_switch_time.keys()))
-            except Exception:
                 _ignored_exc()
-        return True
+        except Exception:
+            _ignored_exc()
+        # Log a human-friendly isoformat for diagnostics
+        try:
+            _LOGGER.debug(
+                "Recorded last_switch_time for %s = %s (epoch=%.3f)",
+                entity_id,
+                datetime.fromtimestamp(epoch).isoformat(),
+                epoch,
+            )
+        except Exception:
+            _LOGGER.debug("Recorded last_switch_time for %s = epoch %.3f", entity_id, epoch)
+        try:
+            _LOGGER.debug("last_switch_time keys after set: %s", list(self._last_switch_time.keys()))
+        except Exception:
+            _ignored_exc()
+
+    def _resolve_epoch_for_invocation(self, pre_epoch: Optional[float]) -> float:
+        """Resolve the epoch timestamp used when recording a switch invocation."""
+        ts = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+        try:
+            return float(pre_epoch) if pre_epoch is not None else float(dt_util.as_timestamp(ts))
+        except Exception:
+            try:
+                return float(dt_util.as_timestamp(ts))
+            except Exception:
+                return float(dt_util.as_timestamp(dt_util.utcnow()))
+
+    def _set_last_action_state(self, entity_id: str, action: str, previous_last_action: Optional[bool]) -> None:
+        """Set the last intended action state for an entity."""
+        try:
+            if previous_last_action is not None:
+                self._last_action_state[entity_id] = bool(previous_last_action)
+            else:
+                self._last_action_state[entity_id] = bool(action == "turn_on")
+        except Exception:
+            _ignored_exc()
 
     def _record_desired_state(self, entity_id: Any, desired: bool) -> None:
         """Record an observed desired state for confirmation counting.
@@ -2093,7 +2209,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._current_eval_id,
         )
 
-    async def _maybe_switch(
+    async def _maybe_switch(  # noqa: C901
         self,
         action: str,
         service_data: Dict[str, Any],
@@ -2370,7 +2486,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         # was retrieved from the coordinator or inferred from the
                         # entity state.
                         if last_act_quick is not None and (now_e - last_e) < throttle_val_quick and bool(last_act_quick) != bool(desired):
-                            _LOGGER.info("EARLY_SUPPRESS_V2: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s", norm, now_e - last_e, throttle_val_quick, last_act_quick, desired)
+                            _LOGGER.info(
+                                "EARLY_SUPPRESS_V2: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
+                                norm,
+                                now_e - last_e,
+                                throttle_val_quick,
+                                last_act_quick,
+                                desired,
+                            )
                             return False
             except Exception:
                 _ignored_exc()
@@ -2995,7 +3118,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     ):
                         try:
                             print(
-                                f"DBG_FINAL_GUARD_SUPPRESS: entity={norm} elapsed={elapsed_final:.3f} throttle={throttle_final} last_action={last_action_for_final} desired={desired} previous_last_action={previous_last_action}"
+                                (
+                                    "DBG_FINAL_GUARD_SUPPRESS: entity="
+                                    f"{norm} elapsed={elapsed_final:.3f} throttle={throttle_final} "
+                                    f"last_action={last_action_for_final} desired={desired} "
+                                    f"previous_last_action={previous_last_action}"
+                                )
                             )
                         except Exception:
                             _ignored_exc()
@@ -3032,7 +3160,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             pass
         return result
 
-    async def _apply_charger_logic(
+    async def _apply_charger_logic(  # noqa: C901
         self,
         device: DeviceConfig,
         *,
