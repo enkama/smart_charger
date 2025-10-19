@@ -109,6 +109,8 @@ See `custom_components/smart_charger/services.yaml` for the exact service schema
 - Run integration tests inside a Home Assistant development container if you extend the module.
 - Follow the [Home Assistant developer documentation](https://developers.home-assistant.io/) when modifying config flows, coordinators, or entities.
 
+For developer notes and tips, see `CONTRIBUTING.md`.
+
 ## License
 
 Smart Charger is distributed under the [MIT License](LICENSE) by enkama.

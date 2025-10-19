@@ -8,6 +8,48 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from contextlib import contextmanager
+
+
+@pytest.fixture()
+def real_coordinator_logger():
+    """Temporarily restore the coordinator real logger for a test.
+
+    Usage:
+
+        def test_something(real_coordinator_logger):
+            # inside this test _LOGGER is the real logger
+            ...
+
+    The fixture restores the original adapter after the test completes.
+    """
+    try:
+        from custom_components.smart_charger import coordinator
+    except Exception:
+        # If the coordinator is not importable, just yield (no-op)
+        yield
+        return
+
+    # Save the current adapter and replace with the real logger
+    adapter = getattr(coordinator, "_LOGGER", None)
+    real = getattr(coordinator, "_REAL_LOGGER", None)
+    if real is None:
+        # Nothing to do
+        yield
+        return
+
+    try:
+        coordinator._LOGGER = real
+        yield
+    finally:
+        # Restore whatever was there previously
+        try:
+            coordinator._LOGGER = adapter
+        except Exception:
+            try:
+                coordinator._LOGGER = real
+            except Exception:
+                pass
 
 
 def _configure_test_logging() -> None:

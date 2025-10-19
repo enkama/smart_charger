@@ -66,6 +66,9 @@ class SmartChargerLearning:
     """Persistent learning engine tracking charge speeds and cycles."""
 
     STORAGE_VERSION = 1
+    # Explicit attribute annotations to satisfy static analysis
+    _store: Store
+    _legacy_store: Optional[Store]
 
     def __init__(self, hass, entry_id: Optional[str] = None) -> None:
         self.hass = hass

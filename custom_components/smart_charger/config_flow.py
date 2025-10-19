@@ -300,6 +300,7 @@ class SmartChargerFlowMixin:
     """Shared helpers for config and options flows."""
 
     hass: Any
+    _advanced_idx: Optional[int]
 
     def _schema_from_fields(
         self,
