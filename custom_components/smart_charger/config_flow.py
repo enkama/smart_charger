@@ -50,6 +50,16 @@ from .const import (
     CONF_SUGGESTION_THRESHOLD,
     CONF_SWITCH_CONFIRMATION_COUNT,
     CONF_SWITCH_THROTTLE_SECONDS,
+    CONF_ADAPTIVE_THROTTLE_ENABLED,
+    CONF_ADAPTIVE_THROTTLE_MULTIPLIER,
+    CONF_ADAPTIVE_THROTTLE_MIN_SECONDS,
+    CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS,
+    CONF_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+    CONF_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
+    CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP,
+    CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
+    CONF_ADAPTIVE_EWMA_ALPHA,
+    CONF_ADAPTIVE_THROTTLE_MODE,
     CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
@@ -61,6 +71,16 @@ from .const import (
     DEFAULT_SUGGESTION_THRESHOLD,
     DEFAULT_SWITCH_CONFIRMATION_COUNT,
     DEFAULT_SWITCH_THROTTLE_SECONDS,
+    DEFAULT_ADAPTIVE_THROTTLE_ENABLED,
+    DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER,
+    DEFAULT_ADAPTIVE_THROTTLE_MIN_SECONDS,
+    DEFAULT_ADAPTIVE_THROTTLE_DURATION_SECONDS,
+    DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+    DEFAULT_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
+    DEFAULT_ADAPTIVE_THROTTLE_BACKOFF_STEP,
+    DEFAULT_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
+    DEFAULT_ADAPTIVE_EWMA_ALPHA,
+    DEFAULT_ADAPTIVE_THROTTLE_MODE,
     DEFAULT_TARGET_LEVEL,
     DOMAIN,
 )
@@ -92,6 +112,20 @@ ALARM_MODE_SELECTOR = SelectSelector(
     SelectSelectorConfig(
         options=[ALARM_MODE_SINGLE, ALARM_MODE_PER_DAY],
         translation_key="alarm_mode",
+        multiple=False,
+        mode=SelectSelectorMode.DROPDOWN,
+    )
+)
+
+
+ADAPTIVE_MODE_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=[
+            {"value": "conservative", "label": "Conservative"},
+            {"value": "normal", "label": "Normal"},
+            {"value": "aggressive", "label": "Aggressive"},
+        ],
+        translation_key="adaptive_throttle_mode",
         multiple=False,
         mode=SelectSelectorMode.DROPDOWN,
     )
@@ -245,6 +279,70 @@ ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
         CONF_SWITCH_CONFIRMATION_COUNT,
         selector=NumberSelector(NumberSelectorConfig(min=1, max=5, step=1)),
         default=DEFAULT_SWITCH_CONFIRMATION_COUNT,
+    ),
+    SchemaField(
+        CONF_ADAPTIVE_THROTTLE_ENABLED,
+        validator=bool,
+        default=DEFAULT_ADAPTIVE_THROTTLE_ENABLED,
+    ),
+    SchemaField(
+        CONF_ADAPTIVE_THROTTLE_MULTIPLIER,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=1.0, max=10.0, step=0.1)
+        ),
+        default=DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER,
+    ),
+    SchemaField(
+        CONF_ADAPTIVE_THROTTLE_MIN_SECONDS,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=1, max=3600, step=1, unit_of_measurement="s")
+        ),
+        default=DEFAULT_ADAPTIVE_THROTTLE_MIN_SECONDS,
+    ),
+    SchemaField(
+        CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=1, max=86400, step=1, unit_of_measurement="s")
+        ),
+        default=DEFAULT_ADAPTIVE_THROTTLE_DURATION_SECONDS,
+    ),
+    SchemaField(
+        CONF_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=30, max=3600, step=30, unit_of_measurement="s")
+        ),
+        default=DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+    ),
+    SchemaField(
+        CONF_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
+        selector=NumberSelector(NumberSelectorConfig(min=1, max=20, step=1)),
+        default=DEFAULT_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
+    ),
+    SchemaField(
+        CONF_ADAPTIVE_THROTTLE_MODE,
+        selector=ADAPTIVE_MODE_SELECTOR,
+        default=DEFAULT_ADAPTIVE_THROTTLE_MODE,
+    ),
+    SchemaField(
+        CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=0.0, max=5.0, step=0.1)
+        ),
+        default=DEFAULT_ADAPTIVE_THROTTLE_BACKOFF_STEP,
+    ),
+    SchemaField(
+        CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=1.0, max=20.0, step=0.1)
+        ),
+        default=DEFAULT_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
+    ),
+    SchemaField(
+        CONF_ADAPTIVE_EWMA_ALPHA,
+        selector=NumberSelector(
+            NumberSelectorConfig(min=0.01, max=1.0, step=0.01)
+        ),
+        default=DEFAULT_ADAPTIVE_EWMA_ALPHA,
     ),
 )
 ALARM_FIELDS: tuple[SchemaField, ...] = (

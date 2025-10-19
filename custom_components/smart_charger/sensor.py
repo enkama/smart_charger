@@ -8,7 +8,7 @@ from homeassistant.const import STATE_UNKNOWN
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_ADAPTIVE_EWMA_ALPHA, DEFAULT_ADAPTIVE_EWMA_ALPHA
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,6 +31,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
         name = device.get("name")
         if name:
             entities.append(SmartChargerDeviceSensor(name, coordinator))
+
+    # Add adaptive telemetry sensor (global across the integration)
+    entities.append(SmartChargerAdaptiveSensor(coordinator))
 
     async_add_entities(entities, True)
 
@@ -288,6 +291,89 @@ class SmartChargerDeviceSensor(SensorEntity):
             self._attr_icon = icon_map.get(status, "mdi:battery")
             self._attr_extra_state_attributes = extra
             self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        await self.coordinator.async_request_refresh()
+
+
+class SmartChargerAdaptiveSensor(SensorEntity):
+    """Expose integration-level adaptive telemetry: flip-flop counts and active overrides."""
+
+    _attr_name = "Smart Charger Adaptive Telemetry"
+    _attr_icon = "mdi:shield-alert"
+    _attr_should_poll = False
+    _attr_translation_key = "adaptive_telemetry"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+        self._attr_unique_id = f"{DOMAIN}_adaptive_telemetry"
+        self._attr_native_value = 0
+        self._attr_extra_state_attributes: Dict[str, Any] = {
+            "flipflop_counts": {},
+            "active_overrides": {},
+            "last_update": None,
+        }
+
+        # Initialize coordinator-side EWMA state if missing
+        if not hasattr(self.coordinator, "_flipflop_ewma"):
+            # store as events/sec EWMA
+            setattr(self.coordinator, "_flipflop_ewma", 0.0)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if hasattr(self.coordinator, "async_add_listener"):
+            self.async_on_remove(
+                self.coordinator.async_add_listener(self._handle_coordinator_update)
+            )
+        self._handle_coordinator_update()
+        await self.coordinator.async_request_refresh()
+
+    def _handle_coordinator_update(self) -> None:
+        # flipflop_events is a dict: entity -> list[timestamps]
+        ff = getattr(self.coordinator, "_flipflop_events", {}) or {}
+        counts = {k: len(v) for k, v in ff.items()}
+
+        overrides = getattr(self.coordinator, "_adaptive_throttle_overrides", {}) or {}
+        active = {
+            ent: {"applied": ov.get("applied"), "expires": ov.get("expires")}
+            for ent, ov in overrides.items()
+        }
+
+        total_events = sum(counts.values())
+
+        # compute window size from coordinator (fallback to 300s)
+        window = getattr(self.coordinator, "_flipflop_window_seconds", None)
+        if window is None:
+            window = getattr(self.coordinator, "_flipflop_window_seconds", 300.0)
+
+        # events per second and per minute
+        rate_per_sec = total_events / float(window) if window > 0 else 0.0
+        rate_per_min = rate_per_sec * 60.0
+
+        # determine EWMA alpha from config options (fallback to default)
+        try:
+            entry_obj = getattr(self.coordinator, "entry", None)
+            if entry_obj and getattr(entry_obj, "options", None) is not None:
+                alpha = float(entry_obj.options.get(CONF_ADAPTIVE_EWMA_ALPHA, DEFAULT_ADAPTIVE_EWMA_ALPHA))
+            else:
+                alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
+        except Exception:
+            alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
+        prev = getattr(self.coordinator, "_flipflop_ewma", 0.0)
+        ewma = prev + alpha * (rate_per_sec - prev)
+        setattr(self.coordinator, "_flipflop_ewma", ewma)
+
+        self._attr_native_value = total_events
+        self._attr_extra_state_attributes = {
+            "flipflop_counts": counts,
+            "flipflop_rate_per_second": round(rate_per_sec, 6),
+            "flipflop_rate_per_minute": round(rate_per_min, 3),
+            "flipflop_ewma_per_second": round(ewma, 6),
+            "active_overrides": active,
+            "active_override_count": len(active),
+            "last_update": dt_util.now().isoformat(),
+        }
+        self.async_write_ha_state()
 
     async def async_update(self) -> None:
         await self.coordinator.async_request_refresh()

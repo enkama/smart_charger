@@ -49,7 +49,10 @@ def real_coordinator_logger():
             try:
                 coordinator._LOGGER = real
             except Exception:
-                pass
+                    logging.getLogger(__name__).debug(
+                        "real_coordinator_logger: failed to restore _LOGGER",
+                        exc_info=True,
+                    )
 
 
 def _configure_test_logging() -> None:
@@ -83,7 +86,10 @@ def pytest_sessionstart(session):
         pytest_socket.disable_socket = _noop_disable_socket
     except Exception:  # pragma: no cover
         # If pytest-socket is not installed or behaves differently, skip silently.
-        pass
+        logging.getLogger(__name__).debug(
+            "pytest_sessionstart: pytest_socket not enabled; continuing",
+            exc_info=True,
+        )
 
 
 def pytest_configure(config):
@@ -93,7 +99,10 @@ def pytest_configure(config):
 
         enable_socket()
     except Exception:
-        pass
+        logging.getLogger(__name__).debug(
+            "pytest_configure: enable_socket failed or not available; continuing",
+            exc_info=True,
+        )
     force = getattr(config.option, "force_enable_socket", None)
     if force is not None:
         config.option.force_enable_socket = True

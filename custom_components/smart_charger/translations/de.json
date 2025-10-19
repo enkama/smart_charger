@@ -140,6 +140,26 @@
           "suggestion_threshold": "Vorschlags-Schwellenwert",
           "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)",
           "learning_recent_sample_hours": "Fenster für aktuelle Ladesamples (Stunden)"
+          ,
+          "adaptive_throttle_enabled": "Adaptive Drosselung aktivieren",
+          "adaptive_throttle_multiplier": "Adaptive Drosselungs-Multiplikator",
+          "adaptive_throttle_min_seconds": "Minimale Adaptive Drosselung (Sekunden)",
+          "adaptive_throttle_duration_seconds": "Dauer der adaptiven Drosselung (Sekunden)",
+          "adaptive_flipflop_window_seconds": "Erkennungsfenster für Flip-Flops (Sekunden)",
+          "adaptive_flipflop_warn_threshold": "Warnschwelle für Flip-Flops"
+          ,
+          "adaptive_throttle_backoff_step": "Adaptive Drosselungs-Backoff-Stufe",
+          "adaptive_throttle_max_multiplier": "Maximaler adaptiver Multiplikator"
+          ,
+          "adaptive_throttle_mode": "Adaptive Drosselungs-Modus",
+          "adaptive_throttle_mode_conservative": "Konservativ",
+          "adaptive_throttle_mode_normal": "Normal",
+          "adaptive_throttle_mode_aggressive": "Aggressiv"
+        },
+        "help": {
+          "adaptive_throttle_mode": "Wähle, wie aggressiv der Coordinator temporäre Schalter-Drosselung erhöhen soll, wenn wiederholte Flip‑Flop-Ereignisse erkannt werden. 'Konservativ' erhöht den Multiplikator langsam, 'Normal' verwendet den konfigurierten Backoff-Schritt, 'Aggressiv' erhöht schneller.",
+          "adaptive_throttle_backoff_step": "Erhöht den Multiplikator um diesen Betrag pro Flip‑Flop-Ereignis, das über der Warnschwelle liegt. Höhere Werte verstärken die Drosselung pro Ereignis.",
+          "adaptive_throttle_max_multiplier": "Maximaler Multiplikator, der auf die konfigurierte Schalter-Drosselung angewendet wird. Drosselstärke wird dadurch begrenzt."
         }
       }
     }
@@ -159,6 +179,13 @@
       },
       "learning_stats": {
         "name": "Smart Charger Lernstatistiken"
+      },
+      "adaptive_telemetry": {
+        "name": "Smart Charger Adaptive Telemetrie"
+      },
+      "adaptive_telemetry_help": {
+        "name": "Adaptive Telemetrie Hilfe",
+        "description": "Dieser Sensor gibt Laufzeitmetriken zur adaptiven Flip‑Flop‑Abmilderung aus: pro Entität die Anzahl kürzlicher Flip‑Flops, abgeleitete Raten (Ereignisse/Sekunde und Ereignisse/Minute), einen EWMA‑Gleitende Mittelwert der Ereignisrate sowie aktive adaptive Drosselungsüberschreibungen (angewendete Sekunden und Ablaufzeit). Verwende diesen Sensor, um das adaptive Verhalten zu überwachen und zu justieren."
       },
       "device_status": {
         "name": "Smart Charger Gerätestatus",
