@@ -244,6 +244,117 @@ def _resolve_entry_context(
     )
 
 
+async def _svc_force_refresh(call: ServiceCall) -> None:
+    """Service: force refresh a coordinator for an entry."""
+    _, entry_data = _resolve_entry_context(hass=call.hass, call=call)
+    await handle_force_refresh(call.hass, entry_data["coordinator"])
+
+
+async def _svc_start(call: ServiceCall) -> None:
+    """Service: start charging for an entry/state machine."""
+    entry, entry_data = _resolve_entry_context(hass=call.hass, call=call)
+    cfg = {**entry.data, **getattr(entry, "options", {})}
+    await handle_start_charging(call.hass, cfg, call, entry_data["state_machine"])
+
+
+async def _svc_stop(call: ServiceCall) -> None:
+    """Service: stop charging for an entry/state machine."""
+    entry, entry_data = _resolve_entry_context(hass=call.hass, call=call)
+    cfg = {**entry.data, **getattr(entry, "options", {})}
+    await handle_stop_charging(call.hass, cfg, call, entry_data["state_machine"])
+
+
+async def _svc_auto(call: ServiceCall) -> None:
+    """Service: toggle auto manage for an entry."""
+    entry, entry_data = _resolve_entry_context(hass=call.hass, call=call)
+    cfg = {**entry.data, **getattr(entry, "options", {})}
+    await handle_auto_manage(
+        call.hass,
+        entry.entry_id,
+        cfg,
+        entry_data["coordinator"],
+        entry_data["state_machine"],
+        entry_data["learning"],
+    )
+
+
+async def _svc_load_model(call: ServiceCall) -> None:
+    """Service: load model into learning component."""
+    entry, entry_data = _resolve_entry_context(hass=call.hass, call=call)
+    cfg = {**entry.data, **getattr(entry, "options", {})}
+    await handle_load_model(call.hass, cfg, call, entry_data["learning"])
+
+
+async def _svc_set_adaptive_override(call: ServiceCall) -> None:
+    """Service: set entry-level adaptive mode override and persist it."""
+    entry, entry_data = _resolve_entry_context(hass=call.hass, call=call)
+    mode = str(call.data.get("mode", "")).strip().lower() or None
+    if mode not in ("conservative", "normal", "aggressive"):
+        raise HomeAssistantError("Invalid adaptive mode")
+    coordinator: SmartChargerCoordinator = entry_data["coordinator"]
+    coordinator._adaptive_mode_override = mode
+    # persist to entry options
+    try:
+        new_opts = dict(getattr(entry, "options", {}) or {})
+        new_opts["adaptive_mode_override"] = mode
+        try:
+            call.hass.config_entries.async_update_entry(entry, options=new_opts)
+        except Exception:
+            _LOGGER.debug("Failed to persist adaptive override to config entry options", exc_info=True)
+    except Exception:
+        _LOGGER.debug("Failed to persist adaptive override (unexpected)")
+
+
+async def _svc_clear_adaptive_override(call: ServiceCall) -> None:
+    """Service: clear entry-level adaptive mode override and remove persistence."""
+    entry, entry_data = _resolve_entry_context(hass=call.hass, call=call)
+    coordinator: SmartChargerCoordinator = entry_data["coordinator"]
+    coordinator._adaptive_mode_override = None
+    # remove persisted key if present
+    try:
+        new_opts = dict(getattr(entry, "options", {}) or {})
+        if "adaptive_mode_override" in new_opts:
+            new_opts.pop("adaptive_mode_override", None)
+            try:
+                call.hass.config_entries.async_update_entry(entry, options=new_opts)
+            except Exception:
+                _LOGGER.debug("Failed to clear adaptive override from config entry options", exc_info=True)
+    except Exception:
+        _LOGGER.debug("Failed to clear adaptive override (unexpected)")
+
+
+async def _svc_set_adaptive_override_entity(call: ServiceCall) -> None:
+    """Service: set per-entity adaptive override and persist mapping."""
+    entry, entry_data = _resolve_entry_context(hass=call.hass, call=call)
+    entity_id = call.data.get("entity_id")
+    mode = str(call.data.get("mode", "")).strip().lower() or None
+    if not entity_id:
+        raise HomeAssistantError("entity_id is required")
+    if mode not in ("conservative", "normal", "aggressive"):
+        raise HomeAssistantError("Invalid adaptive mode")
+    coordinator: SmartChargerCoordinator = entry_data["coordinator"]
+    # apply per-entity throttle override
+    try:
+        overrides = getattr(coordinator, "_adaptive_throttle_overrides", {}) or {}
+        overrides[entity_id] = {"mode": mode, "applied": True}
+        coordinator._adaptive_throttle_overrides = overrides
+    except Exception:
+        _LOGGER.debug("Failed to apply in-memory entity override")
+    # persist mapping in entry options
+    try:
+        new_opts = dict(getattr(entry, "options", {}) or {})
+        mapping = dict(new_opts.get("adaptive_mode_overrides", {}) or {})
+        mapping[entity_id] = mode
+        new_opts["adaptive_mode_overrides"] = mapping
+        try:
+            call.hass.config_entries.async_update_entry(entry, options=new_opts)
+        except Exception:
+            _LOGGER.debug("Failed to persist entity override to config entry options", exc_info=True)
+    except Exception:
+        _LOGGER.debug("Failed to persist entity override (unexpected)")
+
+
+
 def _register_services(hass: HomeAssistant) -> None:
     domain_data = _get_domain_data(hass)
 
@@ -268,107 +379,13 @@ def _register_services(hass: HomeAssistant) -> None:
 
     override_clear_schema = base_schema
 
-    async def _svc_force_refresh(call: ServiceCall) -> None:
-        _, entry_data = _resolve_entry_context(hass, call)
-        await handle_force_refresh(hass, entry_data["coordinator"])
-
-    async def _svc_start(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        cfg = {**entry.data, **getattr(entry, "options", {})}
-        await handle_start_charging(hass, cfg, call, entry_data["state_machine"])
-
-    async def _svc_stop(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        cfg = {**entry.data, **getattr(entry, "options", {})}
-        await handle_stop_charging(hass, cfg, call, entry_data["state_machine"])
-
-    async def _svc_auto(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        cfg = {**entry.data, **getattr(entry, "options", {})}
-        await handle_auto_manage(
-            hass,
-            entry.entry_id,
-            cfg,
-            entry_data["coordinator"],
-            entry_data["state_machine"],
-            entry_data["learning"],
-        )
-
-    async def _svc_load_model(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        cfg = {**entry.data, **getattr(entry, "options", {})}
-        await handle_load_model(hass, cfg, call, entry_data["learning"])
-
-    async def _svc_set_adaptive_override(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        mode = str(call.data.get("mode", "")).strip().lower() or None
-        if mode not in ("conservative", "normal", "aggressive"):
-            raise HomeAssistantError("Invalid adaptive mode")
-        coordinator: SmartChargerCoordinator = entry_data["coordinator"]
-        coordinator._adaptive_mode_override = mode
-        # persist to entry options
-        try:
-            new_opts = dict(getattr(entry, "options", {}) or {})
-            new_opts["adaptive_mode_override"] = mode
-            try:
-                hass.config_entries.async_update_entry(entry, options=new_opts)
-            except Exception:
-                _LOGGER.debug("Failed to persist adaptive override to config entry options", exc_info=True)
-        except Exception:
-            _LOGGER.debug("Failed to persist adaptive override (unexpected)")
-
-    async def _svc_clear_adaptive_override(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        coordinator: SmartChargerCoordinator = entry_data["coordinator"]
-        coordinator._adaptive_mode_override = None
-        # remove persisted key if present
-        try:
-            new_opts = dict(getattr(entry, "options", {}) or {})
-            if "adaptive_mode_override" in new_opts:
-                new_opts.pop("adaptive_mode_override", None)
-                try:
-                    hass.config_entries.async_update_entry(entry, options=new_opts)
-                except Exception:
-                    _LOGGER.debug("Failed to clear adaptive override from config entry options", exc_info=True)
-        except Exception:
-            _LOGGER.debug("Failed to clear adaptive override (unexpected)")
-
-    # Entity-level adaptive override service
+    # Prepare entity-level schema (defined here so it's available in the registration tuple)
     entity_override_schema = base_schema.extend(
         {
             vol.Required("entity_id"): vol.Any(cv.entity_id, cv.entity_ids),
             vol.Required("mode"): vol.In({"conservative", "normal", "aggressive"}),
         }
     )
-
-    async def _svc_set_adaptive_override_entity(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        entity_id = call.data.get("entity_id")
-        mode = str(call.data.get("mode", "")).strip().lower() or None
-        if not entity_id:
-            raise HomeAssistantError("entity_id is required")
-        if mode not in ("conservative", "normal", "aggressive"):
-            raise HomeAssistantError("Invalid adaptive mode")
-        coordinator: SmartChargerCoordinator = entry_data["coordinator"]
-        # apply per-entity throttle override
-        try:
-            overrides = getattr(coordinator, "_adaptive_throttle_overrides", {}) or {}
-            overrides[entity_id] = {"mode": mode, "applied": True}
-            coordinator._adaptive_throttle_overrides = overrides
-        except Exception:
-            _LOGGER.debug("Failed to apply in-memory entity override")
-        # persist mapping in entry options
-        try:
-            new_opts = dict(getattr(entry, "options", {}) or {})
-            mapping = dict(new_opts.get("adaptive_mode_overrides", {}) or {})
-            mapping[entity_id] = mode
-            new_opts["adaptive_mode_overrides"] = mapping
-            try:
-                hass.config_entries.async_update_entry(entry, options=new_opts)
-            except Exception:
-                _LOGGER.debug("Failed to persist entity override to config entry options", exc_info=True)
-        except Exception:
-            _LOGGER.debug("Failed to persist entity override (unexpected)")
 
     for name, func, schema in (
         (SERVICE_FORCE_REFRESH, _svc_force_refresh, base_schema),
