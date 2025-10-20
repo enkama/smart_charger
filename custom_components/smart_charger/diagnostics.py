@@ -361,6 +361,8 @@ def _capture_coordinator_state(
                 getattr(getattr(coordinator, "entry", None), "options", {}).get("adaptive_ewma_alpha")
             ),
             "flipflop_ewma": getattr(coordinator, "_flipflop_ewma", None),
+            # Expose runtime adaptive override when set
+            "adaptive_mode_override": getattr(coordinator, "_adaptive_mode_override", None),
         }
 
     return coordinator_state, coordinator_plans, coordinator_insights

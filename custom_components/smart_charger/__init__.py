@@ -12,6 +12,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BATTERY_SENSOR,
@@ -243,6 +244,131 @@ def _resolve_entry_context(
     )
 
 
+async def _svc_force_refresh(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: force refresh a coordinator for an entry."""
+    _, entry_data = _resolve_entry_context(hass, call)
+    await handle_force_refresh(hass, entry_data["coordinator"])
+
+
+async def _svc_start(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: start charging for an entry/state machine."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    cfg = {**entry.data, **getattr(entry, "options", {})}
+    await handle_start_charging(hass, cfg, call, entry_data["state_machine"])
+
+
+async def _svc_stop(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: stop charging for an entry/state machine."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    cfg = {**entry.data, **getattr(entry, "options", {})}
+    await handle_stop_charging(hass, cfg, call, entry_data["state_machine"])
+
+
+async def _svc_auto(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: toggle auto manage for an entry."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    cfg = {**entry.data, **getattr(entry, "options", {})}
+    await handle_auto_manage(
+        hass,
+        entry.entry_id,
+        cfg,
+        entry_data["coordinator"],
+        entry_data["state_machine"],
+        entry_data["learning"],
+    )
+
+
+async def _svc_load_model(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: load model into learning component."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    cfg = {**entry.data, **getattr(entry, "options", {})}
+    await handle_load_model(hass, cfg, call, entry_data["learning"])
+
+
+async def _svc_set_adaptive_override(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: set entry-level adaptive mode override and persist it."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    mode = str(call.data.get("mode", "")).strip().lower() or None
+    if mode not in ("conservative", "normal", "aggressive"):
+        raise HomeAssistantError("Invalid adaptive mode")
+    coordinator: SmartChargerCoordinator = entry_data["coordinator"]
+    coordinator._adaptive_mode_override = mode
+    # persist to entry options
+    try:
+        new_opts = dict(getattr(entry, "options", {}) or {})
+        new_opts["adaptive_mode_override"] = mode
+        try:
+            hass.config_entries.async_update_entry(entry, options=new_opts)
+        except Exception:
+            _LOGGER.debug("Failed to persist adaptive override to config entry options", exc_info=True)
+    except Exception:
+        _LOGGER.debug("Failed to persist adaptive override (unexpected)")
+
+
+async def _svc_clear_adaptive_override(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: clear entry-level adaptive mode override and remove persistence."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    coordinator: SmartChargerCoordinator = entry_data["coordinator"]
+    coordinator._adaptive_mode_override = None
+    # remove persisted key if present
+    try:
+        new_opts = dict(getattr(entry, "options", {}) or {})
+        if "adaptive_mode_override" in new_opts:
+            new_opts.pop("adaptive_mode_override", None)
+            try:
+                hass.config_entries.async_update_entry(entry, options=new_opts)
+            except Exception:
+                _LOGGER.debug("Failed to clear adaptive override from config entry options", exc_info=True)
+    except Exception:
+        _LOGGER.debug("Failed to clear adaptive override (unexpected)")
+
+
+async def _svc_set_adaptive_override_entity(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: set per-entity adaptive override and persist mapping."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    entity_id = call.data.get("entity_id")
+    mode = str(call.data.get("mode", "")).strip().lower() or None
+    if not entity_id:
+        raise HomeAssistantError("entity_id is required")
+    if mode not in ("conservative", "normal", "aggressive"):
+        raise HomeAssistantError("Invalid adaptive mode")
+    coordinator: SmartChargerCoordinator = entry_data["coordinator"]
+    # apply per-entity throttle override
+    try:
+        overrides = getattr(coordinator, "_adaptive_throttle_overrides", {}) or {}
+        overrides[entity_id] = {"mode": mode, "applied": True}
+        coordinator._adaptive_throttle_overrides = overrides
+    except Exception:
+        _LOGGER.debug("Failed to apply in-memory entity override")
+    # persist mapping in entry options
+    try:
+        new_opts = dict(getattr(entry, "options", {}) or {})
+        mapping = dict(new_opts.get("adaptive_mode_overrides", {}) or {})
+        mapping[entity_id] = mode
+        new_opts["adaptive_mode_overrides"] = mapping
+        try:
+            hass.config_entries.async_update_entry(entry, options=new_opts)
+        except Exception:
+            _LOGGER.debug("Failed to persist entity override to config entry options", exc_info=True)
+    except Exception:
+        _LOGGER.debug("Failed to persist entity override (unexpected)")
+
+
+def _make_service_adapter(hass: HomeAssistant, func: Callable[..., Any]) -> Callable[[ServiceCall], Any]:
+    """Return an adapter that Home Assistant can call with a ServiceCall.
+
+    The provided `func` should be an async function expecting (hass, call).
+    The adapter returns an async callable with signature (call) -> coroutine.
+    """
+
+    async def _adapter(call: ServiceCall) -> None:
+        result = func(hass, call)
+        if inspect.isawaitable(result):
+            await result
+
+    return _adapter
+
+
 def _register_services(hass: HomeAssistant) -> None:
     domain_data = _get_domain_data(hass)
 
@@ -259,36 +385,21 @@ def _register_services(hass: HomeAssistant) -> None:
         }
     )
 
-    async def _svc_force_refresh(call: ServiceCall) -> None:
-        _, entry_data = _resolve_entry_context(hass, call)
-        await handle_force_refresh(hass, entry_data["coordinator"])
+    override_set_schema = base_schema.extend(
+        {
+            vol.Required("mode"): vol.In({"conservative", "normal", "aggressive"}),
+        }
+    )
 
-    async def _svc_start(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        cfg = {**entry.data, **getattr(entry, "options", {})}
-        await handle_start_charging(hass, cfg, call, entry_data["state_machine"])
+    override_clear_schema = base_schema
 
-    async def _svc_stop(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        cfg = {**entry.data, **getattr(entry, "options", {})}
-        await handle_stop_charging(hass, cfg, call, entry_data["state_machine"])
-
-    async def _svc_auto(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        cfg = {**entry.data, **getattr(entry, "options", {})}
-        await handle_auto_manage(
-            hass,
-            entry.entry_id,
-            cfg,
-            entry_data["coordinator"],
-            entry_data["state_machine"],
-            entry_data["learning"],
-        )
-
-    async def _svc_load_model(call: ServiceCall) -> None:
-        entry, entry_data = _resolve_entry_context(hass, call)
-        cfg = {**entry.data, **getattr(entry, "options", {})}
-        await handle_load_model(hass, cfg, call, entry_data["learning"])
+    # Prepare entity-level schema (defined here so it's available in the registration tuple)
+    entity_override_schema = base_schema.extend(
+        {
+            vol.Required("entity_id"): vol.Any(cv.entity_id, cv.entity_ids),
+            vol.Required("mode"): vol.In({"conservative", "normal", "aggressive"}),
+        }
+    )
 
     for name, func, schema in (
         (SERVICE_FORCE_REFRESH, _svc_force_refresh, base_schema),
@@ -296,9 +407,13 @@ def _register_services(hass: HomeAssistant) -> None:
         (SERVICE_STOP_CHARGING, _svc_stop, entity_schema),
         (SERVICE_AUTO_MANAGE, _svc_auto, base_schema),
         (SERVICE_LOAD_MODEL, _svc_load_model, load_model_schema),
+        ("set_adaptive_override", _svc_set_adaptive_override, override_set_schema),
+        ("clear_adaptive_override", _svc_clear_adaptive_override, override_clear_schema),
+        ("set_adaptive_override_entity", _svc_set_adaptive_override_entity, entity_override_schema),
     ):
         if not hass.services.has_service(DOMAIN, name):
-            hass.services.async_register(DOMAIN, name, func, schema=schema)
+            adapter = _make_service_adapter(hass, func)
+            hass.services.async_register(DOMAIN, name, adapter, schema=schema)
 
     domain_data["services_registered"] = True
 
@@ -320,6 +435,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = SmartChargerCoordinator(hass, entry)
     entry_data["coordinator"] = coordinator
     await coordinator.async_config_entry_first_refresh()
+    # After the coordinator has loaded its options, translate any persisted
+    # per-entity mode overrides into numeric throttle overrides so they
+    # immediately affect runtime behavior.
+    try:
+        persisted = dict(getattr(entry, "options", {}) or {}).get("adaptive_mode_overrides") or {}
+        if isinstance(persisted, dict) and persisted:
+            now_epoch = float(dt_util.as_timestamp(dt_util.utcnow()))
+            overrides = getattr(coordinator, "_adaptive_throttle_overrides", {}) or {}
+            for ent_id, mode_raw in persisted.items():
+                try:
+                    mode = str(mode_raw).strip().lower()
+                    # Determine factor mapping consistent with coordinator mode factors
+                    if mode == "conservative":
+                        mode_factor = 0.7
+                    elif mode == "aggressive":
+                        mode_factor = 1.4
+                    else:
+                        mode_factor = 1.0
+
+                    # Current configured throttle for entity (seconds)
+                    current = float(coordinator._device_switch_throttle.get(ent_id, coordinator._default_switch_throttle_seconds) or coordinator._default_switch_throttle_seconds)
+                    # Compute a starting multiplier using coordinator defaults/backoff base
+                    var_multiplier = float(getattr(coordinator, "_adaptive_throttle_multiplier", 1.0)) * float(mode_factor)
+                    # Clamp and compute desired applied throttle
+                    desired = max(current * var_multiplier, float(getattr(coordinator, "_adaptive_throttle_min_seconds", 0.0)))
+                    expires = float(now_epoch + float(getattr(coordinator, "_adaptive_throttle_duration_seconds", 600.0)))
+                    overrides[ent_id] = {
+                        "original": float(current),
+                        "applied": float(desired),
+                        "expires": float(expires),
+                    }
+                    # Apply to runtime throttle map so coordinator uses it immediately
+                    coordinator._device_switch_throttle[ent_id] = float(desired)
+                except Exception:
+                    _LOGGER.debug("Ignoring malformed persisted entity override for %s", ent_id)
+            coordinator._adaptive_throttle_overrides = overrides
+    except Exception:
+        _LOGGER.debug("Failed to load persisted per-entity overrides from entry.options")
 
     entry_data["coordinator_polling_unsub"] = _maybe_start_coordinator_polling(
         coordinator

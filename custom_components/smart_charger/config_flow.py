@@ -120,11 +120,11 @@ ALARM_MODE_SELECTOR = SelectSelector(
 
 ADAPTIVE_MODE_SELECTOR = SelectSelector(
     SelectSelectorConfig(
-        options=[
+        options=cast(Sequence[SelectOptionDict], [
             {"value": "conservative", "label": "Conservative"},
             {"value": "normal", "label": "Normal"},
             {"value": "aggressive", "label": "Aggressive"},
-        ],
+        ]),
         translation_key="adaptive_throttle_mode",
         multiple=False,
         mode=SelectSelectorMode.DROPDOWN,
