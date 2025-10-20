@@ -352,7 +352,6 @@ async def _svc_set_adaptive_override_entity(call: ServiceCall) -> None:
             _LOGGER.debug("Failed to persist entity override to config entry options", exc_info=True)
     except Exception:
         _LOGGER.debug("Failed to persist entity override (unexpected)")
- 
 
 def _register_services(hass: HomeAssistant) -> None:
     domain_data = _get_domain_data(hass)
