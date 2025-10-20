@@ -28,7 +28,6 @@ async def test_sustained_ewma_triggers_aggressive(hass) -> None:
     now = dt_util.as_timestamp(dt_util.utcnow())
     # push events to coordinator._flipflop_events (timestamps in epoch seconds)
     # create enough events so rate > threshold (warn_threshold/window)
-    window = getattr(coordinator, "_flipflop_window_seconds", 300.0)
     warn = getattr(coordinator, "_flipflop_warn_threshold", 3)
 
     # add warn + 2 events to ensure excess

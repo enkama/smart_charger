@@ -8,7 +8,6 @@ import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.smart_charger import async_setup_entry
 from custom_components.smart_charger.const import DOMAIN
 
 
