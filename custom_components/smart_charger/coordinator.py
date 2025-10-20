@@ -428,6 +428,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._precharge_release_cleared_by_threshold = {}
         # Internal state snapshot produced by _async_update_data
         self._state = {}
+        # EWMA metrics for flip-flop telemetry
+        self._flipflop_ewma = 0.0
+        self._flipflop_ewma_last_update = None
+        self._flipflop_ewma_exceeded = False
+        # Track when the EWMA first crossed the exceeded threshold
+        self._flipflop_ewma_exceeded_since = None
+        # Internal adaptive mode override (None|'conservative'|'normal'|'aggressive')
+        self._adaptive_mode_override = None
         # Per-device forecast holdoff flag: when True the coordinator has
         # determined a forecast-based holdoff for that device and some
         # urgent actions may bypass throttle. Stored keyed by device.name.
@@ -932,10 +940,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             except Exception:
                 _ignored_exc()
                 mode = DEFAULT_ADAPTIVE_THROTTLE_MODE
-            # Map mode to a scaling factor applied to the backoff growth
-            if mode == "conservative":
+
+            # Effective mode: allow runtime override to temporarily change behavior
+            effective_mode = str(getattr(self, "_adaptive_mode_override", None) or mode).strip().lower()
+
+            # Map effective_mode to a scaling factor applied to the backoff growth
+            if effective_mode == "conservative":
                 self._adaptive_mode_factor = 0.7
-            elif mode == "aggressive":
+            elif effective_mode == "aggressive":
                 self._adaptive_mode_factor = 1.4
             else:
                 self._adaptive_mode_factor = 1.0
@@ -1124,9 +1136,66 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
                     except Exception:
                         alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
-                    prev = getattr(self, "_flipflop_ewma", 0.0)
-                    ewma = prev + alpha * (rate_per_sec - prev)
-                    self._flipflop_ewma = ewma
+                    prev = float(getattr(self, "_flipflop_ewma", 0.0) or 0.0)
+                    try:
+                        ewma = prev + alpha * (rate_per_sec - prev)
+                    except Exception:
+                        _ignored_exc()
+                        ewma = prev
+                    # persist EWMA and metadata
+                    try:
+                        self._flipflop_ewma = ewma
+                        self._flipflop_ewma_last_update = float(now_epoch)
+                        # mark exceeded when EWMA crosses a small threshold (e.g., more than warn threshold / window)
+                        exceeded_threshold = float(self._flipflop_warn_threshold) / max(1.0, float(self._flipflop_window_seconds))
+                        prev_exceeded = bool(getattr(self, "_flipflop_ewma_exceeded", False))
+                        new_exceeded = ewma >= exceeded_threshold
+                        self._flipflop_ewma_exceeded = new_exceeded
+                        now_ts = float(now_epoch)
+                        if new_exceeded and not prev_exceeded:
+                            # record when we first exceed
+                            self._flipflop_ewma_exceeded_since = now_ts
+                            _LOGGER.warning("Flipflop EWMA exceeded threshold: ewma=%.6f threshold=%.6f", ewma, exceeded_threshold)
+                        elif new_exceeded and prev_exceeded:
+                            # already exceeded; check sustained duration
+                            try:
+                                since = float(getattr(self, "_flipflop_ewma_exceeded_since", now_ts) or now_ts)
+                                duration = now_ts - since
+                                # after 5 minutes of sustained exceed, flip integration to aggressive mode
+                                if duration >= 300.0 and self._adaptive_mode_override != "aggressive":
+                                    self._adaptive_mode_override = "aggressive"
+                                    _LOGGER.warning("Adaptive mode override applied: aggressive (sustained EWMA for %.0fs)", duration)
+                                    # persist override into ConfigEntry options so it survives restarts
+                                    try:
+                                        new_opts = dict(getattr(self.entry, "options", {}) or {})
+                                        new_opts["adaptive_mode_override"] = "aggressive"
+                                        try:
+                                            self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                        except Exception:
+                                            _ignored_exc()
+                                    except Exception:
+                                        _ignored_exc()
+                            except Exception:
+                                _ignored_exc()
+                        else:
+                            # not exceeded anymore: clear since/override
+                            self._flipflop_ewma_exceeded_since = None
+                            if getattr(self, "_adaptive_mode_override", None) is not None:
+                                _LOGGER.info("Adaptive mode override cleared (EWMA dropped)")
+                                self._adaptive_mode_override = None
+                                # remove persisted override key from options
+                                try:
+                                    new_opts = dict(getattr(self.entry, "options", {}) or {})
+                                    if "adaptive_mode_override" in new_opts:
+                                        new_opts.pop("adaptive_mode_override", None)
+                                        try:
+                                            self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                        except Exception:
+                                            _ignored_exc()
+                                except Exception:
+                                    _ignored_exc()
+                    except Exception:
+                        _ignored_exc()
                 except Exception:
                     _ignored_exc()
             except Exception:
@@ -3635,7 +3704,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         if battery <= device.min_level and not charger_is_on:
             self._log_action(
                 device_name,
-                logging.WARNING,
+                logging.DEBUG,
                 "[EmergencyCharge] %s below minimum level %.1f%% -> starting charging immediately (%s)",
                 device_name,
                 device.min_level,

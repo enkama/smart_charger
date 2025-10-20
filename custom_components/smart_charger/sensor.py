@@ -351,28 +351,36 @@ class SmartChargerAdaptiveSensor(SensorEntity):
         rate_per_min = rate_per_sec * 60.0
 
         # determine EWMA alpha from config options (fallback to default)
+        entry_obj = getattr(self.coordinator, "entry", None)
         try:
-            entry_obj = getattr(self.coordinator, "entry", None)
             if entry_obj and getattr(entry_obj, "options", None) is not None:
                 alpha = float(entry_obj.options.get(CONF_ADAPTIVE_EWMA_ALPHA, DEFAULT_ADAPTIVE_EWMA_ALPHA))
             else:
                 alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
         except Exception:
+            _LOGGER.debug("Failed to read EWMA alpha from entry options, using default", exc_info=True)
             alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
-            prev = getattr(self.coordinator, "_flipflop_ewma", 0.0)
+
+        # compute and persist EWMA (events/sec)
+        prev = getattr(self.coordinator, "_flipflop_ewma", 0.0)
+        try:
+            ewma = prev + alpha * (rate_per_sec - prev)
+        except Exception:
+            _LOGGER.debug("Failed to compute EWMA, falling back to previous value", exc_info=True)
             ewma = prev
-            try:
-                ewma = prev + alpha * (rate_per_sec - prev)
-            except Exception:
-                ewma = prev
-            self.coordinator._flipflop_ewma = ewma
+        self.coordinator._flipflop_ewma = ewma
 
         self._attr_native_value = total_events
+        # expose coordinator EWMA metadata when available
+        ewma_last = getattr(self.coordinator, "_flipflop_ewma_last_update", None)
+        ewma_exceeded = bool(getattr(self.coordinator, "_flipflop_ewma_exceeded", False))
         self._attr_extra_state_attributes = {
             "flipflop_counts": counts,
             "flipflop_rate_per_second": round(rate_per_sec, 6),
             "flipflop_rate_per_minute": round(rate_per_min, 3),
             "flipflop_ewma_per_second": round(ewma, 6),
+            "flipflop_ewma_last_update": dt_util.as_local(dt_util.utc_from_timestamp(ewma_last)).isoformat() if ewma_last else None,
+            "flipflop_ewma_exceeded": ewma_exceeded,
             "active_overrides": active,
             "active_override_count": len(active),
             "last_update": dt_util.now().isoformat(),
