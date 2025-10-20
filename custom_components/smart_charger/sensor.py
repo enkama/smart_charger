@@ -342,12 +342,14 @@ class SmartChargerAdaptiveSensor(SensorEntity):
         total_events = sum(counts.values())
 
         # compute window size from coordinator (fallback to 300s)
-        window = getattr(self.coordinator, "_flipflop_window_seconds", None)
-        if window is None:
-            window = getattr(self.coordinator, "_flipflop_window_seconds", 300.0)
+        window_raw = getattr(self.coordinator, "_flipflop_window_seconds", None)
+        if isinstance(window_raw, (int, float)):
+            window = float(window_raw)
+        else:
+            window = 300.0
 
         # events per second and per minute
-        rate_per_sec = total_events / float(window) if window > 0 else 0.0
+        rate_per_sec = total_events / window if window > 0 else 0.0
         rate_per_min = rate_per_sec * 60.0
 
         # determine EWMA alpha from config options (fallback to default)
@@ -372,14 +374,32 @@ class SmartChargerAdaptiveSensor(SensorEntity):
 
         self._attr_native_value = total_events
         # expose coordinator EWMA metadata when available
-        ewma_last = getattr(self.coordinator, "_flipflop_ewma_last_update", None)
+        ewma_last_raw = getattr(self.coordinator, "_flipflop_ewma_last_update", None)
         ewma_exceeded = bool(getattr(self.coordinator, "_flipflop_ewma_exceeded", False))
+
+        # Safely convert the stored EWMA timestamp to a float timestamp if possible.
+        ewma_last_ts: float | None = None
+        if isinstance(ewma_last_raw, (int, float, str)):
+            try:
+                ewma_last_ts = float(ewma_last_raw)
+            except (TypeError, ValueError):
+                _LOGGER.debug("Invalid _flipflop_ewma_last_update value: %r", ewma_last_raw)
+        else:
+            if ewma_last_raw is not None:
+                _LOGGER.debug("Invalid _flipflop_ewma_last_update value: %r", ewma_last_raw)
+
+        ewma_last_iso = (
+            dt_util.as_local(dt_util.utc_from_timestamp(ewma_last_ts)).isoformat()
+            if ewma_last_ts is not None
+            else None
+        )
+
         self._attr_extra_state_attributes = {
             "flipflop_counts": counts,
             "flipflop_rate_per_second": round(rate_per_sec, 6),
             "flipflop_rate_per_minute": round(rate_per_min, 3),
             "flipflop_ewma_per_second": round(ewma, 6),
-            "flipflop_ewma_last_update": dt_util.as_local(dt_util.utc_from_timestamp(ewma_last)).isoformat() if ewma_last else None,
+            "flipflop_ewma_last_update": ewma_last_iso,
             "flipflop_ewma_exceeded": ewma_exceeded,
             "active_overrides": active,
             "active_override_count": len(active),

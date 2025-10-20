@@ -353,6 +353,7 @@ async def _svc_set_adaptive_override_entity(hass: HomeAssistant, call: ServiceCa
     except Exception:
         _LOGGER.debug("Failed to persist entity override (unexpected)")
 
+
 def _make_service_adapter(hass: HomeAssistant, func: Callable[..., Any]) -> Callable[[ServiceCall], Any]:
     """Return an adapter that Home Assistant can call with a ServiceCall.
 
@@ -366,6 +367,7 @@ def _make_service_adapter(hass: HomeAssistant, func: Callable[..., Any]) -> Call
             await result
 
     return _adapter
+
 
 def _register_services(hass: HomeAssistant) -> None:
     domain_data = _get_domain_data(hass)
