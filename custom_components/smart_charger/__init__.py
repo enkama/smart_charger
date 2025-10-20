@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import functools
 import logging
 from typing import Any, Callable
 
@@ -367,7 +366,6 @@ def _make_service_adapter(hass: HomeAssistant, func: Callable[..., Any]) -> Call
             await result
 
     return _adapter
- 
 
 def _register_services(hass: HomeAssistant) -> None:
     domain_data = _get_domain_data(hass)
