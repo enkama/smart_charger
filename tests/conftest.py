@@ -61,6 +61,10 @@ def _configure_test_logging() -> None:
     Set the smart_charger logger to WARNING so CI logs focus on failures.
     """
     logging.getLogger("custom_components.smart_charger").setLevel(logging.WARNING)
+    # Also ensure asyncio debug/slow-callback warnings don't appear in test
+    # output. pytest-asyncio can enable loop debug which emits these warnings
+    # for long-running tasks; tests are deterministic so silence them here.
+    logging.getLogger("asyncio").setLevel(logging.ERROR)
 
 
 # Apply conservative logging level immediately so logs emitted during imports
@@ -68,6 +72,8 @@ def _configure_test_logging() -> None:
 logging.getLogger("custom_components.smart_charger").setLevel(logging.WARNING)
 # Silence the learning module errors that occur when running in the test harness.
 logging.getLogger("custom_components.smart_charger.learning").setLevel(logging.CRITICAL)
+# Avoid asyncio debug/slow-callback noise during tests
+logging.getLogger("asyncio").setLevel(logging.ERROR)
 
 
 def pytest_sessionstart(session):
