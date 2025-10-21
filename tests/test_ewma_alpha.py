@@ -1,14 +1,11 @@
 import time
 
 import pytest
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.smart_charger.const import (
-    DOMAIN,
-    CONF_ADAPTIVE_EWMA_ALPHA,
-)
+from custom_components.smart_charger.const import CONF_ADAPTIVE_EWMA_ALPHA, DOMAIN
 from custom_components.smart_charger.coordinator import SmartChargerCoordinator
+
 # sensor import not required for coordinator-level EWMA tests
 
 
@@ -16,15 +13,31 @@ from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 async def test_ewma_alpha_effect(hass):
     """Ensure a larger alpha reacts faster to a spike in flip-flop rate."""
 
-    device = {"name": "EV1", "battery_sensor": "sensor.bat", "charger_switch": "switch.ch", "target_level": 80, "min_level": 20, "precharge_level": 50, "use_predictive_mode": False}
+    device = {
+        "name": "EV1",
+        "battery_sensor": "sensor.bat",
+        "charger_switch": "switch.ch",
+        "target_level": 80,
+        "min_level": 20,
+        "precharge_level": 50,
+        "use_predictive_mode": False,
+    }
 
     # slow alpha (0.1)
-    entry_slow = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={CONF_ADAPTIVE_EWMA_ALPHA: 0.1})
+    entry_slow = MockConfigEntry(
+        domain=DOMAIN,
+        data={"devices": [device]},
+        options={CONF_ADAPTIVE_EWMA_ALPHA: 0.1},
+    )
     entry_slow.add_to_hass(hass)
     coord_slow = SmartChargerCoordinator(hass, entry_slow)
 
     # fast alpha (0.9)
-    entry_fast = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={CONF_ADAPTIVE_EWMA_ALPHA: 0.9})
+    entry_fast = MockConfigEntry(
+        domain=DOMAIN,
+        data={"devices": [device]},
+        options={CONF_ADAPTIVE_EWMA_ALPHA: 0.9},
+    )
     entry_fast.add_to_hass(hass)
     coord_fast = SmartChargerCoordinator(hass, entry_fast)
 

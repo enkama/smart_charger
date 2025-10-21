@@ -300,7 +300,10 @@ async def _svc_set_adaptive_override(hass: HomeAssistant, call: ServiceCall) -> 
         try:
             hass.config_entries.async_update_entry(entry, options=new_opts)
         except Exception:
-            _LOGGER.debug("Failed to persist adaptive override to config entry options", exc_info=True)
+            _LOGGER.debug(
+                "Failed to persist adaptive override to config entry options",
+                exc_info=True,
+            )
     except Exception:
         _LOGGER.debug("Failed to persist adaptive override (unexpected)")
 
@@ -318,12 +321,17 @@ async def _svc_clear_adaptive_override(hass: HomeAssistant, call: ServiceCall) -
             try:
                 hass.config_entries.async_update_entry(entry, options=new_opts)
             except Exception:
-                _LOGGER.debug("Failed to clear adaptive override from config entry options", exc_info=True)
+                _LOGGER.debug(
+                    "Failed to clear adaptive override from config entry options",
+                    exc_info=True,
+                )
     except Exception:
         _LOGGER.debug("Failed to clear adaptive override (unexpected)")
 
 
-async def _svc_set_adaptive_override_entity(hass: HomeAssistant, call: ServiceCall) -> None:
+async def _svc_set_adaptive_override_entity(
+    hass: HomeAssistant, call: ServiceCall
+) -> None:
     """Service: set per-entity adaptive override and persist mapping."""
     entry, entry_data = _resolve_entry_context(hass, call)
     entity_id = call.data.get("entity_id")
@@ -349,7 +357,10 @@ async def _svc_set_adaptive_override_entity(hass: HomeAssistant, call: ServiceCa
         try:
             hass.config_entries.async_update_entry(entry, options=new_opts)
         except Exception:
-            _LOGGER.debug("Failed to persist entity override to config entry options", exc_info=True)
+            _LOGGER.debug(
+                "Failed to persist entity override to config entry options",
+                exc_info=True,
+            )
     except Exception:
         _LOGGER.debug("Failed to persist entity override (unexpected)")
 
@@ -373,7 +384,11 @@ async def _svc_clear_post_alarm_history(hass: HomeAssistant, call: ServiceCall) 
     entity_id = call.data.get("entity_id")
     try:
         if entity_id:
-            coordinator._post_alarm_corrections = [c for c in coordinator._post_alarm_corrections if c.get("entity") != entity_id]
+            coordinator._post_alarm_corrections = [
+                c
+                for c in coordinator._post_alarm_corrections
+                if c.get("entity") != entity_id
+            ]
             if entity_id in coordinator._post_alarm_miss_streaks:
                 coordinator._post_alarm_miss_streaks.pop(entity_id, None)
         else:
@@ -383,7 +398,9 @@ async def _svc_clear_post_alarm_history(hass: HomeAssistant, call: ServiceCall) 
         _LOGGER.debug("Failed to clear post-alarm history", exc_info=True)
 
 
-async def _svc_accept_suggested_persistence(hass: HomeAssistant, call: ServiceCall) -> None:
+async def _svc_accept_suggested_persistence(
+    hass: HomeAssistant, call: ServiceCall
+) -> None:
     """Service: accept the suggested persistence for an entity (persist overrides)."""
     entry, entry_data = _resolve_entry_context(hass, call)
     coordinator: SmartChargerCoordinator = entry_data["coordinator"]
@@ -401,7 +418,9 @@ async def _svc_accept_suggested_persistence(hass: HomeAssistant, call: ServiceCa
             try:
                 hass.config_entries.async_update_entry(entry, options=new_opts)
             except Exception:
-                _LOGGER.debug("Failed to persist accepted adaptive override", exc_info=True)
+                _LOGGER.debug(
+                    "Failed to persist accepted adaptive override", exc_info=True
+                )
         # If there's a persisted smart_start suggestion in memory, persist it explicitly
         persisted_margin = coordinator._post_alarm_persisted_smart_start.get(entity_id)
         if persisted_margin is not None:
@@ -410,14 +429,20 @@ async def _svc_accept_suggested_persistence(hass: HomeAssistant, call: ServiceCa
             new_opts["smart_start_margin_overrides"] = mapping
             try:
                 hass.config_entries.async_update_entry(entry, options=new_opts)
-                coordinator._post_alarm_persisted_smart_start[entity_id] = float(persisted_margin)
+                coordinator._post_alarm_persisted_smart_start[entity_id] = float(
+                    persisted_margin
+                )
             except Exception:
-                _LOGGER.debug("Failed to persist accepted smart_start override", exc_info=True)
+                _LOGGER.debug(
+                    "Failed to persist accepted smart_start override", exc_info=True
+                )
     except Exception:
         _LOGGER.debug("accept_suggested_persistence failed", exc_info=True)
 
 
-async def _svc_revert_suggested_persistence(hass: HomeAssistant, call: ServiceCall) -> None:
+async def _svc_revert_suggested_persistence(
+    hass: HomeAssistant, call: ServiceCall
+) -> None:
     """Service: remove persisted suggestions for an entity and restore runtime state."""
     entry, entry_data = _resolve_entry_context(hass, call)
     coordinator: SmartChargerCoordinator = entry_data["coordinator"]
@@ -446,17 +471,23 @@ async def _svc_revert_suggested_persistence(hass: HomeAssistant, call: ServiceCa
         # Restore original throttle if tracked in adaptive overrides
         try:
             if entity_id in coordinator._adaptive_throttle_overrides:
-                orig = coordinator._adaptive_throttle_overrides[entity_id].get("original")
+                orig = coordinator._adaptive_throttle_overrides[entity_id].get(
+                    "original"
+                )
                 if orig:
                     coordinator._device_switch_throttle[entity_id] = float(orig)
                 coordinator._adaptive_throttle_overrides.pop(entity_id, None)
         except Exception:
-            _LOGGER.debug("Failed to restore runtime throttle after revert", exc_info=True)
+            _LOGGER.debug(
+                "Failed to restore runtime throttle after revert", exc_info=True
+            )
     except Exception:
         _LOGGER.debug("revert_suggested_persistence failed", exc_info=True)
 
 
-def _make_service_adapter(hass: HomeAssistant, func: Callable[..., Any]) -> Callable[[ServiceCall], Any]:
+def _make_service_adapter(
+    hass: HomeAssistant, func: Callable[..., Any]
+) -> Callable[[ServiceCall], Any]:
     """Return an adapter that Home Assistant can call with a ServiceCall.
 
     The provided `func` should be an async function expecting (hass, call).
@@ -510,12 +541,28 @@ def _register_services(hass: HomeAssistant) -> None:
         (SERVICE_AUTO_MANAGE, _svc_auto, base_schema),
         (SERVICE_LOAD_MODEL, _svc_load_model, load_model_schema),
         ("set_adaptive_override", _svc_set_adaptive_override, override_set_schema),
-        ("clear_adaptive_override", _svc_clear_adaptive_override, override_clear_schema),
-        ("set_adaptive_override_entity", _svc_set_adaptive_override_entity, entity_override_schema),
+        (
+            "clear_adaptive_override",
+            _svc_clear_adaptive_override,
+            override_clear_schema,
+        ),
+        (
+            "set_adaptive_override_entity",
+            _svc_set_adaptive_override_entity,
+            entity_override_schema,
+        ),
         ("list_post_alarm_insights", _svc_list_post_alarm_insights, base_schema),
         ("clear_post_alarm_history", _svc_clear_post_alarm_history, entity_schema),
-        ("accept_suggested_persistence", _svc_accept_suggested_persistence, entity_schema),
-        ("revert_suggested_persistence", _svc_revert_suggested_persistence, entity_schema),
+        (
+            "accept_suggested_persistence",
+            _svc_accept_suggested_persistence,
+            entity_schema,
+        ),
+        (
+            "revert_suggested_persistence",
+            _svc_revert_suggested_persistence,
+            entity_schema,
+        ),
     ):
         if not hass.services.has_service(DOMAIN, name):
             adapter = _make_service_adapter(hass, func)
@@ -545,7 +592,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # per-entity mode overrides into numeric throttle overrides so they
     # immediately affect runtime behavior.
     try:
-        persisted = dict(getattr(entry, "options", {}) or {}).get("adaptive_mode_overrides") or {}
+        persisted = (
+            dict(getattr(entry, "options", {}) or {}).get("adaptive_mode_overrides")
+            or {}
+        )
         if isinstance(persisted, dict) and persisted:
             now_epoch = float(dt_util.as_timestamp(dt_util.utcnow()))
             overrides = getattr(coordinator, "_adaptive_throttle_overrides", {}) or {}
@@ -561,12 +611,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         mode_factor = 1.0
 
                     # Current configured throttle for entity (seconds)
-                    current = float(coordinator._device_switch_throttle.get(ent_id, coordinator._default_switch_throttle_seconds) or coordinator._default_switch_throttle_seconds)
+                    current = float(
+                        coordinator._device_switch_throttle.get(
+                            ent_id, coordinator._default_switch_throttle_seconds
+                        )
+                        or coordinator._default_switch_throttle_seconds
+                    )
                     # Compute a starting multiplier using coordinator defaults/backoff base
-                    var_multiplier = float(getattr(coordinator, "_adaptive_throttle_multiplier", 1.0)) * float(mode_factor)
+                    var_multiplier = float(
+                        getattr(coordinator, "_adaptive_throttle_multiplier", 1.0)
+                    ) * float(mode_factor)
                     # Clamp and compute desired applied throttle
-                    desired = max(current * var_multiplier, float(getattr(coordinator, "_adaptive_throttle_min_seconds", 0.0)))
-                    expires = float(now_epoch + float(getattr(coordinator, "_adaptive_throttle_duration_seconds", 600.0)))
+                    desired = max(
+                        current * var_multiplier,
+                        float(
+                            getattr(coordinator, "_adaptive_throttle_min_seconds", 0.0)
+                        ),
+                    )
+                    expires = float(
+                        now_epoch
+                        + float(
+                            getattr(
+                                coordinator,
+                                "_adaptive_throttle_duration_seconds",
+                                600.0,
+                            )
+                        )
+                    )
                     overrides[ent_id] = {
                         "original": float(current),
                         "applied": float(desired),
@@ -575,10 +646,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     # Apply to runtime throttle map so coordinator uses it immediately
                     coordinator._device_switch_throttle[ent_id] = float(desired)
                 except Exception:
-                    _LOGGER.debug("Ignoring malformed persisted entity override for %s", ent_id)
+                    _LOGGER.debug(
+                        "Ignoring malformed persisted entity override for %s", ent_id
+                    )
             coordinator._adaptive_throttle_overrides = overrides
     except Exception:
-        _LOGGER.debug("Failed to load persisted per-entity overrides from entry.options")
+        _LOGGER.debug(
+            "Failed to load persisted per-entity overrides from entry.options"
+        )
 
     entry_data["coordinator_polling_unsub"] = _maybe_start_coordinator_polling(
         coordinator

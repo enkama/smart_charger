@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, State
@@ -35,7 +35,7 @@ def _entity_domain(entity_id: Any) -> str:
     return entity_id.split(".", 1)[0]
 
 
-def _extract_state(state_obj: Optional[State]) -> Dict[str, Any]:
+def _extract_state(state_obj: State | None) -> dict[str, Any]:
     """Return sanitized state and key attributes."""
     if not state_obj:
         return {"state": None, "attributes": {}}
@@ -49,7 +49,7 @@ def _extract_state(state_obj: Optional[State]) -> Dict[str, Any]:
     }
 
 
-def _optional_float(value: Any) -> Optional[float]:
+def _optional_float(value: Any) -> float | None:
     if value in (None, ""):
         return None
     try:
@@ -59,30 +59,30 @@ def _optional_float(value: Any) -> Optional[float]:
     return parsed
 
 
-def _resolved_margin(value: Optional[float], default: float) -> float:
+def _resolved_margin(value: float | None, default: float) -> float:
     if value is None or value < 0:
         return default
     return value
 
 
-def _coordinator_meta(coordinator) -> Dict[str, Any]:
+def _coordinator_meta(coordinator) -> dict[str, Any]:
     if not coordinator:
         return {}
 
     update_interval = getattr(coordinator, "update_interval", None)
     interval_seconds = update_interval.total_seconds() if update_interval else None
 
-    last_success: Optional[datetime] = getattr(
+    last_success: datetime | None = getattr(
         coordinator, "_last_successful_update", None
     )
     last_success_iso = (
         last_success.isoformat() if isinstance(last_success, datetime) else None
     )
-    elapsed_since_success: Optional[float] = None
+    elapsed_since_success: float | None = None
     if last_success:
         elapsed_since_success = (dt_util.utcnow() - last_success).total_seconds()
 
-    next_refresh_eta: Optional[float] = None
+    next_refresh_eta: float | None = None
     if interval_seconds is not None and elapsed_since_success is not None:
         next_refresh_eta = max(0.0, interval_seconds - elapsed_since_success)
 
@@ -103,12 +103,12 @@ def _coordinator_meta(coordinator) -> Dict[str, Any]:
     }
 
 
-def _summarize_error_history(state_machine) -> Dict[str, Any]:
+def _summarize_error_history(state_machine) -> dict[str, Any]:
     if not state_machine or not getattr(state_machine, "error_history", None):
         return {"recent": [], "counts": {}}
 
-    recent: list[Dict[str, Any]] = []
-    counts: Dict[str, int] = {}
+    recent: list[dict[str, Any]] = []
+    counts: dict[str, int] = {}
 
     for key, timestamps in state_machine.error_history.items():
         try:
@@ -133,9 +133,9 @@ def _summarize_error_history(state_machine) -> Dict[str, Any]:
 
 
 def _collect_device_diagnostics(
-    hass: HomeAssistant, devices: list[Dict[str, Any]]
-) -> list[Dict[str, Any]]:
-    sanitized_devices: list[Dict[str, Any]] = []
+    hass: HomeAssistant, devices: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    sanitized_devices: list[dict[str, Any]] = []
 
     for dev in devices:
         name = dev.get("name", "<unnamed>")
@@ -209,8 +209,8 @@ def _collect_device_diagnostics(
     return sanitized_devices
 
 
-def _build_learning_summary(learning) -> Dict[str, Any]:
-    summary: Dict[str, Any] = {}
+def _build_learning_summary(learning) -> dict[str, Any]:
+    summary: dict[str, Any] = {}
     if not learning or not hasattr(learning, "snapshot"):
         return summary
 
@@ -221,8 +221,8 @@ def _build_learning_summary(learning) -> Dict[str, Any]:
     summary["meta"] = meta
     summary["profile_count"] = meta.get("profile_count", len(profiles))
     summary["profiles"] = list(profiles.keys())
-    stats_detail: Dict[str, Any] = {}
-    active_sessions: Dict[str, Any] = {}
+    stats_detail: dict[str, Any] = {}
+    active_sessions: dict[str, Any] = {}
 
     for pid, pdata in profiles.items():
         stats_detail[pid] = {
@@ -247,9 +247,9 @@ def _build_learning_summary(learning) -> Dict[str, Any]:
     return summary
 
 
-def _build_error_heatmaps(state_machine) -> tuple[Dict[str, Any], Dict[str, Any]]:
-    error_heatmap: Dict[str, Any] = {}
-    global_heatmap: Dict[str, Any] = {}
+def _build_error_heatmaps(state_machine) -> tuple[dict[str, Any], dict[str, Any]]:
+    error_heatmap: dict[str, Any] = {}
+    global_heatmap: dict[str, Any] = {}
 
     if state_machine and getattr(state_machine, "error_history", None):
         for key, timestamps in state_machine.error_history.items():
@@ -281,10 +281,10 @@ def _build_error_heatmaps(state_machine) -> tuple[Dict[str, Any], Dict[str, Any]
 
 def _capture_coordinator_state(
     coordinator,
-) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-    coordinator_state: Dict[str, Any] = {}
-    coordinator_plans: Dict[str, Any] = {}
-    coordinator_insights: Dict[str, Any] = {}
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    coordinator_state: dict[str, Any] = {}
+    coordinator_plans: dict[str, Any] = {}
+    coordinator_insights: dict[str, Any] = {}
 
     if coordinator and getattr(coordinator, "profiles", None):
         now_utc = dt_util.utcnow()
@@ -295,7 +295,7 @@ def _capture_coordinator_state(
         for pid, plan in coordinator.profiles.items():
             plan_copy = dict(plan)
             alarm_iso = plan_copy.get("alarm_time")
-            next_event_delta: Optional[float] = None
+            next_event_delta: float | None = None
             if alarm_iso:
                 try:
                     alarm_dt = dt_util.parse_datetime(alarm_iso)
@@ -350,7 +350,9 @@ def _capture_coordinator_state(
             # Expose flip-flop telemetry if the coordinator records it
             "flipflop_events": {
                 ent: len(evts)
-                for ent, evts in dict(getattr(coordinator, "_flipflop_events", {}) or {}).items()
+                for ent, evts in dict(
+                    getattr(coordinator, "_flipflop_events", {}) or {}
+                ).items()
             },
             # Expose active adaptive throttle overrides (original, applied, expires)
             "adaptive_throttle_overrides": dict(
@@ -358,13 +360,19 @@ def _capture_coordinator_state(
             ),
             # Expose runtime EWMA alpha and current EWMA value if available
             "adaptive_ewma_alpha": (
-                getattr(getattr(coordinator, "entry", None), "options", {}).get("adaptive_ewma_alpha")
+                getattr(getattr(coordinator, "entry", None), "options", {}).get(
+                    "adaptive_ewma_alpha"
+                )
             ),
             "flipflop_ewma": getattr(coordinator, "_flipflop_ewma", None),
             # Expose runtime adaptive override when set
-            "adaptive_mode_override": getattr(coordinator, "_adaptive_mode_override", None),
+            "adaptive_mode_override": getattr(
+                coordinator, "_adaptive_mode_override", None
+            ),
             # Recent post-alarm corrections/suggestions recorded by coordinator
-            "post_alarm_corrections": list(getattr(coordinator, "_post_alarm_corrections", []) or []),
+            "post_alarm_corrections": list(
+                getattr(coordinator, "_post_alarm_corrections", []) or []
+            ),
         }
 
     return coordinator_state, coordinator_plans, coordinator_insights
@@ -372,7 +380,7 @@ def _capture_coordinator_state(
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return diagnostics for a Smart Charger config entry."""
     domain_data = hass.data[DOMAIN]
     data = domain_data["entries"].get(entry.entry_id, {})

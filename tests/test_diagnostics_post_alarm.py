@@ -12,9 +12,23 @@ pytestmark = pytest.mark.asyncio
 
 async def test_diagnostics_includes_post_alarm(hass):
     from custom_components.smart_charger.coordinator import SmartChargerCoordinator
-    from custom_components.smart_charger.diagnostics import async_get_config_entry_diagnostics
+    from custom_components.smart_charger.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
 
-    entry = MockConfigEntry(domain=DOMAIN, data={"devices": [{"name": "D1", "battery_sensor": "sensor.b1", "charger_switch": "switch.d1"}]}, options={})
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "devices": [
+                {
+                    "name": "D1",
+                    "battery_sensor": "sensor.b1",
+                    "charger_switch": "switch.d1",
+                }
+            ]
+        },
+        options={},
+    )
     entry.add_to_hass(hass)
     coordinator = SmartChargerCoordinator(hass, entry)
     hass.data.setdefault(DOMAIN, {}).setdefault("entries", {})[entry.entry_id] = {
@@ -26,7 +40,9 @@ async def test_diagnostics_includes_post_alarm(hass):
 
     # add telemetry and corrections
     coordinator._flipflop_events["switch.d1"] = [1, 2, 3]
-    coordinator._post_alarm_corrections.append({"entity": "switch.d1", "reason": "flipflop"})
+    coordinator._post_alarm_corrections.append(
+        {"entity": "switch.d1", "reason": "flipflop"}
+    )
     # Provide a minimal internal state so diagnostics will include coordinator_insights
     coordinator._state = {
         "D1": {

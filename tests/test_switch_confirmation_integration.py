@@ -158,7 +158,9 @@ async def test_throttle_prevents_rapid_toggling(hass) -> None:
     # Backdate last switch time so throttle is considered expired (deterministic)
     ent = device_dict[CONF_CHARGER_SWITCH]
     # store as epoch seconds to match coordinator internal expectations
-    coordinator._last_switch_time[ent] = dt_util.as_timestamp(dt_util.utcnow() - timedelta(seconds=6))
+    coordinator._last_switch_time[ent] = dt_util.as_timestamp(
+        dt_util.utcnow() - timedelta(seconds=6)
+    )
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=6))
     await hass.async_block_till_done()
     await coordinator.async_refresh()

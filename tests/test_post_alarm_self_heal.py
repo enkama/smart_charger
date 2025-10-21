@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -22,14 +22,23 @@ async def _make_coordinator_with_entry(hass, entry):
         "entry": entry,
         "coordinator": coordinator,
         # provide a minimal learning object with async_reset_profile stub
-        "learning": type("L", (), {"async_reset_profile": (lambda *_args, **_kwargs: asyncio.sleep(0))})(),
+        "learning": type(
+            "L",
+            (),
+            {"async_reset_profile": (lambda *_args, **_kwargs: asyncio.sleep(0))},
+        )(),
         "state_machine": None,
     }
     return coordinator
 
 
 async def test_flipflop_persistence_after_two_misses(hass):
-    device = {"name": "D1", "battery_sensor": "sensor.bat1", "charger_switch": "switch.d1", "target_level": 95}
+    device = {
+        "name": "D1",
+        "battery_sensor": "sensor.bat1",
+        "charger_switch": "switch.d1",
+        "target_level": 95,
+    }
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={})
     coordinator = await _make_coordinator_with_entry(hass, entry)
 
@@ -108,7 +117,9 @@ async def test_flipflop_persistence_after_two_misses(hass):
     await coordinator.async_refresh()
     await asyncio.sleep(0)
     # first miss increments streak but should not persist yet
-    assert entry.options.get("adaptive_mode_overrides") is None or "switch.d1" not in entry.options.get("adaptive_mode_overrides", {})
+    assert entry.options.get(
+        "adaptive_mode_overrides"
+    ) is None or "switch.d1" not in entry.options.get("adaptive_mode_overrides", {})
 
     # simulate another missed alarm (new alarm epoch incremented)
     pd["alarm_time"] = dt_util.as_local(now - timedelta(seconds=5)).isoformat()
@@ -130,7 +141,10 @@ async def test_flipflop_persistence_after_two_misses(hass):
         evidence = True
     if coordinator._post_alarm_miss_streaks.get("switch.d1", {}).get("flipflop", 0) > 0:
         evidence = True
-    if any(c.get("reason") == "flipflop" and c.get("entity") == "switch.d1" for c in coordinator._post_alarm_corrections):
+    if any(
+        c.get("reason") == "flipflop" and c.get("entity") == "switch.d1"
+        for c in coordinator._post_alarm_corrections
+    ):
         evidence = True
     # At minimum the alarm should have been handled (marked last_handled)
     if "switch.d1" in coordinator._post_alarm_last_handled:
@@ -139,7 +153,12 @@ async def test_flipflop_persistence_after_two_misses(hass):
 
 
 async def test_late_start_bumps_smart_start_and_build_plan_uses_it(hass):
-    device = {"name": "D2", "battery_sensor": "sensor.bat2", "charger_switch": "switch.d2", "target_level": 95}
+    device = {
+        "name": "D2",
+        "battery_sensor": "sensor.bat2",
+        "charger_switch": "switch.d2",
+        "target_level": 95,
+    }
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={})
     coordinator = await _make_coordinator_with_entry(hass, entry)
 
@@ -223,9 +242,15 @@ async def test_late_start_bumps_smart_start_and_build_plan_uses_it(hass):
         evidence2 = True
     if "switch.d2" in coordinator._post_alarm_persisted_smart_start:
         evidence2 = True
-    if coordinator._post_alarm_miss_streaks.get("switch.d2", {}).get("late_start", 0) > 0:
+    if (
+        coordinator._post_alarm_miss_streaks.get("switch.d2", {}).get("late_start", 0)
+        > 0
+    ):
         evidence2 = True
-    if any(c.get("reason") == "late_start" and c.get("entity") == "switch.d2" for c in coordinator._post_alarm_corrections):
+    if any(
+        c.get("reason") == "late_start" and c.get("entity") == "switch.d2"
+        for c in coordinator._post_alarm_corrections
+    ):
         evidence2 = True
     if "switch.d2" in coordinator._post_alarm_last_handled:
         evidence2 = True
@@ -234,19 +259,34 @@ async def test_late_start_bumps_smart_start_and_build_plan_uses_it(hass):
     # now ensure _build_plan picks up persisted override by calling _build_plan with same device
     from custom_components.smart_charger.coordinator import DeviceConfig
 
-    dev_cfg = DeviceConfig.from_dict({"name": "D2", "battery_sensor": "sensor.bat2", "charger_switch": "switch.d2", "target_level": 95})
-    plan = await coordinator._build_plan(dev_cfg, now, hass.data[DOMAIN]["entries"][entry.entry_id]["learning"], 1.0)
+    dev_cfg = DeviceConfig.from_dict(
+        {
+            "name": "D2",
+            "battery_sensor": "sensor.bat2",
+            "charger_switch": "switch.d2",
+            "target_level": 95,
+        }
+    )
+    plan = await coordinator._build_plan(
+        dev_cfg, now, hass.data[DOMAIN]["entries"][entry.entry_id]["learning"], 1.0
+    )
     if plan:
         pdict = plan.as_dict()
-        persisted_margin = (
-            entry.options.get("smart_start_margin_overrides", {}).get("switch.d2")
-            or coordinator._post_alarm_persisted_smart_start.get("switch.d2", 0.0)
+        persisted_margin = entry.options.get("smart_start_margin_overrides", {}).get(
+            "switch.d2"
+        ) or coordinator._post_alarm_persisted_smart_start.get("switch.d2", 0.0)
+        assert float(pdict.get("smart_start_margin", 0.0)) >= float(
+            persisted_margin or 0.0
         )
-        assert float(pdict.get("smart_start_margin", 0.0)) >= float(persisted_margin or 0.0)
 
 
 async def test_drain_miss_schedules_learning_reset(hass):
-    device = {"name": "D3", "battery_sensor": "sensor.bat3", "charger_switch": "switch.d3", "target_level": 95}
+    device = {
+        "name": "D3",
+        "battery_sensor": "sensor.bat3",
+        "charger_switch": "switch.d3",
+        "target_level": 95,
+    }
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={})
 
     # Create a learning object with an async_reset_profile spy
@@ -320,9 +360,11 @@ async def test_drain_miss_schedules_learning_reset(hass):
 
     # Spy on async_update_entry to ensure any persistence doesn't interfere; record calls
     orig_update3 = hass.config_entries.async_update_entry
+
     def noop_update(entry_obj, **kwargs):
         # ignore but keep call recorded
         return None
+
     hass.config_entries.async_update_entry = noop_update
 
     # run refresh 3 times to hit retrain threshold: update alarm_time each run
@@ -344,6 +386,9 @@ async def test_drain_miss_schedules_learning_reset(hass):
     # a non-zero retrain request counter, or a recorded correction entry.
     pid = device["name"]
     retrain_requests = coordinator._post_alarm_learning_retrain_requests.get(pid, 0)
-    correction_recorded = any(c.get("reason") == "drain_miss" and c.get("entity") == "switch.d3" for c in coordinator._post_alarm_corrections)
+    correction_recorded = any(
+        c.get("reason") == "drain_miss" and c.get("entity") == "switch.d3"
+        for c in coordinator._post_alarm_corrections
+    )
     assert learning.reset_count >= 0
     assert retrain_requests >= 1 or correction_recorded or learning.reset_count >= 1

@@ -1,29 +1,30 @@
 """Regression test: coordinator must not overwrite _last_action_state before final throttle check."""
+
 from __future__ import annotations
 
 from datetime import timedelta
 
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_mock_service,
 )
-from homeassistant.util import dt as dt_util
 
-from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 from custom_components.smart_charger.const import (
+    ALARM_MODE_SINGLE,
+    CONF_ALARM_ENTITY,
+    CONF_ALARM_MODE,
     CONF_BATTERY_SENSOR,
     CONF_CHARGER_SWITCH,
     CONF_MIN_LEVEL,
-    CONF_TARGET_LEVEL,
     CONF_PRECHARGE_LEVEL,
-    CONF_ALARM_ENTITY,
-    CONF_ALARM_MODE,
-    CONF_SWITCH_THROTTLE_SECONDS,
     CONF_SWITCH_CONFIRMATION_COUNT,
+    CONF_SWITCH_THROTTLE_SECONDS,
+    CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
-    ALARM_MODE_SINGLE,
     DOMAIN,
 )
+from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 
 
 async def test_last_action_state_preserved_until_throttle_check(hass) -> None:

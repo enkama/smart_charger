@@ -1,13 +1,9 @@
 import time
 
 import pytest
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.smart_charger.const import (
-    DOMAIN,
-    CONF_ADAPTIVE_EWMA_ALPHA,
-)
+from custom_components.smart_charger.const import CONF_ADAPTIVE_EWMA_ALPHA, DOMAIN
 from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 
 
@@ -15,9 +11,21 @@ from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 async def test_ewma_converges_to_rate(hass):
     """EWMA should approach a sustained rate over repeated updates."""
 
-    device = {"name": "EV1", "battery_sensor": "sensor.bat", "charger_switch": "switch.ch", "target_level": 80, "min_level": 20, "precharge_level": 50, "use_predictive_mode": False}
+    device = {
+        "name": "EV1",
+        "battery_sensor": "sensor.bat",
+        "charger_switch": "switch.ch",
+        "target_level": 80,
+        "min_level": 20,
+        "precharge_level": 50,
+        "use_predictive_mode": False,
+    }
 
-    entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={CONF_ADAPTIVE_EWMA_ALPHA: 0.2})
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"devices": [device]},
+        options={CONF_ADAPTIVE_EWMA_ALPHA: 0.2},
+    )
     entry.add_to_hass(hass)
     coord = SmartChargerCoordinator(hass, entry)
 
@@ -46,13 +54,29 @@ async def test_ewma_converges_to_rate(hass):
 async def test_ewma_decays_with_alpha(hass):
     """After a spike, EWMA should decay faster for larger alpha."""
 
-    device = {"name": "EV1", "battery_sensor": "sensor.bat", "charger_switch": "switch.ch", "target_level": 80, "min_level": 20, "precharge_level": 50, "use_predictive_mode": False}
+    device = {
+        "name": "EV1",
+        "battery_sensor": "sensor.bat",
+        "charger_switch": "switch.ch",
+        "target_level": 80,
+        "min_level": 20,
+        "precharge_level": 50,
+        "use_predictive_mode": False,
+    }
 
-    entry_low = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={CONF_ADAPTIVE_EWMA_ALPHA: 0.1})
+    entry_low = MockConfigEntry(
+        domain=DOMAIN,
+        data={"devices": [device]},
+        options={CONF_ADAPTIVE_EWMA_ALPHA: 0.1},
+    )
     entry_low.add_to_hass(hass)
     coord_low = SmartChargerCoordinator(hass, entry_low)
 
-    entry_high = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={CONF_ADAPTIVE_EWMA_ALPHA: 0.8})
+    entry_high = MockConfigEntry(
+        domain=DOMAIN,
+        data={"devices": [device]},
+        options={CONF_ADAPTIVE_EWMA_ALPHA: 0.8},
+    )
     entry_high.add_to_hass(hass)
     coord_high = SmartChargerCoordinator(hass, entry_high)
 

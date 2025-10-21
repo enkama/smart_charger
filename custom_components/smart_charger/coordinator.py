@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
-import inspect
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Iterable, Mapping
 
 from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant
@@ -16,6 +16,16 @@ from .const import (
     ALARM_MODE_PER_DAY,
     ALARM_MODE_SINGLE,
     CHARGING_STATES,
+    CONF_ADAPTIVE_EWMA_ALPHA,
+    CONF_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
+    CONF_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+    CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP,
+    CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS,
+    CONF_ADAPTIVE_THROTTLE_ENABLED,
+    CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
+    CONF_ADAPTIVE_THROTTLE_MIN_SECONDS,
+    CONF_ADAPTIVE_THROTTLE_MODE,
+    CONF_ADAPTIVE_THROTTLE_MULTIPLIER,
     CONF_ALARM_ENTITY,
     CONF_ALARM_FRIDAY,
     CONF_ALARM_MODE,
@@ -29,53 +39,43 @@ from .const import (
     CONF_BATTERY_SENSOR,
     CONF_CHARGER_SWITCH,
     CONF_CHARGING_SENSOR,
+    CONF_LEARNING_RECENT_SAMPLE_HOURS,
     CONF_MIN_LEVEL,
+    CONF_PRECHARGE_COUNTDOWN_WINDOW,
     CONF_PRECHARGE_LEVEL,
     CONF_PRECHARGE_MARGIN_OFF,
     CONF_PRECHARGE_MARGIN_ON,
-    CONF_PRECHARGE_COUNTDOWN_WINDOW,
-    CONF_LEARNING_RECENT_SAMPLE_HOURS,
-    CONF_SWITCH_THROTTLE_SECONDS,
-    CONF_SWITCH_CONFIRMATION_COUNT,
     CONF_PRESENCE_SENSOR,
+    CONF_SMART_START_MARGIN,
+    CONF_SWITCH_CONFIRMATION_COUNT,
+    CONF_SWITCH_THROTTLE_SECONDS,
     CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
-    CONF_SMART_START_MARGIN,
-    DEFAULT_TARGET_LEVEL,
+    DEFAULT_ADAPTIVE_EWMA_ALPHA,
+    DEFAULT_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
+    DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+    DEFAULT_ADAPTIVE_THROTTLE_BACKOFF_STEP,
+    DEFAULT_ADAPTIVE_THROTTLE_DURATION_SECONDS,
+    DEFAULT_ADAPTIVE_THROTTLE_ENABLED,
+    DEFAULT_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
+    DEFAULT_ADAPTIVE_THROTTLE_MIN_SECONDS,
+    DEFAULT_ADAPTIVE_THROTTLE_MODE,
+    DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER,
+    DEFAULT_FALLBACK_MINUTES_PER_PERCENT,
+    DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+    DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     DEFAULT_PRECHARGE_MARGIN_OFF,
     DEFAULT_PRECHARGE_MARGIN_ON,
     DEFAULT_SMART_START_MARGIN,
-    DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
-    DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
-    DEFAULT_SWITCH_THROTTLE_SECONDS,
     DEFAULT_SWITCH_CONFIRMATION_COUNT,
-    DEFAULT_ADAPTIVE_THROTTLE_ENABLED,
-    DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER,
-    DEFAULT_ADAPTIVE_THROTTLE_MIN_SECONDS,
-    DEFAULT_ADAPTIVE_THROTTLE_DURATION_SECONDS,
-    DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
-    DEFAULT_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
-    DEFAULT_ADAPTIVE_THROTTLE_BACKOFF_STEP,
-    DEFAULT_ADAPTIVE_EWMA_ALPHA,
-    DEFAULT_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
-    DEFAULT_ADAPTIVE_THROTTLE_MODE,
-    CONF_ADAPTIVE_THROTTLE_ENABLED,
-    CONF_ADAPTIVE_THROTTLE_MULTIPLIER,
-    CONF_ADAPTIVE_THROTTLE_MIN_SECONDS,
-    CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS,
-    CONF_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
-    CONF_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
-    CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP,
-    CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
-    CONF_ADAPTIVE_THROTTLE_MODE,
-    CONF_ADAPTIVE_EWMA_ALPHA,
+    DEFAULT_SWITCH_THROTTLE_SECONDS,
+    DEFAULT_TARGET_LEVEL,
     DISCHARGING_STATES,
     DOMAIN,
-    DEFAULT_FALLBACK_MINUTES_PER_PERCENT,
+    FULL_STATES,
     LEARNING_DEFAULT_SPEED,
     LEARNING_MAX_SPEED,
     LEARNING_MIN_SPEED,
-    FULL_STATES,
     MAX_OBSERVED_DRAIN_RATE,
     UNKNOWN_STATES,
     UPDATE_INTERVAL,
@@ -135,7 +135,9 @@ def _ignored_exc() -> None:
     the original behaviour while satisfying static analysis.
     """
     try:
-        _LOGGER.debug("Ignored exception (suppressed); enable DEBUG for traceback", exc_info=True)
+        _LOGGER.debug(
+            "Ignored exception (suppressed); enable DEBUG for traceback", exc_info=True
+        )
     except Exception:
         # If logging itself fails, there's nothing else useful we can do.
         try:
@@ -144,7 +146,7 @@ def _ignored_exc() -> None:
             _ignored_exc()
 
 
-def _coerce_margin(value: Any) -> Optional[float]:
+def _coerce_margin(value: Any) -> float | None:
     if value in (None, ""):
         return None
     try:
@@ -154,7 +156,7 @@ def _coerce_margin(value: Any) -> Optional[float]:
     return max(0.0, parsed)
 
 
-def _coerce_learning_window(value: Any) -> Optional[float]:
+def _coerce_learning_window(value: Any) -> float | None:
     if value in (None, ""):
         return None
     try:
@@ -165,7 +167,7 @@ def _coerce_learning_window(value: Any) -> Optional[float]:
     return clamped
 
 
-def _coerce_confirmation(value: Any) -> Optional[int]:
+def _coerce_confirmation(value: Any) -> int | None:
     if value in (None, ""):
         return None
     try:
@@ -198,21 +200,21 @@ class DeviceConfig:
     min_level: float
     precharge_level: float
     use_predictive_mode: bool
-    precharge_margin_on: Optional[float] = None
-    precharge_margin_off: Optional[float] = None
-    smart_start_margin: Optional[float] = None
-    switch_throttle_seconds: Optional[float] = None
-    switch_confirmation_count: Optional[int] = None
-    charging_sensor: Optional[str] = None
-    avg_speed_sensor: Optional[str] = None
-    presence_sensor: Optional[str] = None
+    precharge_margin_on: float | None = None
+    precharge_margin_off: float | None = None
+    smart_start_margin: float | None = None
+    switch_throttle_seconds: float | None = None
+    switch_confirmation_count: int | None = None
+    charging_sensor: str | None = None
+    avg_speed_sensor: str | None = None
+    presence_sensor: str | None = None
     alarm_mode: str = ALARM_MODE_SINGLE
-    alarm_entity: Optional[str] = None
-    learning_recent_sample_hours: Optional[float] = None
+    alarm_entity: str | None = None
+    learning_recent_sample_hours: float | None = None
     alarm_entities_by_weekday: Mapping[int, str] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, raw: Mapping[str, Any]) -> "DeviceConfig":
+    def from_dict(cls, raw: Mapping[str, Any]) -> DeviceConfig:
         name = str(raw.get("name", "")).strip()
         battery_sensor = raw.get(CONF_BATTERY_SENSOR)
         charger_switch = raw.get(CONF_CHARGER_SWITCH)
@@ -257,7 +259,7 @@ class DeviceConfig:
             alarm_entities_by_weekday=weekday_map,
         )
 
-    def alarm_entity_for_today(self, weekday: int) -> Optional[str]:
+    def alarm_entity_for_today(self, weekday: int) -> str | None:
         if self.alarm_mode == ALARM_MODE_PER_DAY and self.alarm_entities_by_weekday:
             return self.alarm_entities_by_weekday.get(weekday) or self.alarm_entity
         return self.alarm_entity
@@ -271,9 +273,9 @@ class SmartChargePlan:
     duration_min: float
     charge_duration_min: float
     total_duration_min: float
-    precharge_duration_min: Optional[float]
+    precharge_duration_min: float | None
     alarm_time: datetime
-    start_time: Optional[datetime]
+    start_time: datetime | None
     predicted_drain: float
     predicted_level_at_alarm: float
     drain_rate: float
@@ -285,21 +287,21 @@ class SmartChargePlan:
     precharge_margin_off: float
     smart_start_margin: float
     precharge_active: bool
-    precharge_release_level: Optional[float]
+    precharge_release_level: float | None
     charging_state: str
     presence_state: str
     last_update: datetime
 
-    def as_dict(self) -> Dict[str, Any]:
-        charge_duration_display: Optional[float] = None
+    def as_dict(self) -> dict[str, Any]:
+        charge_duration_display: float | None = None
         if not math.isclose(self.charge_duration_min, self.duration_min, abs_tol=0.05):
             charge_duration_display = round(self.charge_duration_min, 1)
 
-        total_duration_display: Optional[float] = None
+        total_duration_display: float | None = None
         if not math.isclose(self.total_duration_min, self.duration_min, abs_tol=0.05):
             total_duration_display = round(self.total_duration_min, 1)
 
-        precharge_duration_display: Optional[float] = None
+        precharge_duration_display: float | None = None
         if self.precharge_duration_min is not None and self.precharge_duration_min > 0:
             precharge_duration_display = round(self.precharge_duration_min, 1)
 
@@ -347,7 +349,7 @@ class SmartChargePlan:
 class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
     """Coordinates the calculation and control of the charging plan."""
 
-    _last_action_log: Dict[str, str]
+    _last_action_log: dict[str, str]
 
     def __init__(self, hass: HomeAssistant, entry) -> None:
         super().__init__(
@@ -371,15 +373,15 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._default_switch_throttle_seconds = DEFAULT_SWITCH_THROTTLE_SECONDS
         # Per-device last switch timestamp (epoch seconds) to avoid rapid on/off flapping
         # Stored as float seconds since the epoch for robust, timezone-independent comparisons
-        self._last_switch_time: Dict[str, float] = {}
+        self._last_switch_time: dict[str, float] = {}
         # Per-device configured throttle values (entity_id -> seconds)
-        self._device_switch_throttle: Dict[str, float] = {}
+        self._device_switch_throttle: dict[str, float] = {}
         # Confirmation debounce: require N consecutive coordinator evaluations
         # that request a different desired state before issuing a switch.
         # Default is read from the central constants to remain consistent.
         self._confirmation_required = DEFAULT_SWITCH_CONFIRMATION_COUNT
         # per-device recent desired-state history: tuple(last_desired_bool, count)
-        self._desired_state_history: Dict[str, tuple[bool, int]] = {}
+        self._desired_state_history: dict[str, tuple[bool, int]] = {}
         # Telemetry: track recent flip-flop events per entity (epoch timestamps)
         self._flipflop_events: dict[str, list[float]] = {}
         # Configurable telemetry thresholds (tunable constants)
@@ -387,11 +389,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._flipflop_warn_threshold = 3  # events within window to warn
         # Adaptive mitigation: temporary throttle overrides to suppress flapping
         # Structure: entity_id -> dict(original: float, applied: float, expires: float)
-        self._adaptive_throttle_overrides: Dict[str, Dict[str, float]] = {}
+        self._adaptive_throttle_overrides: dict[str, dict[str, float]] = {}
         # Adaptive parameters
         self._adaptive_throttle_multiplier = 2.0
         self._adaptive_throttle_min_seconds = 120.0
-        self._adaptive_throttle_duration_seconds = 600.0  # how long override lasts (10min)
+        self._adaptive_throttle_duration_seconds = (
+            600.0  # how long override lasts (10min)
+        )
         # Backoff parameters: how much extra multiplier to add per extra flip-flop event
         self._adaptive_throttle_backoff_step = 0.5
         self._adaptive_throttle_max_multiplier = 5.0
@@ -399,71 +403,76 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # the coordinator issues a switch. This helps tests (and some
         # integrations) that rely on the coordinator's pre-recorded actions
         # rather than the external entity state which may lag.
-        self._last_action_state: Dict[str, bool] = {}
+        self._last_action_state: dict[str, bool] = {}
         # Per-refresh evaluation id used to avoid double-recording within the
         # same coordinator run when multiple code paths may record the desired
         # state for an entity.
         self._current_eval_id = 0
-        self._last_recorded_eval: Dict[str, int] = {}
+        self._last_recorded_eval: dict[str, int] = {}
         # Per-device last switch evaluation id: stores the coordinator
         # evaluation id when the last service call was issued. This helps
         # reliably suppress immediate reversals that occur inside the same
         # coordinator evaluation or when evaluation ids are close in time.
-        self._last_switch_eval: Dict[str, int | None] = {}
+        self._last_switch_eval: dict[str, int | None] = {}
         # Entities with an in-flight service call recorded during this
         # coordinator evaluation to prevent immediate reversal races.
-        self._inflight_switches: Dict[str, bool] = {}
+        self._inflight_switches: dict[str, bool] = {}
         # Internal caches/state expected by the plan builder and other
         # helper methods. Initialize here to ensure tests that create
         # the coordinator directly don't encounter missing attributes.
         # battery history stores tuples like (timestamp: datetime, level: float, charging: bool)
-        self._battery_history: Dict[str, tuple[datetime, float, bool] | tuple[datetime, float]] = {}
-        self._drain_rate_cache: Dict[str, float] = {}
-        self._precharge_release: Dict[str, Any] = {}
+        self._battery_history: dict[
+            str, tuple[datetime, float, bool] | tuple[datetime, float]
+        ] = {}
+        self._drain_rate_cache: dict[str, float] = {}
+        self._precharge_release: dict[str, Any] = {}
         # precharge_release_ready stores a datetime when the release will clear, or None
-        self._precharge_release_ready: Dict[str, Optional[datetime]] = {}
-        self._precharge_release_cleared_by_presence: Dict[str, bool] = {}
+        self._precharge_release_ready: dict[str, datetime | None] = {}
+        self._precharge_release_cleared_by_presence: dict[str, bool] = {}
         # Tracks precharge latches cleared because thresholds/predictions
         # indicate the precharge is no longer required. This allows the
         # coordinator to act immediately (pause charger) in the same
         # evaluation when a release clears due to reaching thresholds.
-        self._precharge_release_cleared_by_threshold: Dict[str, bool] = {}
+        self._precharge_release_cleared_by_threshold: dict[str, bool] = {}
         # Internal state snapshot produced by _async_update_data
-        self._state: Dict[str, Any] = {}
+        self._state: dict[str, Any] = {}
         # EWMA metrics for flip-flop telemetry
         self._flipflop_ewma: float = 0.0
-        self._flipflop_ewma_last_update: Optional[float] = None
+        self._flipflop_ewma_last_update: float | None = None
         self._flipflop_ewma_exceeded: bool = False
         # Track when the EWMA first crossed the exceeded threshold
-        self._flipflop_ewma_exceeded_since: Optional[float] = None
+        self._flipflop_ewma_exceeded_since: float | None = None
         # Internal adaptive mode override (None|'conservative'|'normal'|'aggressive')
-        self._adaptive_mode_override: Optional[str] = None
+        self._adaptive_mode_override: str | None = None
         # Track last post-alarm self-heal handled timestamp per entity (epoch)
-        self._post_alarm_last_handled: Dict[str, float] = {}
+        self._post_alarm_last_handled: dict[str, float] = {}
         # Record of recent post-alarm corrections applied or suggested.
         # Each entry is a dict: {"entity": str, "device": str, "alarm_epoch": float,
         #  "timestamp": float, "reason": str, "details": {...}}
-        self._post_alarm_corrections: list[Dict[str, Any]] = []
+        self._post_alarm_corrections: list[dict[str, Any]] = []
         # Temporary in-memory-only adaptive overrides applied after a single miss
         # Structure: entity -> {"applied": float, "expires": float, "reason": str}
-        self._post_alarm_temp_overrides: Dict[str, Dict[str, Any]] = {}
+        self._post_alarm_temp_overrides: dict[str, dict[str, Any]] = {}
         # Streak counters for missed alarms per entity and per-reason
-        self._post_alarm_miss_streaks: Dict[str, Dict[str, int]] = {}
+        self._post_alarm_miss_streaks: dict[str, dict[str, int]] = {}
         # Persisted smart_start margin overrides mapping (entity -> margin_value)
         # Will be written into entry.options as key `smart_start_margin_overrides` when persisted
-        self._post_alarm_persisted_smart_start: Dict[str, float] = dict(getattr(self.entry, "options", {}) or {}).get(
-            "smart_start_margin_overrides", {}
-        ) or {}
+        self._post_alarm_persisted_smart_start: dict[str, float] = (
+            dict(getattr(self.entry, "options", {}) or {}).get(
+                "smart_start_margin_overrides", {}
+            )
+            or {}
+        )
         # Learning retrain request counters per profile (profile_id -> count)
-        self._post_alarm_learning_retrain_requests: Dict[str, int] = {}
+        self._post_alarm_learning_retrain_requests: dict[str, int] = {}
         # Per-device forecast holdoff flag: when True the coordinator has
         # determined a forecast-based holdoff for that device and some
         # urgent actions may bypass throttle. Stored keyed by device.name.
-        self._forecast_holdoff: Dict[str, bool] = {}
+        self._forecast_holdoff: dict[str, bool] = {}
         # Last rendered action log to avoid duplicate logging spam
         self._last_action_log = {}
 
-    def _normalize_entity_id(self, raw_entity: Any) -> Optional[str]:
+    def _normalize_entity_id(self, raw_entity: Any) -> str | None:
         """Normalize an entity identifier used as dict keys.
 
         Accepts a string or a sequence (list/tuple) as passed in
@@ -484,7 +493,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             _ignored_exc()
             return None
 
-    def _device_name_for_entity(self, entity_id: str) -> Optional[str]:
+    def _device_name_for_entity(self, entity_id: str) -> str | None:
         """Try to resolve a configured device name for the given entity_id.
 
         This searches the coordinator's current `_state` snapshot (which is
@@ -508,7 +517,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             _ignored_exc()
         return None
 
-    def _early_suppress_checks(self, norm: str, desired: bool, force: bool, bypass_throttle: bool) -> bool:  # noqa: C901
+    def _early_suppress_checks(
+        self, norm: str, desired: bool, force: bool, bypass_throttle: bool
+    ) -> bool:  # noqa: C901
         """Run initial authoritative and quick suppression checks.
 
         Returns True when the action should be suppressed.
@@ -526,7 +537,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         stored_epoch_auth = float(stored_raw)
                     elif isinstance(stored_raw, str):
                         parsed = dt_util.parse_datetime(stored_raw)
-                        stored_epoch_auth = float(dt_util.as_timestamp(parsed)) if parsed else None
+                        stored_epoch_auth = (
+                            float(dt_util.as_timestamp(parsed)) if parsed else None
+                        )
                     else:
                         stored_epoch_auth = float(dt_util.as_timestamp(stored_raw))
                 except Exception:
@@ -534,11 +547,17 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     stored_epoch_auth = None
 
             throttle_cfg_auth = float(
-                self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds)
+                self._device_switch_throttle.get(
+                    norm, self._default_switch_throttle_seconds
+                )
                 or self._default_switch_throttle_seconds
             )
             if stored_epoch_auth is not None and throttle_cfg_auth:
-                now_epoch_auth = float(dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow()))
+                now_epoch_auth = float(
+                    dt_util.as_timestamp(
+                        getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                    )
+                )
                 elapsed_auth = now_epoch_auth - stored_epoch_auth
                 last_act_auth = self._last_action_state.get(norm)
                 if last_act_auth is None:
@@ -548,7 +567,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     except Exception:
                         _ignored_exc()
                         last_act_auth = None
-                if last_act_auth is not None and elapsed_auth >= 0 and elapsed_auth < float(throttle_cfg_auth) and bool(last_act_auth) != bool(desired):
+                if (
+                    last_act_auth is not None
+                    and elapsed_auth >= 0
+                    and elapsed_auth < float(throttle_cfg_auth)
+                    and bool(last_act_auth) != bool(desired)
+                ):
                     _LOGGER.info(
                         "AUTHORITATIVE_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
                         norm,
@@ -565,21 +589,30 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             last_raw_quick = self._last_switch_time.get(norm)
             last_act_quick = self._last_action_state.get(norm)
-            throttle_quick = self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds)
+            throttle_quick = self._device_switch_throttle.get(
+                norm, self._default_switch_throttle_seconds
+            )
             if last_raw_quick is not None and throttle_quick:
                 try:
                     if isinstance(last_raw_quick, (int, float)):
                         last_epoch_q = float(last_raw_quick)
                     elif isinstance(last_raw_quick, str):
                         parsed_q = dt_util.parse_datetime(last_raw_quick)
-                        last_epoch_q = float(dt_util.as_timestamp(parsed_q)) if parsed_q else None
+                        last_epoch_q = (
+                            float(dt_util.as_timestamp(parsed_q)) if parsed_q else None
+                        )
                     else:
                         last_epoch_q = float(dt_util.as_timestamp(last_raw_quick))
                 except Exception:
                     _ignored_exc()
                     last_epoch_q = None
                 if last_epoch_q is not None:
-                    now_epoch_q = float(dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow()))
+                    now_epoch_q = float(
+                        dt_util.as_timestamp(
+                            getattr(self, "_current_eval_time", None)
+                            or dt_util.utcnow()
+                        )
+                    )
                     try:
                         thr_q = float(throttle_quick)
                     except Exception:
@@ -593,15 +626,26 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 last_act_quick = bool(st and st.state == STATE_ON)
                             except Exception:
                                 last_act_quick = None
-                        if last_act_quick is not None and bool(last_act_quick) != bool(desired):
-                            _LOGGER.info("VERY_EARLY_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s", norm, elapsed_q, thr_q, last_act_quick, desired)
+                        if last_act_quick is not None and bool(last_act_quick) != bool(
+                            desired
+                        ):
+                            _LOGGER.info(
+                                "VERY_EARLY_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
+                                norm,
+                                elapsed_q,
+                                thr_q,
+                                last_act_quick,
+                                desired,
+                            )
                             return True
         except Exception:
             _ignored_exc()
 
         return False
 
-    def _should_suppress_switch(self, norm: str, desired: bool, force: bool, bypass_throttle: bool) -> bool:  # noqa: C901
+    def _should_suppress_switch(
+        self, norm: str, desired: bool, force: bool, bypass_throttle: bool
+    ) -> bool:  # noqa: C901
         """Comprehensive suppression helper extracted from _maybe_switch.
 
         Returns True when the switch should be suppressed, False otherwise.
@@ -613,7 +657,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             pending = self._inflight_switches.get(norm)
             if should_check and pending is not None and bool(pending) != bool(desired):
-                _LOGGER.debug("SUPPRESS_INFLIGHT: entity=%s pending=%s desired=%s", norm, pending, desired)
+                _LOGGER.debug(
+                    "SUPPRESS_INFLIGHT: entity=%s pending=%s desired=%s",
+                    norm,
+                    pending,
+                    desired,
+                )
                 return True
         except Exception:
             _ignored_exc()
@@ -628,7 +677,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             last_epoch_check = float(last_raw)
                         elif isinstance(last_raw, str):
                             parsed_lr = dt_util.parse_datetime(last_raw)
-                            last_epoch_check = float(dt_util.as_timestamp(parsed_lr)) if parsed_lr else None
+                            last_epoch_check = (
+                                float(dt_util.as_timestamp(parsed_lr))
+                                if parsed_lr
+                                else None
+                            )
                         else:
                             last_epoch_check = float(dt_util.as_timestamp(last_raw))
                     except Exception:
@@ -637,8 +690,18 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     last_epoch_check = None
 
                 if last_epoch_check is not None:
-                    now_epoch_check = float(dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow()))
-                    thr_cfg = float(self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds)
+                    now_epoch_check = float(
+                        dt_util.as_timestamp(
+                            getattr(self, "_current_eval_time", None)
+                            or dt_util.utcnow()
+                        )
+                    )
+                    thr_cfg = float(
+                        self._device_switch_throttle.get(
+                            norm, self._default_switch_throttle_seconds
+                        )
+                        or self._default_switch_throttle_seconds
+                    )
                     elapsed_check = now_epoch_check - last_epoch_check
                     if elapsed_check >= 0 and elapsed_check < float(thr_cfg):
                         last_action_check = self._last_action_state.get(norm)
@@ -648,7 +711,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 last_action_check = bool(st and st.state == STATE_ON)
                             except Exception:
                                 last_action_check = None
-                        if last_action_check is not None and bool(last_action_check) != bool(desired):
+                        if last_action_check is not None and bool(
+                            last_action_check
+                        ) != bool(desired):
                             _LOGGER.debug(
                                 "EARLY_AUTHORITATIVE_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
                                 norm,
@@ -676,20 +741,29 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             # Local typed sentinel for subsequent throttle checks
             last_raw = self._last_switch_time.get(norm)
             last_act = self._last_action_state.get(norm)
-            throttle_cfg = self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds)
+            throttle_cfg = self._device_switch_throttle.get(
+                norm, self._default_switch_throttle_seconds
+            )
             if last_raw is not None and last_act is not None and throttle_cfg:
                 try:
                     if isinstance(last_raw, (int, float)):
                         last_epoch = float(last_raw)
                     elif isinstance(last_raw, str):
                         parsed = dt_util.parse_datetime(last_raw)
-                        last_epoch = float(dt_util.as_timestamp(parsed)) if parsed else None
+                        last_epoch = (
+                            float(dt_util.as_timestamp(parsed)) if parsed else None
+                        )
                     else:
                         last_epoch = float(dt_util.as_timestamp(last_raw))
                 except Exception:
                     last_epoch = None
                 if last_epoch is not None:
-                    now_epoch = float(dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow()))
+                    now_epoch = float(
+                        dt_util.as_timestamp(
+                            getattr(self, "_current_eval_time", None)
+                            or dt_util.utcnow()
+                        )
+                    )
                     try:
                         throttle_val = float(throttle_cfg)
                     except Exception:
@@ -716,12 +790,27 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             )
                         except Exception:
                             _ignored_exc()
-                    if elapsed >= 0 and elapsed < float(throttle_val) and last_act is not None and bool(last_act) != bool(desired):
-                        _LOGGER.debug("CANONICAL_THROTTLE_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s", norm, elapsed, throttle_val, last_act, desired)
+                    if (
+                        elapsed >= 0
+                        and elapsed < float(throttle_val)
+                        and last_act is not None
+                        and bool(last_act) != bool(desired)
+                    ):
+                        _LOGGER.debug(
+                            "CANONICAL_THROTTLE_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
+                            norm,
+                            elapsed,
+                            throttle_val,
+                            last_act,
+                            desired,
+                        )
                         try:
                             last_eval = self._last_switch_eval.get(norm)
                             cur_eval = int(getattr(self, "_current_eval_id", 0) or 0)
-                            if last_eval is None or abs(cur_eval - int(last_eval or 0)) <= 1:
+                            if (
+                                last_eval is None
+                                or abs(cur_eval - int(last_eval or 0)) <= 1
+                            ):
                                 return True
                         except Exception:
                             return True
@@ -750,8 +839,20 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     last_act,
                     desired,
                 )
-                if cond_last_eval and cond_eval_delta and cond_last_act and cond_reversal:
-                    _LOGGER.debug("SUPPRESS_RECENT_EVAL: entity=%s cur_eval=%s last_eval=%s last_act=%r desired=%s", norm, cur_eval, last_eval, last_act, desired)
+                if (
+                    cond_last_eval
+                    and cond_eval_delta
+                    and cond_last_act
+                    and cond_reversal
+                ):
+                    _LOGGER.debug(
+                        "SUPPRESS_RECENT_EVAL: entity=%s cur_eval=%s last_eval=%s last_act=%r desired=%s",
+                        norm,
+                        cur_eval,
+                        last_eval,
+                        last_act,
+                        desired,
+                    )
                     return True
             except Exception:
                 _ignored_exc()
@@ -761,20 +862,29 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             try:
                 last_raw = self._last_switch_time.get(norm)
                 last_act = self._last_action_state.get(norm)
-                throttle_cfg = self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds)
+                throttle_cfg = self._device_switch_throttle.get(
+                    norm, self._default_switch_throttle_seconds
+                )
                 if last_raw is not None and last_act is not None and throttle_cfg:
                     try:
                         if isinstance(last_raw, (int, float)):
                             last_epoch = float(last_raw)
                         elif isinstance(last_raw, str):
                             parsed = dt_util.parse_datetime(last_raw)
-                            last_epoch = float(dt_util.as_timestamp(parsed)) if parsed else None
+                            last_epoch = (
+                                float(dt_util.as_timestamp(parsed)) if parsed else None
+                            )
                         else:
                             last_epoch = float(dt_util.as_timestamp(last_raw))
                     except Exception:
                         last_epoch = None
                     if last_epoch is not None:
-                        now_epoch = float(dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow()))
+                        now_epoch = float(
+                            dt_util.as_timestamp(
+                                getattr(self, "_current_eval_time", None)
+                                or dt_util.utcnow()
+                            )
+                        )
                         try:
                             throttle_val = float(throttle_cfg)
                         except Exception:
@@ -790,7 +900,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             last_act,
                             desired,
                         )
-                        if elapsed >= 0 and elapsed < float(throttle_val) and bool(last_act) != bool(desired):
+                        if (
+                            elapsed >= 0
+                            and elapsed < float(throttle_val)
+                            and bool(last_act) != bool(desired)
+                        ):
                             _LOGGER.debug(
                                 "EARLY_DEFENSIVE_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
                                 norm,
@@ -806,10 +920,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         return False
 
     @property
-    def profiles(self) -> Dict[str, Dict[str, Any]]:
+    def profiles(self) -> dict[str, dict[str, Any]]:
         return self._state or {}
 
-    def _raw_config(self) -> Dict[str, Any]:
+    def _raw_config(self) -> dict[str, Any]:
         self.config = {**dict(self.entry.data), **getattr(self.entry, "options", {})}
         return self.config
 
@@ -850,7 +964,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         return bool(default)
 
     def _iter_device_configs(
-        self, devices: Optional[Iterable[Mapping[str, Any]]] = None
+        self, devices: Iterable[Mapping[str, Any]] | None = None
     ) -> Iterable[DeviceConfig]:
         """Yield validated DeviceConfig objects from the raw device list.
 
@@ -866,8 +980,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     "Skipping invalid device configuration %s: %s", raw, err
                 )
 
-    async def _async_update_data(self) -> Dict[str, Dict[str, Any]]:  # noqa: C901
-        results: Dict[str, Dict[str, Any]] = {}
+    async def _async_update_data(self) -> dict[str, dict[str, Any]]:  # noqa: C901
+        results: dict[str, dict[str, Any]] = {}
         # New evaluation - advance the eval id to avoid duplicate recordings
         # within the same refresh cycle.
         try:
@@ -902,16 +1016,23 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # by the plan builder (useful for deterministic tests which pass a
         # custom ``now_local`` into _build_plan).
         now_local = dt_util.now()  # This line remains unchanged
-        _LOGGER.debug("_async_update_data: starting evaluation %d now=%s", self._current_eval_id, now_local.isoformat())
+        _LOGGER.debug(
+            "_async_update_data: starting evaluation %d now=%s",
+            self._current_eval_id,
+            now_local.isoformat(),
+        )
         self._current_eval_time = now_local
         domain_data = self.hass.data.get(DOMAIN, {})
-        entries: Dict[str, Dict[str, Any]] = domain_data.get("entries", {})
+        entries: dict[str, dict[str, Any]] = domain_data.get("entries", {})
         entry_data = entries.get(self.entry.entry_id, {})
         learning = entry_data.get("learning")
 
         try:
             raw_config = self._raw_config()
-            _LOGGER.debug("_async_update_data: raw device count=%d", len(raw_config.get("devices", []) or []))
+            _LOGGER.debug(
+                "_async_update_data: raw device count=%d",
+                len(raw_config.get("devices", []) or []),
+            )
             # Use the configured coordinator-level default already stored in
             # self._confirmation_required; per-device overrides are applied
             # below when parsing devices. No global option is used.
@@ -948,17 +1069,21 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 CONF_ADAPTIVE_THROTTLE_MULTIPLIER, DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER
             )
             self._adaptive_throttle_min_seconds = self._option_float(
-                CONF_ADAPTIVE_THROTTLE_MIN_SECONDS, DEFAULT_ADAPTIVE_THROTTLE_MIN_SECONDS
+                CONF_ADAPTIVE_THROTTLE_MIN_SECONDS,
+                DEFAULT_ADAPTIVE_THROTTLE_MIN_SECONDS,
             )
             self._adaptive_throttle_duration_seconds = self._option_float(
-                CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS, DEFAULT_ADAPTIVE_THROTTLE_DURATION_SECONDS
+                CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS,
+                DEFAULT_ADAPTIVE_THROTTLE_DURATION_SECONDS,
             )
             # Backoff tuning (variable multiplier)
             self._adaptive_throttle_backoff_step = self._option_float(
-                CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP, DEFAULT_ADAPTIVE_THROTTLE_BACKOFF_STEP
+                CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP,
+                DEFAULT_ADAPTIVE_THROTTLE_BACKOFF_STEP,
             )
             self._adaptive_throttle_max_multiplier = self._option_float(
-                CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER, DEFAULT_ADAPTIVE_THROTTLE_MAX_MULTIPLIER
+                CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
+                DEFAULT_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
             )
             # Adaptive mode: conservative / normal / aggressive
             try:
@@ -971,7 +1096,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 mode = DEFAULT_ADAPTIVE_THROTTLE_MODE
 
             # Effective mode: allow runtime override to temporarily change behavior
-            effective_mode = str(getattr(self, "_adaptive_mode_override", None) or mode).strip().lower()
+            effective_mode = (
+                str(getattr(self, "_adaptive_mode_override", None) or mode)
+                .strip()
+                .lower()
+            )
 
             # Map effective_mode to a scaling factor applied to the backoff growth
             if effective_mode == "conservative":
@@ -981,7 +1110,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             else:
                 self._adaptive_mode_factor = 1.0
             self._flipflop_window_seconds = self._option_float(
-                CONF_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS, DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS
+                CONF_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+                DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
             )
             try:
                 self._flipflop_warn_threshold = int(
@@ -992,7 +1122,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 )
             except Exception:
                 _ignored_exc()
-                self._flipflop_warn_threshold = int(DEFAULT_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD)
+                self._flipflop_warn_threshold = int(
+                    DEFAULT_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD
+                )
 
             for device in self._iter_device_configs(raw_config.get("devices") or []):
                 device_window = device.learning_recent_sample_hours
@@ -1104,30 +1236,53 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             # compute variable multiplier with backoff: increase multiplier for excess flip-flop events
                             try:
                                 count = len(recent)
-                                excess = max(0, count - int(self._flipflop_warn_threshold))
+                                excess = max(
+                                    0, count - int(self._flipflop_warn_threshold)
+                                )
                                 # Apply mode factor to backoff incremental growth
-                                var_multiplier = float(self._adaptive_throttle_multiplier) + (
+                                var_multiplier = float(
+                                    self._adaptive_throttle_multiplier
+                                ) + (
                                     float(self._adaptive_throttle_backoff_step)
                                     * float(excess)
                                     * float(getattr(self, "_adaptive_mode_factor", 1.0))
                                 )
                                 # clamp to configured maximum
                                 var_multiplier = min(
-                                    var_multiplier, float(self._adaptive_throttle_max_multiplier)
+                                    var_multiplier,
+                                    float(self._adaptive_throttle_max_multiplier),
                                 )
                             except Exception:
                                 _ignored_exc()
-                                var_multiplier = float(self._adaptive_throttle_multiplier)
+                                var_multiplier = float(
+                                    self._adaptive_throttle_multiplier
+                                )
 
-                            desired = max(current * float(var_multiplier), float(self._adaptive_throttle_min_seconds))
-                            meta_entry: dict | None = self._adaptive_throttle_overrides.get(ent)
+                            desired = max(
+                                current * float(var_multiplier),
+                                float(self._adaptive_throttle_min_seconds),
+                            )
+                            meta_entry: dict | None = (
+                                self._adaptive_throttle_overrides.get(ent)
+                            )
                             if not meta_entry:
                                 # store original and apply override
                                 try:
                                     self._adaptive_throttle_overrides[ent] = {
-                                        "original": float(self._device_switch_throttle.get(ent, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds),
+                                        "original": float(
+                                            self._device_switch_throttle.get(
+                                                ent,
+                                                self._default_switch_throttle_seconds,
+                                            )
+                                            or self._default_switch_throttle_seconds
+                                        ),
                                         "applied": float(desired),
-                                        "expires": float(now_epoch + float(self._adaptive_throttle_duration_seconds)),
+                                        "expires": float(
+                                            now_epoch
+                                            + float(
+                                                self._adaptive_throttle_duration_seconds
+                                            )
+                                        ),
                                     }
                                 except Exception:
                                     _ignored_exc()
@@ -1137,20 +1292,38 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                         "Adaptive throttle applied for %s = %.1fs (original %.1fs) until %.0f",
                                         ent,
                                         float(desired),
-                                        float(self._adaptive_throttle_overrides.get(ent, {}).get("original", 0.0)),
-                                        float(now_epoch + float(self._adaptive_throttle_duration_seconds)),
+                                        float(
+                                            self._adaptive_throttle_overrides.get(
+                                                ent, {}
+                                            ).get("original", 0.0)
+                                        ),
+                                        float(
+                                            now_epoch
+                                            + float(
+                                                self._adaptive_throttle_duration_seconds
+                                            )
+                                        ),
                                     )
                                 except Exception:
                                     _ignored_exc()
                             else:
                                 # refresh expiry and possibly raise applied throttle
                                 try:
-                                    meta_applied = float(meta_entry.get("applied", 0.0) or 0.0)
+                                    meta_applied = float(
+                                        meta_entry.get("applied", 0.0) or 0.0
+                                    )
                                     new_applied = max(meta_applied, float(desired))
                                     meta_entry["applied"] = new_applied
-                                    meta_entry["expires"] = float(now_epoch + float(self._adaptive_throttle_duration_seconds))
+                                    meta_entry["expires"] = float(
+                                        now_epoch
+                                        + float(
+                                            self._adaptive_throttle_duration_seconds
+                                        )
+                                    )
                                     self._adaptive_throttle_overrides[ent] = meta_entry
-                                    self._device_switch_throttle[ent] = float(new_applied)
+                                    self._device_switch_throttle[ent] = float(
+                                        new_applied
+                                    )
                                 except Exception:
                                     _ignored_exc()
                         except Exception:
@@ -1158,14 +1331,27 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 # After pruning events, compute aggregate rates and update EWMA
                 try:
                     total_events = sum(len(v) for v in self._flipflop_events.values())
-                    window = float(getattr(self, "_flipflop_window_seconds", DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS))
+                    window = float(
+                        getattr(
+                            self,
+                            "_flipflop_window_seconds",
+                            DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+                        )
+                    )
                     rate_per_sec = float(total_events) / window if window > 0 else 0.0
                     # read alpha from entry options if available
                     try:
                         entry_obj = getattr(self, "entry", None)
-                        if entry_obj and getattr(entry_obj, "options", None) is not None:
+                        if (
+                            entry_obj
+                            and getattr(entry_obj, "options", None) is not None
+                        ):
                             raw_alpha = entry_obj.options.get(CONF_ADAPTIVE_EWMA_ALPHA)
-                            alpha = float(raw_alpha) if raw_alpha is not None else DEFAULT_ADAPTIVE_EWMA_ALPHA
+                            alpha = (
+                                float(raw_alpha)
+                                if raw_alpha is not None
+                                else DEFAULT_ADAPTIVE_EWMA_ALPHA
+                            )
                         else:
                             alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
                     except Exception:
@@ -1181,30 +1367,55 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         self._flipflop_ewma = ewma
                         self._flipflop_ewma_last_update = float(now_epoch)
                         # mark exceeded when EWMA crosses a small threshold (e.g., more than warn threshold / window)
-                        exceeded_threshold = float(self._flipflop_warn_threshold) / max(1.0, float(self._flipflop_window_seconds))
-                        prev_exceeded = bool(getattr(self, "_flipflop_ewma_exceeded", False))
+                        exceeded_threshold = float(self._flipflop_warn_threshold) / max(
+                            1.0, float(self._flipflop_window_seconds)
+                        )
+                        prev_exceeded = bool(
+                            getattr(self, "_flipflop_ewma_exceeded", False)
+                        )
                         new_exceeded = ewma >= exceeded_threshold
                         self._flipflop_ewma_exceeded = new_exceeded
                         now_ts = float(now_epoch)
                         if new_exceeded and not prev_exceeded:
                             # record when we first exceed
                             self._flipflop_ewma_exceeded_since = now_ts
-                            _LOGGER.warning("Flipflop EWMA exceeded threshold: ewma=%.6f threshold=%.6f", ewma, exceeded_threshold)
+                            _LOGGER.warning(
+                                "Flipflop EWMA exceeded threshold: ewma=%.6f threshold=%.6f",
+                                ewma,
+                                exceeded_threshold,
+                            )
                         elif new_exceeded and prev_exceeded:
                             # already exceeded; check sustained duration
                             try:
-                                since = float(getattr(self, "_flipflop_ewma_exceeded_since", now_ts) or now_ts)
+                                since = float(
+                                    getattr(
+                                        self, "_flipflop_ewma_exceeded_since", now_ts
+                                    )
+                                    or now_ts
+                                )
                                 duration = now_ts - since
                                 # after 5 minutes of sustained exceed, flip integration to aggressive mode
-                                if duration >= 300.0 and self._adaptive_mode_override != "aggressive":
+                                if (
+                                    duration >= 300.0
+                                    and self._adaptive_mode_override != "aggressive"
+                                ):
                                     self._adaptive_mode_override = "aggressive"
-                                    _LOGGER.warning("Adaptive mode override applied: aggressive (sustained EWMA for %.0fs)", duration)
+                                    _LOGGER.warning(
+                                        "Adaptive mode override applied: aggressive (sustained EWMA for %.0fs)",
+                                        duration,
+                                    )
                                     # persist override into ConfigEntry options so it survives restarts
                                     try:
-                                        new_opts = dict(getattr(self.entry, "options", {}) or {})
-                                        new_opts["adaptive_mode_override"] = "aggressive"
+                                        new_opts = dict(
+                                            getattr(self.entry, "options", {}) or {}
+                                        )
+                                        new_opts["adaptive_mode_override"] = (
+                                            "aggressive"
+                                        )
                                         try:
-                                            self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                            self.hass.config_entries.async_update_entry(
+                                                self.entry, options=new_opts
+                                            )
                                         except Exception:
                                             _ignored_exc()
                                     except Exception:
@@ -1214,16 +1425,25 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         else:
                             # not exceeded anymore: clear since/override
                             self._flipflop_ewma_exceeded_since = None
-                            if getattr(self, "_adaptive_mode_override", None) is not None:
-                                _LOGGER.info("Adaptive mode override cleared (EWMA dropped)")
+                            if (
+                                getattr(self, "_adaptive_mode_override", None)
+                                is not None
+                            ):
+                                _LOGGER.info(
+                                    "Adaptive mode override cleared (EWMA dropped)"
+                                )
                                 self._adaptive_mode_override = None
                                 # remove persisted override key from options
                                 try:
-                                    new_opts = dict(getattr(self.entry, "options", {}) or {})
+                                    new_opts = dict(
+                                        getattr(self.entry, "options", {}) or {}
+                                    )
                                     if "adaptive_mode_override" in new_opts:
                                         new_opts.pop("adaptive_mode_override", None)
                                         try:
-                                            self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                            self.hass.config_entries.async_update_entry(
+                                                self.entry, options=new_opts
+                                            )
                                         except Exception:
                                             _ignored_exc()
                                 except Exception:
@@ -1280,7 +1500,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             continue
                         # Avoid handling the same alarm repeatedly: remember
                         # the alarm epoch we last addressed for this entity.
-                        last_handled = float(self._post_alarm_last_handled.get(charger_ent, 0.0) or 0.0)
+                        last_handled = float(
+                            self._post_alarm_last_handled.get(charger_ent, 0.0) or 0.0
+                        )
                         if last_handled >= alarm_epoch:
                             continue
                         # If battery reached target, nothing to do
@@ -1289,8 +1511,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             continue
                         # Diagnose: count flip-flop events in the configured window
                         try:
-                            cutoff = now_epoch - float(getattr(self, "_flipflop_window_seconds", 300.0))
-                            events = [e for e in (self._flipflop_events.get(charger_ent) or []) if e >= cutoff]
+                            cutoff = now_epoch - float(
+                                getattr(self, "_flipflop_window_seconds", 300.0)
+                            )
+                            events = [
+                                e
+                                for e in (self._flipflop_events.get(charger_ent) or [])
+                                if e >= cutoff
+                            ]
                             flipflop_count = len(events)
                         except Exception:
                             flipflop_count = 0
@@ -1298,14 +1526,42 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         # If flip-flops likely caused the missed target, apply aggressive override
                         reason = None
                         details: dict[str, Any] = {}
-                        if flipflop_count >= int(getattr(self, "_flipflop_warn_threshold", 3)):
+                        if flipflop_count >= int(
+                            getattr(self, "_flipflop_warn_threshold", 3)
+                        ):
                             try:
                                 # compute applied throttle using aggressive mode factor
-                                current = float(self._device_switch_throttle.get(charger_ent, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds)
+                                current = float(
+                                    self._device_switch_throttle.get(
+                                        charger_ent,
+                                        self._default_switch_throttle_seconds,
+                                    )
+                                    or self._default_switch_throttle_seconds
+                                )
                                 mode_factor = 1.4
-                                var_multiplier = float(getattr(self, "_adaptive_throttle_multiplier", 2.0)) * float(mode_factor)
-                                desired = max(current * var_multiplier, float(getattr(self, "_adaptive_throttle_min_seconds", 120.0)))
-                                expires = float(now_epoch + float(getattr(self, "_adaptive_throttle_duration_seconds", 600.0)))
+                                var_multiplier = float(
+                                    getattr(self, "_adaptive_throttle_multiplier", 2.0)
+                                ) * float(mode_factor)
+                                desired = max(
+                                    current * var_multiplier,
+                                    float(
+                                        getattr(
+                                            self,
+                                            "_adaptive_throttle_min_seconds",
+                                            120.0,
+                                        )
+                                    ),
+                                )
+                                expires = float(
+                                    now_epoch
+                                    + float(
+                                        getattr(
+                                            self,
+                                            "_adaptive_throttle_duration_seconds",
+                                            600.0,
+                                        )
+                                    )
+                                )
                                 # Apply an in-memory temporary override first; persist only if the
                                 # miss streak exceeds a small threshold (e.g., 2 consecutive misses).
                                 try:
@@ -1316,35 +1572,59 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                     }
                                     # apply immediately to runtime throttle map
                                     self._adaptive_throttle_overrides[charger_ent] = {
-                                        "original": float(self._device_switch_throttle.get(charger_ent, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds),
+                                        "original": float(
+                                            self._device_switch_throttle.get(
+                                                charger_ent,
+                                                self._default_switch_throttle_seconds,
+                                            )
+                                            or self._default_switch_throttle_seconds
+                                        ),
                                         "applied": float(desired),
                                         "expires": float(expires),
                                     }
-                                    self._device_switch_throttle[charger_ent] = float(desired)
+                                    self._device_switch_throttle[charger_ent] = float(
+                                        desired
+                                    )
                                 except Exception:
                                     _ignored_exc()
                                 # Record a suggestion/error in the state machine if available
                                 try:
-                                    if state_machine and hasattr(state_machine, "add_error"):
-                                        state_machine.add_error(dev_name, f"post_alarm_missed_target:flipflop_count={flipflop_count}")
+                                    if state_machine and hasattr(
+                                        state_machine, "add_error"
+                                    ):
+                                        state_machine.add_error(
+                                            dev_name,
+                                            f"post_alarm_missed_target:flipflop_count={flipflop_count}",
+                                        )
                                 except Exception:
                                     _ignored_exc()
                                 reason = "flipflop"
                                 details["flipflop_count"] = int(flipflop_count)
                                 details["applied_throttle"] = float(desired)
                                 # increment miss streak
-                                streaks = self._post_alarm_miss_streaks.setdefault(charger_ent, {})
-                                streaks["flipflop"] = int(streaks.get("flipflop", 0)) + 1
+                                streaks = self._post_alarm_miss_streaks.setdefault(
+                                    charger_ent, {}
+                                )
+                                streaks["flipflop"] = (
+                                    int(streaks.get("flipflop", 0)) + 1
+                                )
                                 # If the streak reaches 2, persist the adaptive override so it
                                 # survives restarts; this avoids immediate persistent changes.
                                 try:
                                     if int(streaks.get("flipflop", 0)) >= 2:
-                                        new_opts = dict(getattr(self.entry, "options", {}) or {})
-                                        mapping = dict(new_opts.get("adaptive_mode_overrides", {}) or {})
+                                        new_opts = dict(
+                                            getattr(self.entry, "options", {}) or {}
+                                        )
+                                        mapping = dict(
+                                            new_opts.get("adaptive_mode_overrides", {})
+                                            or {}
+                                        )
                                         mapping[charger_ent] = "aggressive"
                                         new_opts["adaptive_mode_overrides"] = mapping
                                         try:
-                                            self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                            self.hass.config_entries.async_update_entry(
+                                                self.entry, options=new_opts
+                                            )
                                         except Exception:
                                             _ignored_exc()
                                 except Exception:
@@ -1362,43 +1642,101 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             # No aggressive flip-flop signature. Try to diagnose other causes:
                             # 1) start_time too late -> if predicted charge_duration_min is > available window
                             try:
-                                pred_level = float(pd.get("predicted_level_at_alarm", 0.0) or 0.0)
-                                charge_duration_min = float(pd.get("charge_duration_min") or 0.0)
+                                pred_level = float(
+                                    pd.get("predicted_level_at_alarm", 0.0) or 0.0
+                                )
+                                charge_duration_min = float(
+                                    pd.get("charge_duration_min") or 0.0
+                                )
                                 hours_until_alarm = None
                                 try:
                                     aiso = pd.get("alarm_time")
-                                    adt = dt_util.parse_datetime(str(aiso)) if aiso else None
+                                    adt = (
+                                        dt_util.parse_datetime(str(aiso))
+                                        if aiso
+                                        else None
+                                    )
                                     if adt:
-                                        hours_until_alarm = max(0.0, (adt - now_local).total_seconds() / 3600.0)
+                                        hours_until_alarm = max(
+                                            0.0,
+                                            (adt - now_local).total_seconds() / 3600.0,
+                                        )
                                 except Exception:
                                     hours_until_alarm = None
 
-                                if charge_duration_min and hours_until_alarm is not None and (charge_duration_min / 60.0) > hours_until_alarm + 0.01:
+                                if (
+                                    charge_duration_min
+                                    and hours_until_alarm is not None
+                                    and (charge_duration_min / 60.0)
+                                    > hours_until_alarm + 0.01
+                                ):
                                     reason = "late_start"
-                                    details["charge_duration_min"] = float(charge_duration_min)
-                                    details["hours_until_alarm"] = float(hours_until_alarm)
+                                    details["charge_duration_min"] = float(
+                                        charge_duration_min
+                                    )
+                                    details["hours_until_alarm"] = float(
+                                        hours_until_alarm
+                                    )
                                     # increment streak and consider auto-bumping smart_start_margin after 2 misses
                                     try:
-                                        streaks = self._post_alarm_miss_streaks.setdefault(charger_ent, {})
-                                        streaks["late_start"] = int(streaks.get("late_start", 0)) + 1
+                                        streaks = (
+                                            self._post_alarm_miss_streaks.setdefault(
+                                                charger_ent, {}
+                                            )
+                                        )
+                                        streaks["late_start"] = (
+                                            int(streaks.get("late_start", 0)) + 1
+                                        )
                                         if int(streaks.get("late_start", 0)) >= 2:
                                             # compute a small bump (e.g., +1.5 percentage points)
                                             try:
-                                                device_margin = float(pd.get("smart_start_margin") or float(getattr(self, "_smart_start_margin", DEFAULT_SMART_START_MARGIN)))
+                                                device_margin = float(
+                                                    pd.get("smart_start_margin")
+                                                    or float(
+                                                        getattr(
+                                                            self,
+                                                            "_smart_start_margin",
+                                                            DEFAULT_SMART_START_MARGIN,
+                                                        )
+                                                    )
+                                                )
                                             except Exception:
-                                                device_margin = float(getattr(self, "_smart_start_margin", DEFAULT_SMART_START_MARGIN))
+                                                device_margin = float(
+                                                    getattr(
+                                                        self,
+                                                        "_smart_start_margin",
+                                                        DEFAULT_SMART_START_MARGIN,
+                                                    )
+                                                )
                                             bump = 1.5
                                             new_margin = max(0.0, device_margin + bump)
                                             # persist mapping in entry.options under smart_start_margin_overrides
                                             try:
-                                                new_opts = dict(getattr(self.entry, "options", {}) or {})
-                                                mapping = dict(new_opts.get("smart_start_margin_overrides", {}) or {})
+                                                new_opts = dict(
+                                                    getattr(self.entry, "options", {})
+                                                    or {}
+                                                )
+                                                mapping = dict(
+                                                    new_opts.get(
+                                                        "smart_start_margin_overrides",
+                                                        {},
+                                                    )
+                                                    or {}
+                                                )
                                                 mapping[charger_ent] = float(new_margin)
-                                                new_opts["smart_start_margin_overrides"] = mapping
+                                                new_opts[
+                                                    "smart_start_margin_overrides"
+                                                ] = mapping
                                                 try:
-                                                    self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                                    self.hass.config_entries.async_update_entry(
+                                                        self.entry, options=new_opts
+                                                    )
                                                     # also update in-memory cache so the change is immediate
-                                                    self._post_alarm_persisted_smart_start[charger_ent] = float(new_margin)
+                                                    self._post_alarm_persisted_smart_start[
+                                                        charger_ent
+                                                    ] = float(
+                                                        new_margin
+                                                    )
                                                 except Exception:
                                                     _ignored_exc()
                                             except Exception:
@@ -1408,35 +1746,82 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 else:
                                     # 2) predicted drain mis-estimate: if predicted_level_at_alarm much higher than actual
                                     try:
-                                        predicted_level = float(pd.get("predicted_level_at_alarm", 0.0) or 0.0)
-                                        actual_batt = float(pd.get("battery", 0.0) or 0.0)
+                                        predicted_level = float(
+                                            pd.get("predicted_level_at_alarm", 0.0)
+                                            or 0.0
+                                        )
+                                        actual_batt = float(
+                                            pd.get("battery", 0.0) or 0.0
+                                        )
                                         delta = predicted_level - actual_batt
                                         # if predicted was > actual by more than 5 percentage points, flag drain_miss
                                         if delta >= 5.0:
                                             reason = "drain_miss"
-                                            details["predicted_level_at_alarm"] = float(predicted_level)
-                                            details["actual_battery"] = float(actual_batt)
+                                            details["predicted_level_at_alarm"] = float(
+                                                predicted_level
+                                            )
+                                            details["actual_battery"] = float(
+                                                actual_batt
+                                            )
                                             details["delta"] = float(delta)
                                             # increment retrain request counter for this profile (use device name)
                                             try:
                                                 pid = dev_name
-                                                self._post_alarm_learning_retrain_requests[pid] = int(self._post_alarm_learning_retrain_requests.get(pid, 0)) + 1
+                                                self._post_alarm_learning_retrain_requests[
+                                                    pid
+                                                ] = (
+                                                    int(
+                                                        self._post_alarm_learning_retrain_requests.get(
+                                                            pid, 0
+                                                        )
+                                                    )
+                                                    + 1
+                                                )
                                                 # if requests reach threshold (3), schedule an async reset of the profile
-                                                if int(self._post_alarm_learning_retrain_requests.get(pid, 0)) >= 3:
+                                                if (
+                                                    int(
+                                                        self._post_alarm_learning_retrain_requests.get(
+                                                            pid, 0
+                                                        )
+                                                    )
+                                                    >= 3
+                                                ):
                                                     try:
-                                                        learning = getattr(entry_data, "learning", None) or entry_data.get("learning")
+                                                        learning = getattr(
+                                                            entry_data, "learning", None
+                                                        ) or entry_data.get("learning")
                                                     except Exception:
                                                         learning = None
                                                     try:
-                                                        if learning and hasattr(learning, "async_reset_profile"):
+                                                        if learning and hasattr(
+                                                            learning,
+                                                            "async_reset_profile",
+                                                        ):
                                                             # schedule reset but don't block coordinator
-                                                            self.hass.async_create_task(learning.async_reset_profile(pid))
+                                                            self.hass.async_create_task(
+                                                                learning.async_reset_profile(
+                                                                    pid
+                                                                )
+                                                            )
                                                             # record suggestion in state machine
-                                                            if state_machine and hasattr(state_machine, "add_error"):
-                                                                state_machine.add_error(pid, "learning_reset_scheduled:drain_miss")
+                                                            if (
+                                                                state_machine
+                                                                and hasattr(
+                                                                    state_machine,
+                                                                    "add_error",
+                                                                )
+                                                            ):
+                                                                state_machine.add_error(
+                                                                    pid,
+                                                                    "learning_reset_scheduled:drain_miss",
+                                                                )
                                                             # clear counter to avoid repeated resets
-                                                            self._post_alarm_learning_retrain_requests[pid] = 0
-                                                            details["learning_reset_scheduled"] = True
+                                                            self._post_alarm_learning_retrain_requests[
+                                                                pid
+                                                            ] = 0
+                                                            details[
+                                                                "learning_reset_scheduled"
+                                                            ] = True
                                                     except Exception:
                                                         _ignored_exc()
                                             except Exception:
@@ -1459,7 +1844,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             self._post_alarm_corrections.insert(0, entry)
                             # bound history to last 50 entries
                             if len(self._post_alarm_corrections) > 50:
-                                self._post_alarm_corrections = self._post_alarm_corrections[:50]
+                                self._post_alarm_corrections = (
+                                    self._post_alarm_corrections[:50]
+                                )
                         except Exception:
                             _ignored_exc()
 
@@ -1475,13 +1862,17 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             self._last_successful_update = dt_util.utcnow()
             # Report desired-state history at DEBUG level only
             try:
-                _LOGGER.debug("Desired state history snapshot: %s", self._desired_state_history)
+                _LOGGER.debug(
+                    "Desired state history snapshot: %s", self._desired_state_history
+                )
                 try:
                     readable = {}
                     for k, v in self._last_switch_time.items():
                         try:
                             if isinstance(v, (int, float)):
-                                readable[k] = datetime.fromtimestamp(float(v)).isoformat()
+                                readable[k] = datetime.fromtimestamp(
+                                    float(v)
+                                ).isoformat()
                             else:
                                 # Use getattr with a safe default callable bound in a local scope
                                 iso = getattr(v, "isoformat", None)
@@ -1558,7 +1949,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         await self.async_request_refresh()
 
-    def _float_state(self, entity_id: Optional[str]) -> Optional[float]:
+    def _float_state(self, entity_id: str | None) -> float | None:
         if not entity_id:
             return None
         state_obj = self.hass.states.get(entity_id)
@@ -1570,7 +1961,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             _LOGGER.debug("Cannot convert state %s to float", state_obj.state)
             return None
 
-    def _text_state(self, entity_id: Optional[str]) -> Optional[str]:
+    def _text_state(self, entity_id: str | None) -> str | None:
         if not entity_id:
             return None
         state_obj = self.hass.states.get(entity_id)
@@ -1578,7 +1969,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             return None
         return str(state_obj.state)
 
-    def _charging_state(self, entity_id: Optional[str]) -> str:
+    def _charging_state(self, entity_id: str | None) -> str:
         state = self._text_state(entity_id)
         if not state:
             return "unknown"
@@ -1618,7 +2009,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         )
 
     @staticmethod
-    def _parse_alarm_time(value: Optional[str]) -> time:
+    def _parse_alarm_time(value: str | None) -> time:
         if not value:
             return time(hour=6, minute=30)
 
@@ -1754,7 +2145,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         battery: float,
         charging_active: bool,
         recent_window_hours: float,
-    ) -> tuple[Optional[float], bool]:
+    ) -> tuple[float | None, bool]:
         last_sample = self._battery_history.get(device.name)
         if not last_sample:
             return None, False
@@ -1813,7 +2204,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
     @staticmethod
     def _apply_observed_adjustment(
-        rate: float, observed_rate: Optional[float]
+        rate: float, observed_rate: float | None
     ) -> tuple[float, bool]:
         if observed_rate is None:
             return rate, False
@@ -1863,7 +2254,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self,
         device: DeviceConfig,
         *,
-        observed_rate: Optional[float],
+        observed_rate: float | None,
         is_home: bool,
         battery: float,
         prior_exists: bool,
@@ -1887,7 +2278,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         now_local: datetime,
         learning,
         learning_window_hours: float,
-    ) -> Optional[SmartChargePlan]:
+    ) -> SmartChargePlan | None:
         # When this helper is invoked directly (tests often call it with a
         # simulated ``now_local``), advance the per-evaluation id and
         # record the evaluation time. If called from _async_update_data the
@@ -1910,7 +2301,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         except Exception:
             self._current_eval_id = getattr(self, "_current_eval_id", 1)
         self._current_eval_time = now_local
-        _LOGGER.info("_build_plan: device=%s now=%s eval=%d", device.name, now_local.isoformat(), self._current_eval_id)
+        _LOGGER.info(
+            "_build_plan: device=%s now=%s eval=%d",
+            device.name,
+            now_local.isoformat(),
+            self._current_eval_id,
+        )
 
         battery = self._float_state(device.battery_sensor)
         if battery is None:
@@ -2010,7 +2406,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 # for throttle comparisons so the recorded last-switch epoch
                 # (which also prefers _current_eval_time) is compared using
                 # the same clock. Fall back to real UTC otherwise.
-                now_for_cmp = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                now_for_cmp = (
+                    getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                )
                 try:
                     now_ts = float(dt_util.as_timestamp(now_for_cmp))
                     # last_ts may already be an epoch float stored by this coordinator
@@ -2095,7 +2493,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         )
 
         total_duration_min = main_duration_min
-        precharge_duration_min: Optional[float] = None
+        precharge_duration_min: float | None = None
         if release_level is not None:
             if avg_speed > 0:
                 precharge_deficit = max(0.0, release_level - battery)
@@ -2152,7 +2550,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         alarm_dt: datetime,
         duration_min: float,
         charge_deficit: float,
-    ) -> tuple[Optional[datetime], bool, float]:
+    ) -> tuple[datetime | None, bool, float]:
         if charge_deficit <= 0.0 or duration_min <= 0.0:
             return None, False, 0.0
         start_time = alarm_dt - timedelta(minutes=duration_min)
@@ -2168,8 +2566,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         expected_drain: float,
         is_home: bool,
         smart_start_active: bool,
-        start_time: Optional[datetime],
-    ) -> tuple[bool, Optional[float], float, float, float, bool]:
+        start_time: datetime | None,
+    ) -> tuple[bool, float | None, float, float, float, bool]:
         precharge_required = False
         release_level = self._precharge_release.get(device.name)
         previous_release = release_level
@@ -2188,14 +2586,20 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             raw_pm = None
             if getattr(self, "_post_alarm_persisted_smart_start", None) is not None:
-                raw_pm = self._post_alarm_persisted_smart_start.get(device.charger_switch)
+                raw_pm = self._post_alarm_persisted_smart_start.get(
+                    device.charger_switch
+                )
             persisted_margin = float(raw_pm) if raw_pm is not None else None
         except Exception:
             persisted_margin = None
         smart_margin = (
             persisted_margin
             if persisted_margin is not None
-            else (device.smart_start_margin if device.smart_start_margin is not None else self._smart_start_margin)
+            else (
+                device.smart_start_margin
+                if device.smart_start_margin is not None
+                else self._smart_start_margin
+            )
         )
         forecast_holdoff = False
 
@@ -2291,13 +2695,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         device: DeviceConfig,
         expected_drain: float,
         smart_start_active: bool,
-        start_time: Optional[datetime],
+        start_time: datetime | None,
         now_local: datetime,
         margin_on: float,
         margin_off: float,
         smart_margin: float,
-        previous_release: Optional[float],
-    ) -> tuple[Optional[float], bool]:
+        previous_release: float | None,
+    ) -> tuple[float | None, bool]:
         """Compute and set release_level when a precharge latch should occur.
 
         Returns (release_level, precharge_required).
@@ -2305,7 +2709,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         extra_margin = max(margin_off, expected_drain * 0.4)
         release_cap = device.target_level
         if smart_start_active and start_time and now_local < start_time:
-            release_cap = max(device.precharge_level, device.target_level - smart_margin)
+            release_cap = max(
+                device.precharge_level, device.target_level - smart_margin
+            )
         release_level = min(release_cap, device.precharge_level + extra_margin)
         release_level = max(device.precharge_level, release_level)
         self._precharge_release[device.name] = release_level
@@ -2329,17 +2735,18 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         predicted_level: float,
         predicted_threshold: float,
         near_precharge_window: bool,
-        release_ready_at: Optional[datetime],
+        release_ready_at: datetime | None,
         now_local: datetime,
-    ) -> tuple[bool, Optional[float], Optional[datetime]]:
+    ) -> tuple[bool, float | None, datetime | None]:
         """Handle logic for when a release_level already exists.
 
         Returns (precharge_required, release_level, release_ready_at).
         """
         previously_in_range = release_ready_at is not None
-        in_range = (
-            release_ready_at is not None
-            or (device.name in self._precharge_release and battery >= self._precharge_release[device.name] and predicted_level >= predicted_threshold)
+        in_range = release_ready_at is not None or (
+            device.name in self._precharge_release
+            and battery >= self._precharge_release[device.name]
+            and predicted_level >= predicted_threshold
         )
         near_precharge = near_precharge_window
 
@@ -2355,7 +2762,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         device.name,
                         release_ready_at.isoformat(),
                     )
-                    return True, self._precharge_release.get(device.name), release_ready_at
+                    return (
+                        True,
+                        self._precharge_release.get(device.name),
+                        release_ready_at,
+                    )
                 else:
                     # Cleared because we're no longer near precharge
                     self._precharge_release_cleared_by_threshold[device.name] = True
@@ -2387,7 +2798,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     )
                     return False, None, None
                 else:
-                    return True, self._precharge_release.get(device.name), release_ready_at
+                    return (
+                        True,
+                        self._precharge_release.get(device.name),
+                        release_ready_at,
+                    )
             elif not near_precharge:
                 self._precharge_release_cleared_by_threshold[device.name] = True
                 self._precharge_release.pop(device.name, None)
@@ -2405,10 +2820,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
     def _should_authoritatively_suppress(
         self,
-        caller_fn: Optional[str],
-        entity_id: Optional[str],
-        pre_epoch: Optional[float],
-        previous_last_action: Optional[bool],
+        caller_fn: str | None,
+        entity_id: str | None,
+        pre_epoch: float | None,
+        previous_last_action: bool | None,
         action: str,
         bypass_throttle: bool,
         force: bool,
@@ -2421,7 +2836,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         helper which would change the observed caller.
         """
         try:
-            if entity_id and not force and previous_last_action is not None and caller_fn != "_maybe_switch":
+            if (
+                entity_id
+                and not force
+                and previous_last_action is not None
+                and caller_fn != "_maybe_switch"
+            ):
                 try:
                     dev_name = self._device_name_for_entity(entity_id)
                 except Exception:
@@ -2436,7 +2856,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
                 stored_epoch = self._parse_stored_epoch(entity_id)
                 throttle_cfg = float(
-                    self._device_switch_throttle.get(entity_id, self._default_switch_throttle_seconds)
+                    self._device_switch_throttle.get(
+                        entity_id, self._default_switch_throttle_seconds
+                    )
                     or self._default_switch_throttle_seconds
                 )
                 if stored_epoch is not None and pre_epoch is not None:
@@ -2473,11 +2895,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
     def _gather_async_call_debug_info(
         self,
-        entity_id: Optional[str],
-        pre_epoch: Optional[float],
+        entity_id: str | None,
+        pre_epoch: float | None,
         bypass_throttle: bool,
         force: bool,
-        previous_last_action: Optional[bool],
+        previous_last_action: bool | None,
         action: str,
     ) -> tuple[Any, Any]:
         """Gather debug values used by _async_switch_call.
@@ -2515,7 +2937,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             _ignored_exc()
         return stored_val, device_thr
 
-    def _parse_stored_epoch(self, entity_id: Optional[str]) -> Optional[float]:
+    def _parse_stored_epoch(self, entity_id: str | None) -> float | None:
         """Parse stored last-switch time into an epoch float or return None.
 
         This isolates the datetime parsing branch so the parent function can
@@ -2537,7 +2959,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             _ignored_exc()
             return None
 
-    def _is_device_in_latch_maps(self, dev_name: Optional[str]) -> bool:
+    def _is_device_in_latch_maps(self, dev_name: str | None) -> bool:
         """Return True if the device name is present in any precharge/forecast maps.
 
         Isolating this lookup reduces code duplication and keeps the
@@ -2555,7 +2977,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             _ignored_exc()
             return False
 
-    def _compute_local_effective_bypass(self, entity_id: Optional[str], bypass_throttle: bool, force: bool) -> bool:
+    def _compute_local_effective_bypass(
+        self, entity_id: str | None, bypass_throttle: bool, force: bool
+    ) -> bool:
         """Compute whether this call should locally bypass throttle.
 
         This encapsulates the logic that inspects precharge maps and resolves
@@ -2566,7 +2990,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             if entity_id:
                 try:
                     ent = str(entity_id)
-                    if ent in self._precharge_release or ent in self._precharge_release_ready:
+                    if (
+                        ent in self._precharge_release
+                        or ent in self._precharge_release_ready
+                    ):
                         return True
                     try:
                         dev_name = self._device_name_for_entity(ent)
@@ -2583,9 +3010,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
     async def _async_switch_call(
         self,
         action: str,
-        service_data: Dict[str, Any],
-        pre_epoch: Optional[float] = None,
-        previous_last_action: Optional[bool] = None,
+        service_data: dict[str, Any],
+        pre_epoch: float | None = None,
+        previous_last_action: bool | None = None,
         *,
         bypass_throttle: bool = False,
         force: bool = False,
@@ -2608,8 +3035,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # effective bypass flag so callers that pass bypass_throttle/force
         # remain authoritative but internal precharge-release events can
         # proceed.
-    # (no-op placeholder removed; local comparison time and assumed state
-    # are handled inline where required)
+        # (no-op placeholder removed; local comparison time and assumed state
+        # are handled inline where required)
 
         # Authoritative early suppression: delegate to helper to keep this
         # function small and testable.
@@ -2624,7 +3051,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 caller_fn = None
 
             if self._should_authoritatively_suppress(
-                caller_fn, entity_id, pre_epoch, previous_last_action, action, bypass_throttle, force
+                caller_fn,
+                entity_id,
+                pre_epoch,
+                previous_last_action,
+                action,
+                bypass_throttle,
+                force,
             ):
                 return False
         except Exception:
@@ -2638,7 +3071,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             except Exception:
                 caller = None
             _LOGGER.debug(
-                "Invoking service switch.%s for %s (caller=%s)", action, entity_id, caller
+                "Invoking service switch.%s for %s (caller=%s)",
+                action,
+                entity_id,
+                caller,
             )
             # Some test harnesses register mock services in ways that make
             # `has_service` unreliable. Attempt the service call and catch
@@ -2658,7 +3094,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # delegating the recording behavior.
         try:
             if entity_id:
-                self._record_switch_invocation(entity_id, action, previous_last_action, pre_epoch)
+                self._record_switch_invocation(
+                    entity_id, action, previous_last_action, pre_epoch
+                )
         except Exception:
             _ignored_exc()
         return True
@@ -2667,8 +3105,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self,
         entity_id: str,
         action: str,
-        previous_last_action: Optional[bool],
-        pre_epoch: Optional[float],
+        previous_last_action: bool | None,
+        pre_epoch: float | None,
     ) -> None:
         """Record switch invocation time, intended action, and eval id.
 
@@ -2703,24 +3141,35 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 epoch,
             )
         except Exception:
-            _LOGGER.debug("Recorded last_switch_time for %s = epoch %.3f", entity_id, epoch)
+            _LOGGER.debug(
+                "Recorded last_switch_time for %s = epoch %.3f", entity_id, epoch
+            )
         try:
-            _LOGGER.debug("last_switch_time keys after set: %s", list(self._last_switch_time.keys()))
+            _LOGGER.debug(
+                "last_switch_time keys after set: %s",
+                list(self._last_switch_time.keys()),
+            )
         except Exception:
             _ignored_exc()
 
-    def _resolve_epoch_for_invocation(self, pre_epoch: Optional[float]) -> float:
+    def _resolve_epoch_for_invocation(self, pre_epoch: float | None) -> float:
         """Resolve the epoch timestamp used when recording a switch invocation."""
         ts = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
         try:
-            return float(pre_epoch) if pre_epoch is not None else float(dt_util.as_timestamp(ts))
+            return (
+                float(pre_epoch)
+                if pre_epoch is not None
+                else float(dt_util.as_timestamp(ts))
+            )
         except Exception:
             try:
                 return float(dt_util.as_timestamp(ts))
             except Exception:
                 return float(dt_util.as_timestamp(dt_util.utcnow()))
 
-    def _set_last_action_state(self, entity_id: str, action: str, previous_last_action: Optional[bool]) -> None:
+    def _set_last_action_state(
+        self, entity_id: str, action: str, previous_last_action: bool | None
+    ) -> None:
         """Set the last intended action state for an entity."""
         try:
             if previous_last_action is not None:
@@ -2748,7 +3197,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         if last_eval == getattr(self, "_current_eval_id", None):
             return
         # mark as recorded for this evaluation (store an integer)
-        self._last_recorded_eval[entity] = int(getattr(self, "_current_eval_id", 0) or 0)
+        self._last_recorded_eval[entity] = int(
+            getattr(self, "_current_eval_id", 0) or 0
+        )
         confirm_key = f"{entity}::confirm"
         required = int(
             self._device_switch_throttle.get(
@@ -2761,7 +3212,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             if hist[0] != desired and hist[1] != 0:
                 # record a flip-flop event at the current evaluation epoch
                 try:
-                    epoch = float(dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow()))
+                    epoch = float(
+                        dt_util.as_timestamp(
+                            getattr(self, "_current_eval_time", None)
+                            or dt_util.utcnow()
+                        )
+                    )
                 except Exception:
                     epoch = float(dt_util.as_timestamp(dt_util.utcnow()))
                 evts = self._flipflop_events.setdefault(entity, [])
@@ -2793,7 +3249,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
     async def _maybe_switch(  # noqa: C901
         self,
         action: str,
-        service_data: Dict[str, Any],
+        service_data: dict[str, Any],
         desired: bool,
         force: bool = False,
         bypass_throttle: bool = False,
@@ -2861,7 +3317,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             if self._should_suppress_switch(norm, desired, force, bypass_throttle):
                 return False
         except Exception:
-            _LOGGER.debug("_should_suppress_switch helper raised; proceeding with switch for %s", norm)
+            _LOGGER.debug(
+                "_should_suppress_switch helper raised; proceeding with switch for %s",
+                norm,
+            )
 
         # Keep logging minimal here — detailed debug logs used during
         # development have been removed to reduce CI noise.
@@ -2959,13 +3418,25 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         last_epoch_val = float(last_raw)
                     elif isinstance(last_raw, str):
                         parsed = dt_util.parse_datetime(last_raw)
-                        last_epoch_val = float(dt_util.as_timestamp(parsed)) if parsed else None
+                        last_epoch_val = (
+                            float(dt_util.as_timestamp(parsed)) if parsed else None
+                        )
                     else:
                         last_epoch_val = float(dt_util.as_timestamp(last_raw))
 
                     if last_epoch_val is not None:
-                        now_epoch_val = float(dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow()))
-                        throttle_val = float(self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds)
+                        now_epoch_val = float(
+                            dt_util.as_timestamp(
+                                getattr(self, "_current_eval_time", None)
+                                or dt_util.utcnow()
+                            )
+                        )
+                        throttle_val = float(
+                            self._device_switch_throttle.get(
+                                norm, self._default_switch_throttle_seconds
+                            )
+                            or self._default_switch_throttle_seconds
+                        )
                         last_action_state = self._last_action_state.get(norm)
                         if last_action_state is None:
                             try:
@@ -3000,7 +3471,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             last_action_state,
                             desired,
                         )
-                        if last_action_state is not None and elapsed_val >= 0 and elapsed_val < float(throttle_val) and bool(last_action_state) != bool(desired):
+                        if (
+                            last_action_state is not None
+                            and elapsed_val >= 0
+                            and elapsed_val < float(throttle_val)
+                            and bool(last_action_state) != bool(desired)
+                        ):
                             _LOGGER.info(
                                 "CONSOLIDATED_EARLY_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
                                 norm,
@@ -3014,7 +3490,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             # to avoid flip-flopping due to multiple code paths.
                             try:
                                 last_eval = self._last_switch_eval.get(norm)
-                                if last_eval is None or abs(int(getattr(self, "_current_eval_id", 0) or 0) - int(last_eval)) <= 1:
+                                if (
+                                    last_eval is None
+                                    or abs(
+                                        int(getattr(self, "_current_eval_id", 0) or 0)
+                                        - int(last_eval)
+                                    )
+                                    <= 1
+                                ):
                                     return False
                             except Exception:
                                 return False
@@ -3026,7 +3509,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             # reversals using the same epoch timebase as _async_switch_call.
             try:
                 last_val = self._last_switch_time.get(norm)
-                throttle_cfg_quick = self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds)
+                throttle_cfg_quick = self._device_switch_throttle.get(
+                    norm, self._default_switch_throttle_seconds
+                )
                 if last_val is not None and throttle_cfg_quick:
                     if isinstance(last_val, (int, float)):
                         last_e = float(last_val)
@@ -3036,11 +3521,18 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     else:
                         last_e = float(dt_util.as_timestamp(last_val))
                     if last_e is not None:
-                        now_e = float(dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow()))
+                        now_e = float(
+                            dt_util.as_timestamp(
+                                getattr(self, "_current_eval_time", None)
+                                or dt_util.utcnow()
+                            )
+                        )
                         try:
                             throttle_val_quick = float(throttle_cfg_quick)
                         except Exception:
-                            throttle_val_quick = float(self._default_switch_throttle_seconds)
+                            throttle_val_quick = float(
+                                self._default_switch_throttle_seconds
+                            )
                         last_act_quick = self._last_action_state.get(norm)
                         if last_act_quick is None:
                             try:
@@ -3053,9 +3545,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             _LOGGER.debug(
                                 "QUICK_GATE_DEBUG: entity=%s last_e=%.3f now_e=%.3f elapsed=%.3f throttle_quick=%.3f last_act_quick=%r desired=%s current_eval_time=%s",
                                 norm,
-                                float(last_e) if last_e is not None else float('nan'),
+                                float(last_e) if last_e is not None else float("nan"),
                                 now_e,
-                                (now_e - last_e) if last_e is not None else float('nan'),
+                                (
+                                    (now_e - last_e)
+                                    if last_e is not None
+                                    else float("nan")
+                                ),
                                 throttle_val_quick,
                                 last_act_quick,
                                 desired,
@@ -3066,7 +3562,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         # Evaluate suppression regardless of whether last_act_quick
                         # was retrieved from the coordinator or inferred from the
                         # entity state.
-                        if last_act_quick is not None and (now_e - last_e) < throttle_val_quick and bool(last_act_quick) != bool(desired):
+                        if (
+                            last_act_quick is not None
+                            and (now_e - last_e) < throttle_val_quick
+                            and bool(last_act_quick) != bool(desired)
+                        ):
                             _LOGGER.info(
                                 "EARLY_SUPPRESS_V2: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
                                 norm,
@@ -3080,20 +3580,29 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 _ignored_exc()
             try:
                 last_raw = self._last_switch_time.get(norm)
-                throttle_cfg = self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds)
+                throttle_cfg = self._device_switch_throttle.get(
+                    norm, self._default_switch_throttle_seconds
+                )
                 if last_raw is not None and throttle_cfg:
                     try:
                         if isinstance(last_raw, (int, float)):
                             last_epoch = float(last_raw)
                         elif isinstance(last_raw, str):
                             parsed = dt_util.parse_datetime(last_raw)
-                            last_epoch = float(dt_util.as_timestamp(parsed)) if parsed else None
+                            last_epoch = (
+                                float(dt_util.as_timestamp(parsed)) if parsed else None
+                            )
                         else:
                             last_epoch = float(dt_util.as_timestamp(last_raw))
                     except Exception:
                         last_epoch = None
                     if last_epoch is not None:
-                        now_epoch = float(dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow()))
+                        now_epoch = float(
+                            dt_util.as_timestamp(
+                                getattr(self, "_current_eval_time", None)
+                                or dt_util.utcnow()
+                            )
+                        )
                         # Prepare numeric inputs for logging
                         try:
                             throttle_val = float(throttle_cfg)
@@ -3128,7 +3637,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 )
                         except Exception:
                             _ignored_exc()
-                        if elapsed_early is not None and elapsed_early < throttle_val and last_act is not None and bool(last_act) != bool(desired):
+                        if (
+                            elapsed_early is not None
+                            and elapsed_early < throttle_val
+                            and last_act is not None
+                            and bool(last_act) != bool(desired)
+                        ):
                             _LOGGER.info(
                                 "EARLY_SUPPRESS: entity=%s last_action=%s desired=%s elapsed=%.3f throttle=%s",
                                 norm,
@@ -3147,7 +3661,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # accidental list/tuple vs string mismatches that lead to missed
         # throttle-key lookups in tests.
         try:
-            _LOGGER.info("_maybe_switch raw entity repr: %r (type=%s)", raw_entity, type(raw_entity))
+            _LOGGER.info(
+                "_maybe_switch raw entity repr: %r (type=%s)",
+                raw_entity,
+                type(raw_entity),
+            )
         except Exception:
             _ignored_exc()
         # Log at INFO so test runs with default logging will show the
@@ -3161,7 +3679,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             bypass_throttle,
         )
 
-    # Confirmation debounce and throttle checks are normally applied
+        # Confirmation debounce and throttle checks are normally applied
         # to avoid flapping. However, certain urgent operations (for
         # example precharge-release pauses or presence-leave) explicitly
         # request bypass_throttle=True or force=True and should act
@@ -3188,11 +3706,16 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             hist = self._desired_state_history.get(norm, (desired, 0))
             # Debug: inspect existing last_switch_time keys to catch mismatches
             try:
-                _LOGGER.info("last_switch_time keys before check: %s", list(self._last_switch_time.keys()))
+                _LOGGER.info(
+                    "last_switch_time keys before check: %s",
+                    list(self._last_switch_time.keys()),
+                )
             except Exception:
                 _ignored_exc()
             last = self._last_switch_time.get(norm)
-            _LOGGER.debug("throttle: last raw=%r type=%s truthy=%s", last, type(last), bool(last))
+            _LOGGER.debug(
+                "throttle: last raw=%r type=%s truthy=%s", last, type(last), bool(last)
+            )
             throttle = self._device_switch_throttle.get(
                 norm, self._default_switch_throttle_seconds
             )
@@ -3218,7 +3741,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             )
             last = self._last_switch_time.get(norm)
 
-            _LOGGER.info("SHOULD_CHECK_VARS: entity=%s last=%r last_type=%s throttle=%s", norm, last, type(last), throttle)
+            _LOGGER.info(
+                "SHOULD_CHECK_VARS: entity=%s last=%r last_type=%s throttle=%s",
+                norm,
+                last,
+                type(last),
+                throttle,
+            )
 
             # Confirmation debounce: per-device override available. Record the
             # observed desired state for confirmation counting. The helper will
@@ -3276,7 +3805,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             # Temporary diagnostic: ensure the normalized key is present in
             # the last-switch map. If it isn't, throttle checks will be
             # skipped and rapid switching can occur.
-            _LOGGER.debug("throttle diagnostic: norm_present=%s keys=%s", norm in self._last_switch_time, list(self._last_switch_time.keys()))
+            _LOGGER.debug(
+                "throttle diagnostic: norm_present=%s keys=%s",
+                norm in self._last_switch_time,
+                list(self._last_switch_time.keys()),
+            )
             # Compute a normalized epoch for the last switch when possible.
             last_epoch_quick: float | None = None
             try:
@@ -3284,7 +3817,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     last_epoch_quick = float(last)
                 elif isinstance(last, str):
                     parsed = dt_util.parse_datetime(last)
-                    last_epoch_quick = float(dt_util.as_timestamp(parsed)) if parsed else None
+                    last_epoch_quick = (
+                        float(dt_util.as_timestamp(parsed)) if parsed else None
+                    )
                 else:
                     if last is not None:
                         last_epoch_quick = float(dt_util.as_timestamp(last))
@@ -3303,7 +3838,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 if last_epoch_quick is not None:
                     # Use the coordinator logical evaluation time when available
                     # for deterministic behavior in tests; fall back to real UTC.
-                    now_for_quick = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                    now_for_quick = (
+                        getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                    )
                     now_epoch_val = float(dt_util.as_timestamp(now_for_quick))
                     elapsed_quick = now_epoch_val - float(last_epoch_quick)
                     # Ensure throttle is a float
@@ -3335,7 +3872,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     )
 
                     if elapsed_quick is not None and elapsed_quick < throttle_val:
-                        if last_action_state is not None and bool(last_action_state) != bool(desired):
+                        if last_action_state is not None and bool(
+                            last_action_state
+                        ) != bool(desired):
                             _LOGGER.debug(
                                 "QUICK_SUPPRESS: entity=%s last_action=%s desired=%s elapsed=%.3f throttle=%s",
                                 norm,
@@ -3412,7 +3951,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             throttle,
                             required,
                         )
-                    _LOGGER.debug("THROTTLE_TS: computed elapsed=%s throttle=%s", elapsed, throttle)
+                    _LOGGER.debug(
+                        "THROTTLE_TS: computed elapsed=%s throttle=%s",
+                        elapsed,
+                        throttle,
+                    )
                 except Exception:
                     _LOGGER.exception(
                         "Throttle timestamp computation failed for %s: last=%r now=%r",
@@ -3431,7 +3974,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 except Exception:
                     readable_last = repr(last)
                 try:
-                    readable_now = getattr(now_for_cmp, "isoformat", lambda: repr(now_for_cmp))()
+                    readable_now = getattr(
+                        now_for_cmp, "isoformat", lambda: repr(now_for_cmp)
+                    )()
                 except Exception:
                     readable_now = repr(now_for_cmp)
 
@@ -3509,19 +4054,30 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 except Exception:
                     _ignored_exc()
                 current_last = self._last_switch_time.get(norm)
-                throttle = self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds)
+                throttle = self._device_switch_throttle.get(
+                    norm, self._default_switch_throttle_seconds
+                )
                 if current_last is not None:
                     if isinstance(current_last, (int, float)):
                         stored_epoch = float(current_last)
                     else:
-                        parsed = dt_util.parse_datetime(current_last) if isinstance(current_last, str) else current_last
-                        stored_epoch = float(dt_util.as_timestamp(parsed)) if parsed else None
+                        parsed = (
+                            dt_util.parse_datetime(current_last)
+                            if isinstance(current_last, str)
+                            else current_last
+                        )
+                        stored_epoch = (
+                            float(dt_util.as_timestamp(parsed)) if parsed else None
+                        )
                 else:
                     stored_epoch = None
                 if stored_epoch is not None:
                     # Compute comparison time using coordinator logical eval time
                     now_epoch = float(
-                        dt_util.as_timestamp(getattr(self, "_current_eval_time", None) or dt_util.utcnow())
+                        dt_util.as_timestamp(
+                            getattr(self, "_current_eval_time", None)
+                            or dt_util.utcnow()
+                        )
                     )
                     elapsed_now = now_epoch - stored_epoch
                     # Diagnostic: log the values used for the final throttle check
@@ -3541,8 +4097,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         # accurately represents the action that may still be
                         # in-flight. Fall back to the current recorded state
                         # if needed.
-                        last_action_state = previous_last_action if previous_last_action is not None else self._last_action_state.get(norm)
-                        if last_action_state is not None and bool(last_action_state) != bool(desired):
+                        last_action_state = (
+                            previous_last_action
+                            if previous_last_action is not None
+                            else self._last_action_state.get(norm)
+                        )
+                        if last_action_state is not None and bool(
+                            last_action_state
+                        ) != bool(desired):
                             _LOGGER.warning(
                                 "FINAL_THROTTLE_SUPPRESS: entity=%s last_action=%s desired=%s elapsed=%.3f throttle=%s",
                                 norm,
@@ -3573,14 +4135,21 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             stored_epoch_det = float(stored)
                         elif isinstance(stored, str):
                             parsed = dt_util.parse_datetime(stored)
-                            stored_epoch_det = float(dt_util.as_timestamp(parsed)) if parsed else None
+                            stored_epoch_det = (
+                                float(dt_util.as_timestamp(parsed)) if parsed else None
+                            )
                         else:
                             stored_epoch_det = float(dt_util.as_timestamp(stored))
                     except Exception:
                         stored_epoch_det = None
                 else:
                     stored_epoch_det = None
-                throttle_val_det = float(self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds)
+                throttle_val_det = float(
+                    self._device_switch_throttle.get(
+                        norm, self._default_switch_throttle_seconds
+                    )
+                    or self._default_switch_throttle_seconds
+                )
                 if stored_epoch_det is not None and pre_epoch is not None:
                     elapsed_det = float(pre_epoch) - float(stored_epoch_det)
                     last_act_det = self._last_action_state.get(norm)
@@ -3590,8 +4159,20 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             last_act_det = bool(st and st.state == STATE_ON)
                         except Exception:
                             last_act_det = None
-                    if last_act_det is not None and elapsed_det >= 0 and elapsed_det < float(throttle_val_det) and bool(last_act_det) != bool(desired):
-                        _LOGGER.info("PRE_RECORD_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s", norm, elapsed_det, throttle_val_det, last_act_det, desired)
+                    if (
+                        last_act_det is not None
+                        and elapsed_det >= 0
+                        and elapsed_det < float(throttle_val_det)
+                        and bool(last_act_det) != bool(desired)
+                    ):
+                        _LOGGER.info(
+                            "PRE_RECORD_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
+                            norm,
+                            elapsed_det,
+                            throttle_val_det,
+                            last_act_det,
+                            desired,
+                        )
                         try:
                             _LOGGER.debug(
                                 "DBG_PRE_RECORD_SUPPRESS: entity=%s stored_epoch=%r pre_epoch=%r elapsed=%r throttle=%r last_act=%r desired=%r",
@@ -3608,7 +4189,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         return False
             except Exception:
                 _ignored_exc()
-        _LOGGER.info("Pre-record: intended action for %s (pre_epoch=%.3f)", norm, pre_epoch)
+        _LOGGER.info(
+            "Pre-record: intended action for %s (pre_epoch=%.3f)", norm, pre_epoch
+        )
         _LOGGER.info("PROCEED: calling switch.%s for %s", action, norm)
         # Ensure the service_data contains a normalized entity id for
         # _async_switch_call so recording uses the same key lookup.
@@ -3674,16 +4257,27 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         stored_epoch_final = float(stored)
                     elif isinstance(stored, str):
                         parsed = dt_util.parse_datetime(stored)
-                        stored_epoch_final = float(dt_util.as_timestamp(parsed)) if parsed else None
+                        stored_epoch_final = (
+                            float(dt_util.as_timestamp(parsed)) if parsed else None
+                        )
                     else:
                         stored_epoch_final = float(dt_util.as_timestamp(stored))
                 else:
                     stored_epoch_final = None
 
-                throttle_final = float(self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds)
+                throttle_final = float(
+                    self._device_switch_throttle.get(
+                        norm, self._default_switch_throttle_seconds
+                    )
+                    or self._default_switch_throttle_seconds
+                )
                 if stored_epoch_final is not None and pre_epoch is not None:
                     elapsed_final = float(pre_epoch) - float(stored_epoch_final)
-                    last_action_for_final = previous_last_action if previous_last_action is not None else self._last_action_state.get(norm)
+                    last_action_for_final = (
+                        previous_last_action
+                        if previous_last_action is not None
+                        else self._last_action_state.get(norm)
+                    )
                     if last_action_for_final is None:
                         try:
                             st = self.hass.states.get(norm)
@@ -3699,12 +4293,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     ):
                         try:
                             print(
-                                (
-                                    "DBG_FINAL_GUARD_SUPPRESS: entity="
-                                    f"{norm} elapsed={elapsed_final:.3f} throttle={throttle_final} "
-                                    f"last_action={last_action_for_final} desired={desired} "
-                                    f"previous_last_action={previous_last_action}"
-                                )
+                                "DBG_FINAL_GUARD_SUPPRESS: entity="
+                                f"{norm} elapsed={elapsed_final:.3f} throttle={throttle_final} "
+                                f"last_action={last_action_for_final} desired={desired} "
+                                f"previous_last_action={previous_last_action}"
                             )
                         except Exception:
                             _ignored_exc()
@@ -3750,10 +4342,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         charger_is_on: bool,
         charger_available: bool,
         is_home: bool,
-        start_time: Optional[datetime],
+        start_time: datetime | None,
         smart_start_active: bool,
         precharge_required: bool,
-        release_level: Optional[float],
+        release_level: float | None,
         margin_on: float,
         smart_margin: float,
         charge_deficit: float,
@@ -3792,7 +4384,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 charger_is_on,
                 precharge_required,
                 release_level,
-                {"release": list(self._precharge_release.keys()), "ready": list(self._precharge_release_ready.keys())},
+                {
+                    "release": list(self._precharge_release.keys()),
+                    "ready": list(self._precharge_release_ready.keys()),
+                },
             )
         except Exception:
             _ignored_exc()
@@ -3827,7 +4422,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             # urgent pause path above did not trigger due to timing.
             try:
                 prev_intended = self._last_action_state.get(charger_ent)
-                threshold_cleared = self._precharge_release_cleared_by_threshold.pop(device.name, False)
+                threshold_cleared = self._precharge_release_cleared_by_threshold.pop(
+                    device.name, False
+                )
                 try:
                     # Diagnostic: expose internal markers at DEBUG level to aid
                     # triage while avoiding stdout in CI.
@@ -3889,7 +4486,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         charging_state = "unknown"
                     if charging_state == "charging":
                         await self._maybe_switch(
-                            "turn_off", service_data, desired=False, bypass_throttle=True
+                            "turn_off",
+                            service_data,
+                            desired=False,
+                            bypass_throttle=True,
                         )
                     else:
                         await self._maybe_switch(
@@ -3947,9 +4547,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             # device left home, the flag `_precharge_release_cleared_by_presence`
             # will be set. Act on it here: pause the charger immediately and
             # clear the marker so this is a one-time action.
-            if (
-                charger_is_on
-                and self._precharge_release_cleared_by_presence.pop(device.name, False)
+            if charger_is_on and self._precharge_release_cleared_by_presence.pop(
+                device.name, False
             ):
                 self._precharge_release.pop(device.name, None)
                 self._precharge_release_ready.pop(device.name, None)
@@ -4054,7 +4653,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     charger_ent, self._default_switch_throttle_seconds
                 )
                 if last is not None and throttle is not None:
-                    _LOGGER.warning("SmartStop: raw last=%r type=%s throttle=%s", last, type(last), throttle)
+                    _LOGGER.warning(
+                        "SmartStop: raw last=%r type=%s throttle=%s",
+                        last,
+                        type(last),
+                        throttle,
+                    )
                     # Coerce string timestamps to datetimes when necessary.
                     # last may be stored as an epoch float, datetime, or string
                     try:
@@ -4062,7 +4666,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             last_ts_val = float(last)
                         elif isinstance(last, str):
                             parsed = dt_util.parse_datetime(last)
-                            last_ts_val = float(dt_util.as_timestamp(parsed)) if parsed else None
+                            last_ts_val = (
+                                float(dt_util.as_timestamp(parsed)) if parsed else None
+                            )
                         else:
                             # Assume datetime-like
                             last_ts_val = float(dt_util.as_timestamp(last))
@@ -4232,7 +4838,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 # required (i.e. this is an actual release event).
                 bypass = bool(release_level is not None and not precharge_required)
                 try:
-                    pre_ts_local = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                    pre_ts_local = (
+                        getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                    )
                     pre_epoch_local = float(dt_util.as_timestamp(pre_ts_local))
                 except Exception:
                     pre_epoch_local = float(dt_util.as_timestamp(dt_util.utcnow()))
@@ -4269,7 +4877,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 bypass = bool(forecast_holdoff)
                 if bypass:
                     try:
-                        pre_ts_local = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                        pre_ts_local = (
+                            getattr(self, "_current_eval_time", None)
+                            or dt_util.utcnow()
+                        )
                         pre_epoch_local = float(dt_util.as_timestamp(pre_ts_local))
                     except Exception:
                         pre_epoch_local = float(dt_util.as_timestamp(dt_util.utcnow()))

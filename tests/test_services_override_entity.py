@@ -21,11 +21,18 @@ async def test_set_adaptive_override_entity(hass: HomeAssistant, hass_ws_client)
 
     _register_services(hass)
     coordinator = SmartChargerCoordinator(hass, entry)
-    hass.data[DOMAIN]["entries"][entry.entry_id] = {"entry": entry, "coordinator": coordinator}
+    hass.data[DOMAIN]["entries"][entry.entry_id] = {
+        "entry": entry,
+        "coordinator": coordinator,
+    }
     device = entry.data.get("devices", [])
     if device:
         device = device[0]
-        entity_id = device.get("charging_sensor") or device.get("presence_sensor") or device.get("name")
+        entity_id = (
+            device.get("charging_sensor")
+            or device.get("presence_sensor")
+            or device.get("name")
+        )
     else:
         entity_id = "switch.test_phone_charger"
 

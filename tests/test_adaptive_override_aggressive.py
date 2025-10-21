@@ -8,8 +8,8 @@ import pytest
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 from custom_components.smart_charger.const import DOMAIN
+from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 
 pytestmark = pytest.mark.asyncio
 
@@ -39,7 +39,9 @@ async def test_sustained_ewma_triggers_aggressive(hass) -> None:
 
     # Now simulate sustained exceed over 5 minutes: advance the "since" timestamp
     # Set exceeded_since to 5 minutes ago so next update will detect duration >= 300s
-    coordinator._flipflop_ewma_exceeded_since = dt_util.as_timestamp(dt_util.utcnow() - timedelta(seconds=301))
+    coordinator._flipflop_ewma_exceeded_since = dt_util.as_timestamp(
+        dt_util.utcnow() - timedelta(seconds=301)
+    )
     coordinator._flipflop_ewma = 1.0
     coordinator._flipflop_ewma_exceeded = True
 

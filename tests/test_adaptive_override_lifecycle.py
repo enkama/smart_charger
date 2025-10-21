@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 from custom_components.smart_charger.const import DOMAIN
+from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 from custom_components.smart_charger.diagnostics import _capture_coordinator_state
 
 pytestmark = pytest.mark.asyncio

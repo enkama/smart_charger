@@ -22,7 +22,10 @@ async def test_set_and_clear_adaptive_override(hass: HomeAssistant, hass_ws_clie
 
     _register_services(hass)
     coordinator = SmartChargerCoordinator(hass, entry)
-    hass.data[DOMAIN]["entries"][entry.entry_id] = {"entry": entry, "coordinator": coordinator}
+    hass.data[DOMAIN]["entries"][entry.entry_id] = {
+        "entry": entry,
+        "coordinator": coordinator,
+    }
     assert getattr(coordinator, "_adaptive_mode_override", None) is None
 
     # Call set_adaptive_override service

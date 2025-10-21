@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Iterable
 
 from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -24,15 +24,15 @@ class SmartChargerStateMachine:
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
-        self.states: Dict[str, str] = {}
-        self.error_history: Dict[str, list[str]] = {}
-        self.error_message: Optional[str] = None
+        self.states: dict[str, str] = {}
+        self.error_history: dict[str, list[str]] = {}
+        self.error_message: str | None = None
 
     async def async_load(self) -> None:
         """Load the persisted machine state."""
         _LOGGER.debug("SmartChargerStateMachine initialized")
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "states": dict(self.states),
             "last_error": self.error_message,
@@ -53,7 +53,7 @@ class SmartChargerStateMachine:
         self.error_message = f"[{profile_id}] {error}"
         _LOGGER.warning("SmartCharger error: %s", self.error_message)
 
-    def get_suggestions(self, profile_id: Optional[str] = None):
+    def get_suggestions(self, profile_id: str | None = None):
         """Return stored error hints for an optional profile."""
         if profile_id:
             return [
@@ -64,14 +64,14 @@ class SmartChargerStateMachine:
         return [key.split(":", 1)[1] for key in self.error_history.keys()]
 
 
-def _get_state(hass: HomeAssistant, entity_id: Optional[str]) -> Optional[str]:
+def _get_state(hass: HomeAssistant, entity_id: str | None) -> str | None:
     if not entity_id:
         return None
     state = hass.states.get(entity_id)
     return state.state if state and state.state not in UNKNOWN_STATES else None
 
 
-def _is_charging_state(value: Optional[str]) -> bool:
+def _is_charging_state(value: str | None) -> bool:
     if not value:
         return False
     return str(value).lower() in ("on", "charging", "true", "1")
@@ -89,9 +89,9 @@ def _normalize_entity_ids(value: Any) -> set[str]:
 
 
 def _iter_target_devices(
-    cfg: Dict[str, Any], entity_ids: Any
-) -> Iterable[Dict[str, Any]]:
-    devices: list[Dict[str, Any]] = cfg.get("devices") or []
+    cfg: dict[str, Any], entity_ids: Any
+) -> Iterable[dict[str, Any]]:
+    devices: list[dict[str, Any]] = cfg.get("devices") or []
     target_ids = _normalize_entity_ids(entity_ids)
 
     if not target_ids:
@@ -128,7 +128,7 @@ async def handle_force_refresh(hass: HomeAssistant, coordinator) -> None:
 
 async def handle_start_charging(
     hass: HomeAssistant,
-    cfg: Dict[str, Any],
+    cfg: dict[str, Any],
     call: ServiceCall,
     sm: SmartChargerStateMachine,
 ) -> None:
@@ -162,7 +162,7 @@ async def handle_start_charging(
 
 async def handle_stop_charging(
     hass: HomeAssistant,
-    cfg: Dict[str, Any],
+    cfg: dict[str, Any],
     call: ServiceCall,
     sm: SmartChargerStateMachine,
 ) -> None:
@@ -197,7 +197,7 @@ async def handle_stop_charging(
 async def handle_auto_manage(
     hass: HomeAssistant,
     entry_id: str,
-    cfg: Dict[str, Any],
+    cfg: dict[str, Any],
     coordinator,
     sm: SmartChargerStateMachine,
     learning,
@@ -266,7 +266,7 @@ async def handle_auto_manage(
 
 
 async def handle_load_model(
-    hass: HomeAssistant, cfg: Dict[str, Any], call: ServiceCall, learning
+    hass: HomeAssistant, cfg: dict[str, Any], call: ServiceCall, learning
 ) -> None:
     """Load or reset the predictive learning model on demand."""
     action = call.data.get("action", "load")

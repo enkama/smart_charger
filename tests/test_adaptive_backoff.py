@@ -1,26 +1,24 @@
 import time
 
 import pytest
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.smart_charger.const import (
-    DOMAIN,
-    CONF_ADAPTIVE_THROTTLE_ENABLED,
-    CONF_ADAPTIVE_THROTTLE_MULTIPLIER,
-    CONF_ADAPTIVE_THROTTLE_MIN_SECONDS,
-    CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS,
     CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP,
+    CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS,
+    CONF_ADAPTIVE_THROTTLE_ENABLED,
     CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
+    CONF_ADAPTIVE_THROTTLE_MIN_SECONDS,
     CONF_ADAPTIVE_THROTTLE_MODE,
+    CONF_ADAPTIVE_THROTTLE_MULTIPLIER,
     CONF_BATTERY_SENSOR,
     CONF_CHARGER_SWITCH,
-    CONF_TARGET_LEVEL,
     CONF_MIN_LEVEL,
     CONF_PRECHARGE_LEVEL,
+    CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
+    DOMAIN,
 )
-
 from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 
 
@@ -48,7 +46,9 @@ async def test_adaptive_backoff_grows_with_mode(hass):
         CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER: 10.0,
     }
 
-    entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options=base_options)
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={"devices": [device]}, options=base_options
+    )
     entry.add_to_hass(hass)
 
     # coordinator variable not used in this test; keep entry installed for hass
@@ -59,7 +59,9 @@ async def test_adaptive_backoff_grows_with_mode(hass):
     for mode in ("conservative", "normal", "aggressive"):
         # create a fresh entry with the desired mode and coordinator
         opts = dict(base_options, **{CONF_ADAPTIVE_THROTTLE_MODE: mode})
-        mode_entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options=opts)
+        mode_entry = MockConfigEntry(
+            domain=DOMAIN, data={"devices": [device]}, options=opts
+        )
         mode_entry.add_to_hass(hass)
         mode_coordinator = SmartChargerCoordinator(hass, mode_entry)
 
