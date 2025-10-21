@@ -354,6 +354,108 @@ async def _svc_set_adaptive_override_entity(hass: HomeAssistant, call: ServiceCa
         _LOGGER.debug("Failed to persist entity override (unexpected)")
 
 
+async def _svc_list_post_alarm_insights(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: log or expose post-alarm corrections/streaks for an entry."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    coordinator: SmartChargerCoordinator = entry_data["coordinator"]
+    # For now just log the insights; operators can read coordinator state via diagnostics
+    try:
+        _LOGGER.info("Post-alarm corrections=%s", coordinator._post_alarm_corrections)
+        _LOGGER.info("Post-alarm streaks=%s", coordinator._post_alarm_miss_streaks)
+    except Exception:
+        _LOGGER.debug("Failed to read post-alarm insights", exc_info=True)
+
+
+async def _svc_clear_post_alarm_history(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: clear post-alarm corrections and streaks (optionally for an entity)."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    coordinator: SmartChargerCoordinator = entry_data["coordinator"]
+    entity_id = call.data.get("entity_id")
+    try:
+        if entity_id:
+            coordinator._post_alarm_corrections = [c for c in coordinator._post_alarm_corrections if c.get("entity") != entity_id]
+            if entity_id in coordinator._post_alarm_miss_streaks:
+                coordinator._post_alarm_miss_streaks.pop(entity_id, None)
+        else:
+            coordinator._post_alarm_corrections = []
+            coordinator._post_alarm_miss_streaks = {}
+    except Exception:
+        _LOGGER.debug("Failed to clear post-alarm history", exc_info=True)
+
+
+async def _svc_accept_suggested_persistence(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: accept the suggested persistence for an entity (persist overrides)."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    coordinator: SmartChargerCoordinator = entry_data["coordinator"]
+    entity_id = call.data.get("entity_id")
+    if not entity_id:
+        raise HomeAssistantError("entity_id is required")
+    try:
+        # If there's an in-memory temp override (flipflop), persist it as an adaptive_mode_overrides mapping
+        temp = coordinator._post_alarm_temp_overrides.get(entity_id)
+        new_opts = dict(getattr(entry, "options", {}) or {})
+        if temp and temp.get("reason") == "flipflop":
+            mapping = dict(new_opts.get("adaptive_mode_overrides", {}) or {})
+            mapping[entity_id] = "aggressive"
+            new_opts["adaptive_mode_overrides"] = mapping
+            try:
+                hass.config_entries.async_update_entry(entry, options=new_opts)
+            except Exception:
+                _LOGGER.debug("Failed to persist accepted adaptive override", exc_info=True)
+        # If there's a persisted smart_start suggestion in memory, persist it explicitly
+        persisted_margin = coordinator._post_alarm_persisted_smart_start.get(entity_id)
+        if persisted_margin is not None:
+            mapping = dict(new_opts.get("smart_start_margin_overrides", {}) or {})
+            mapping[entity_id] = float(persisted_margin)
+            new_opts["smart_start_margin_overrides"] = mapping
+            try:
+                hass.config_entries.async_update_entry(entry, options=new_opts)
+                coordinator._post_alarm_persisted_smart_start[entity_id] = float(persisted_margin)
+            except Exception:
+                _LOGGER.debug("Failed to persist accepted smart_start override", exc_info=True)
+    except Exception:
+        _LOGGER.debug("accept_suggested_persistence failed", exc_info=True)
+
+
+async def _svc_revert_suggested_persistence(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Service: remove persisted suggestions for an entity and restore runtime state."""
+    entry, entry_data = _resolve_entry_context(hass, call)
+    coordinator: SmartChargerCoordinator = entry_data["coordinator"]
+    entity_id = call.data.get("entity_id")
+    if not entity_id:
+        raise HomeAssistantError("entity_id is required")
+    try:
+        new_opts = dict(getattr(entry, "options", {}) or {})
+        # Remove adaptive_mode_overrides
+        mapping = dict(new_opts.get("adaptive_mode_overrides", {}) or {})
+        if entity_id in mapping:
+            mapping.pop(entity_id, None)
+            new_opts["adaptive_mode_overrides"] = mapping
+        # Remove smart_start_margin_overrides
+        smap = dict(new_opts.get("smart_start_margin_overrides", {}) or {})
+        if entity_id in smap:
+            smap.pop(entity_id, None)
+            new_opts["smart_start_margin_overrides"] = smap
+        try:
+            hass.config_entries.async_update_entry(entry, options=new_opts)
+        except Exception:
+            _LOGGER.debug("Failed to persist revert of suggestions", exc_info=True)
+        # Also clear any in-memory temp overrides and persisted caches
+        coordinator._post_alarm_temp_overrides.pop(entity_id, None)
+        coordinator._post_alarm_persisted_smart_start.pop(entity_id, None)
+        # Restore original throttle if tracked in adaptive overrides
+        try:
+            if entity_id in coordinator._adaptive_throttle_overrides:
+                orig = coordinator._adaptive_throttle_overrides[entity_id].get("original")
+                if orig:
+                    coordinator._device_switch_throttle[entity_id] = float(orig)
+                coordinator._adaptive_throttle_overrides.pop(entity_id, None)
+        except Exception:
+            _LOGGER.debug("Failed to restore runtime throttle after revert", exc_info=True)
+    except Exception:
+        _LOGGER.debug("revert_suggested_persistence failed", exc_info=True)
+
+
 def _make_service_adapter(hass: HomeAssistant, func: Callable[..., Any]) -> Callable[[ServiceCall], Any]:
     """Return an adapter that Home Assistant can call with a ServiceCall.
 
@@ -410,6 +512,10 @@ def _register_services(hass: HomeAssistant) -> None:
         ("set_adaptive_override", _svc_set_adaptive_override, override_set_schema),
         ("clear_adaptive_override", _svc_clear_adaptive_override, override_clear_schema),
         ("set_adaptive_override_entity", _svc_set_adaptive_override_entity, entity_override_schema),
+        ("list_post_alarm_insights", _svc_list_post_alarm_insights, base_schema),
+        ("clear_post_alarm_history", _svc_clear_post_alarm_history, entity_schema),
+        ("accept_suggested_persistence", _svc_accept_suggested_persistence, entity_schema),
+        ("revert_suggested_persistence", _svc_revert_suggested_persistence, entity_schema),
     ):
         if not hass.services.has_service(DOMAIN, name):
             adapter = _make_service_adapter(hass, func)

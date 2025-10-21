@@ -828,7 +828,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         info = self._device_count_message(len(self.devices))
         return self.async_show_menu(
             step_id="init",
-            menu_options=["edit_device", "advanced_settings", "delete_device"],
+            menu_options=["edit_device", "advanced_settings", "delete_device", "review_suggestions"],
             description_placeholders={"info": info},
         )
 
@@ -1006,4 +1006,105 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             description_placeholders={
                 "device_name": device.get("name", ""),
             },
+        )
+
+    async def async_step_review_suggestions(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> config_entries.ConfigFlowResult:
+        """Allow user to review/accept/revert post-alarm suggested persisted changes."""
+        entries = self.hass.data.get(DOMAIN, {}).get("entries", {})
+        entry_data = entries.get(getattr(self.config_entry, "entry_id", ""), {})
+        coord = entry_data.get("coordinator")
+
+        suggested_smart_start = dict(getattr(coord, "_post_alarm_persisted_smart_start", {}) or {})
+        suggested_adaptive = dict(getattr(self.config_entry, "options", {}).get("adaptive_mode_overrides", {}) or {})
+
+        if user_input:
+            action = user_input.get("action")
+            if action == "accept_all":
+                new_opts = dict(getattr(self.config_entry, "options", {}) or {})
+                if suggested_smart_start:
+                    new_opts["smart_start_margin_overrides"] = dict(suggested_smart_start)
+                if suggested_adaptive:
+                    new_opts["adaptive_mode_overrides"] = dict(suggested_adaptive)
+                self.hass.config_entries.async_update_entry(self.config_entry, options=new_opts)
+                return self.async_create_entry(title="", data={})
+            if action == "revert_all":
+                new_opts = dict(getattr(self.config_entry, "options", {}) or {})
+                new_opts.pop("smart_start_margin_overrides", None)
+                new_opts.pop("adaptive_mode_overrides", None)
+                self.hass.config_entries.async_update_entry(self.config_entry, options=new_opts)
+                return self.async_create_entry(title="", data={})
+
+        lines = ["Suggested persisted changes:"]
+        if suggested_smart_start:
+            lines.append("Smart start bumps:")
+            for ent, m in suggested_smart_start.items():
+                lines.append(f"• {ent}: +{float(m)}%")
+        if suggested_adaptive:
+            lines.append("Adaptive mode overrides:")
+            for ent, mode in suggested_adaptive.items():
+                lines.append(f"• {ent}: {mode}")
+        if not suggested_smart_start and not suggested_adaptive:
+            lines.append("(No suggestions present)")
+
+        # Build entity list for per-entity actions
+        entity_options = ["(none)"] + [str(e) for e in sorted(set(list(suggested_smart_start.keys()) + list(suggested_adaptive.keys())))]
+
+        schema = vol.Schema(
+            {
+                vol.Required("action", default="none"): vol.In(
+                    {
+                        "none": "No action",
+                        "accept_all": "Accept all",
+                        "revert_all": "Revert all",
+                        "accept_entity": "Accept selected entity",
+                        "revert_entity": "Revert selected entity",
+                    }
+                ),
+                vol.Optional("entity", default="(none)"): vol.In(entity_options),
+            }
+        )
+
+        if user_input and user_input.get("action") in ("accept_entity", "revert_entity"):
+            ent = user_input.get("entity")
+            if not ent or ent == "(none)":
+                return self.async_show_form(
+                    step_id="review_suggestions",
+                    data_schema=schema,
+                    errors={"entity": "invalid_entity"},
+                    description_placeholders={"info": "\n".join(lines)},
+                )
+            # map display string back to entity id
+            target_entity = str(ent)
+            if user_input.get("action") == "accept_entity":
+                # Accept single entity: call service to persist
+                self.hass.async_create_task(self.hass.services.async_call(DOMAIN, "accept_suggested_persistence", {"entry_id": self.config_entry.entry_id, "entity_id": target_entity}))
+                return self.async_create_entry(title="", data={})
+            else:
+                self.hass.async_create_task(self.hass.services.async_call(DOMAIN, "revert_suggested_persistence", {"entry_id": self.config_entry.entry_id, "entity_id": target_entity}))
+                return self.async_create_entry(title="", data={})
+
+        if user_input and user_input.get("action") in ("accept_all", "revert_all"):
+            # Use existing code path for accept/revert all
+            action = user_input.get("action")
+            if action == "accept_all":
+                new_opts = dict(getattr(self.config_entry, "options", {}) or {})
+                if suggested_smart_start:
+                    new_opts["smart_start_margin_overrides"] = dict(suggested_smart_start)
+                if suggested_adaptive:
+                    new_opts["adaptive_mode_overrides"] = dict(suggested_adaptive)
+                self.hass.config_entries.async_update_entry(self.config_entry, options=new_opts)
+                return self.async_create_entry(title="", data={})
+            if action == "revert_all":
+                new_opts = dict(getattr(self.config_entry, "options", {}) or {})
+                new_opts.pop("smart_start_margin_overrides", None)
+                new_opts.pop("adaptive_mode_overrides", None)
+                self.hass.config_entries.async_update_entry(self.config_entry, options=new_opts)
+                return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="review_suggestions",
+            data_schema=schema,
+            description_placeholders={"info": "\n".join(lines)},
         )
