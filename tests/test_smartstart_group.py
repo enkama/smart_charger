@@ -20,9 +20,11 @@ async def test_smartstart_helpers_basic(hass):
     coordinator = SmartChargerCoordinator(hass, entry)
 
     now = dt_util.utcnow()
-    # Ensure that smartstart ignores when not configured
+    # Ensure that smartstart ignores when not configured. Call the async
+    # smartstart activation helper and ensure it doesn't raise.
     pd = {"charger_switch": "switch.ss", "alarm_time": None, "target": 90, "battery": 10}
-    coordinator._maybe_activate_smart_start({}, now)
+    # helper is async - await it
+    await coordinator._smartstart_activate_if_needed("", "switch.ss", {}, False)
     # no exceptions
     assert True
 
@@ -37,6 +39,8 @@ async def test_smartstart_activation_and_ignore(hass):
     alarm = now - timedelta(minutes=5)
     pd = {"charger_switch": "switch.ss1", "alarm_time": dt_util.as_local(alarm).isoformat(), "target": 95, "battery": 10, "smart_start_margin": 1.0}
 
-    coordinator._maybe_activate_smart_start({"SS1": pd}, now)
+    # The async helper may decide to activate/pause; await it to ensure
+    # the code path executes without raising.
+    await coordinator._smartstart_activate_if_needed("SS1", "switch.ss1", {"entity_id": "switch.ss1"}, False)
     # If activation logic runs, it will update coordinator state; we assert no exceptions
     assert True
