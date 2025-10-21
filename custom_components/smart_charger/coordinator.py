@@ -1350,84 +1350,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         except Exception:
             _ignored_exc()
 
-        # Update EWMA and possibly set/clear adaptive mode overrides
         try:
-            total_events = sum(len(v) for v in self._flipflop_events.values())
-            window = float(getattr(self, "_flipflop_window_seconds", DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS))
-            rate_per_sec = float(total_events) / window if window > 0 else 0.0
-
-            try:
-                entry_obj = getattr(self, "entry", None)
-                if entry_obj and getattr(entry_obj, "options", None) is not None:
-                    raw_alpha = entry_obj.options.get(CONF_ADAPTIVE_EWMA_ALPHA)
-                    alpha = float(raw_alpha) if raw_alpha is not None else DEFAULT_ADAPTIVE_EWMA_ALPHA
-                else:
-                    alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
-            except Exception:
-                alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
-
-            prev = float(getattr(self, "_flipflop_ewma", 0.0) or 0.0)
-            try:
-                ewma = prev + alpha * (rate_per_sec - prev)
-            except Exception:
-                _ignored_exc()
-                ewma = prev
-
-            try:
-                self._flipflop_ewma = ewma
-                self._flipflop_ewma_last_update = float(now_epoch)
-                exceeded_threshold = float(self._flipflop_warn_threshold) / max(1.0, float(self._flipflop_window_seconds))
-                prev_exceeded = bool(getattr(self, "_flipflop_ewma_exceeded", False))
-                new_exceeded = ewma >= exceeded_threshold
-                self._flipflop_ewma_exceeded = new_exceeded
-                now_ts = float(now_epoch)
-
-                if new_exceeded and not prev_exceeded:
-                    self._flipflop_ewma_exceeded_since = now_ts
-                    _LOGGER.warning(
-                        "Flipflop EWMA exceeded threshold: ewma=%.6f threshold=%.6f",
-                        ewma,
-                        exceeded_threshold,
-                    )
-                elif new_exceeded and prev_exceeded:
-                    try:
-                        since = float(getattr(self, "_flipflop_ewma_exceeded_since", now_ts) or now_ts)
-                        duration = now_ts - since
-                        if duration >= 300.0 and self._adaptive_mode_override != "aggressive":
-                            self._adaptive_mode_override = "aggressive"
-                            _LOGGER.warning(
-                                "Adaptive mode override applied: aggressive (sustained EWMA for %.0fs)",
-                                duration,
-                            )
-                            try:
-                                new_opts = dict(getattr(self.entry, "options", {}) or {})
-                                new_opts["adaptive_mode_override"] = "aggressive"
-                                try:
-                                    self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
-                                except Exception:
-                                    _ignored_exc()
-                            except Exception:
-                                _ignored_exc()
-                    except Exception:
-                        _ignored_exc()
-                else:
-                    self._flipflop_ewma_exceeded_since = None
-                    if getattr(self, "_adaptive_mode_override", None) is not None:
-                        _LOGGER.info("Adaptive mode override cleared (EWMA dropped)")
-                        self._adaptive_mode_override = None
-                        try:
-                            new_opts = dict(getattr(self.entry, "options", {}) or {})
-                            if "adaptive_mode_override" in new_opts:
-                                new_opts.pop("adaptive_mode_override", None)
-                                try:
-                                    self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
-                                except Exception:
-                                    _ignored_exc()
-                        except Exception:
-                            _ignored_exc()
-            except Exception:
-                _ignored_exc()
-
+            self._update_flipflop_ewma_and_mode(now_epoch)
         except Exception:
             _ignored_exc()
 
@@ -1569,7 +1493,93 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 self._device_switch_throttle[ent] = float(new_applied)
             except Exception:
                 _ignored_exc()
-            return
+        return
+
+    def _update_flipflop_ewma_and_mode(self, now_epoch: float) -> None:
+        """Update EWMA based on recent flip-flop rates and manage adaptive mode overrides.
+
+        Extracted for clarity and unit testing. This updates EWMA state, logs
+        threshold crossings, and persists adaptive mode overrides to the
+        config entry options when sustained conditions occur.
+        """
+        try:
+            total_events = sum(len(v) for v in self._flipflop_events.values())
+            window = float(getattr(self, "_flipflop_window_seconds", DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS))
+            rate_per_sec = float(total_events) / window if window > 0 else 0.0
+
+            try:
+                entry_obj = getattr(self, "entry", None)
+                if entry_obj and getattr(entry_obj, "options", None) is not None:
+                    raw_alpha = entry_obj.options.get(CONF_ADAPTIVE_EWMA_ALPHA)
+                    alpha = float(raw_alpha) if raw_alpha is not None else DEFAULT_ADAPTIVE_EWMA_ALPHA
+                else:
+                    alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
+            except Exception:
+                alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
+
+            prev = float(getattr(self, "_flipflop_ewma", 0.0) or 0.0)
+            try:
+                ewma = prev + alpha * (rate_per_sec - prev)
+            except Exception:
+                _ignored_exc()
+                ewma = prev
+
+            try:
+                self._flipflop_ewma = ewma
+                self._flipflop_ewma_last_update = float(now_epoch)
+                exceeded_threshold = float(self._flipflop_warn_threshold) / max(1.0, float(self._flipflop_window_seconds))
+                prev_exceeded = bool(getattr(self, "_flipflop_ewma_exceeded", False))
+                new_exceeded = ewma >= exceeded_threshold
+                self._flipflop_ewma_exceeded = new_exceeded
+                now_ts = float(now_epoch)
+
+                if new_exceeded and not prev_exceeded:
+                    self._flipflop_ewma_exceeded_since = now_ts
+                    _LOGGER.warning(
+                        "Flipflop EWMA exceeded threshold: ewma=%.6f threshold=%.6f",
+                        ewma,
+                        exceeded_threshold,
+                    )
+                elif new_exceeded and prev_exceeded:
+                    try:
+                        since = float(getattr(self, "_flipflop_ewma_exceeded_since", now_ts) or now_ts)
+                        duration = now_ts - since
+                        if duration >= 300.0 and self._adaptive_mode_override != "aggressive":
+                            self._adaptive_mode_override = "aggressive"
+                            _LOGGER.warning(
+                                "Adaptive mode override applied: aggressive (sustained EWMA for %.0fs)",
+                                duration,
+                            )
+                            try:
+                                new_opts = dict(getattr(self.entry, "options", {}) or {})
+                                new_opts["adaptive_mode_override"] = "aggressive"
+                                try:
+                                    self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                except Exception:
+                                    _ignored_exc()
+                            except Exception:
+                                _ignored_exc()
+                    except Exception:
+                        _ignored_exc()
+                else:
+                    self._flipflop_ewma_exceeded_since = None
+                    if getattr(self, "_adaptive_mode_override", None) is not None:
+                        _LOGGER.info("Adaptive mode override cleared (EWMA dropped)")
+                        self._adaptive_mode_override = None
+                        try:
+                            new_opts = dict(getattr(self.entry, "options", {}) or {})
+                            if "adaptive_mode_override" in new_opts:
+                                new_opts.pop("adaptive_mode_override", None)
+                                try:
+                                    self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                except Exception:
+                                    _ignored_exc()
+                        except Exception:
+                            _ignored_exc()
+            except Exception:
+                _ignored_exc()
+        except Exception:
+            _ignored_exc()
 
         
 
