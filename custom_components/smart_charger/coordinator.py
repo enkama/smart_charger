@@ -1344,59 +1344,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     current = float(self._default_switch_throttle_seconds)
 
                 try:
-                    count = len(recent)
-                    excess = max(0, count - int(self._flipflop_warn_threshold))
-                    var_multiplier = float(self._adaptive_throttle_multiplier) + (
-                        float(self._adaptive_throttle_backoff_step)
-                        * float(excess)
-                        * float(getattr(self, "_adaptive_mode_factor", 1.0))
-                    )
-                    var_multiplier = min(var_multiplier, float(self._adaptive_throttle_max_multiplier))
+                    self._apply_adaptive_throttle_for_entity(ent, recent, now_epoch)
                 except Exception:
                     _ignored_exc()
-                    var_multiplier = float(self._adaptive_throttle_multiplier)
-
-                try:
-                    desired = max(current * float(var_multiplier), float(self._adaptive_throttle_min_seconds))
-                except Exception:
-                    _ignored_exc()
-                    desired = float(self._adaptive_throttle_min_seconds)
-
-                try:
-                    meta_entry: dict | None = self._adaptive_throttle_overrides.get(ent)
-                except Exception:
-                    meta_entry = None
-
-                if not meta_entry:
-                    try:
-                        self._adaptive_throttle_overrides[ent] = {
-                            "original": float(
-                                self._device_switch_throttle.get(ent, self._default_switch_throttle_seconds)
-                                or self._default_switch_throttle_seconds
-                            ),
-                            "applied": float(desired),
-                            "expires": float(now_epoch + float(self._adaptive_throttle_duration_seconds)),
-                        }
-                        self._device_switch_throttle[ent] = float(desired)
-                        _LOGGER.info(
-                            "Adaptive throttle applied for %s = %.1fs (original %.1fs) until %.0f",
-                            ent,
-                            float(desired),
-                            float(self._adaptive_throttle_overrides.get(ent, {}).get("original", 0.0)),
-                            float(now_epoch + float(self._adaptive_throttle_duration_seconds)),
-                        )
-                    except Exception:
-                        _ignored_exc()
-                else:
-                    try:
-                        meta_applied = float(meta_entry.get("applied", 0.0) or 0.0)
-                        new_applied = max(meta_applied, float(desired))
-                        meta_entry["applied"] = new_applied
-                        meta_entry["expires"] = float(now_epoch + float(self._adaptive_throttle_duration_seconds))
-                        self._adaptive_throttle_overrides[ent] = meta_entry
-                        self._device_switch_throttle[ent] = float(new_applied)
-                    except Exception:
-                        _ignored_exc()
         except Exception:
             _ignored_exc()
 
@@ -1548,24 +1498,80 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             cutoff = float(now_epoch) - float(self._flipflop_window_seconds)
         except Exception:
             _ignored_exc()
-            return
 
+    def _apply_adaptive_throttle_for_entity(self, ent: str, recent: list[float], now_epoch: float) -> None:
+        """Compute and apply an adaptive throttle override for a single entity.
+
+        This encapsulates the multiplier/backoff logic and the details of
+        updating `_adaptive_throttle_overrides` and `_device_switch_throttle`.
+        """
         try:
-            for ent, events in list(self._flipflop_events.items()):
-                try:
-                    recent = [e for e in (events or []) if (e or 0.0) >= cutoff]
-                    # Only store back the pruned list if different to avoid
-                    # unnecessary churn during tight loops.
-                    if recent:
-                        self._flipflop_events[ent] = recent
-                    else:
-                        # Remove empty lists to keep the dict compact
-                        self._flipflop_events.pop(ent, None)
-                except Exception:
-                    _ignored_exc()
-                    continue
+            current = float(
+                self._device_switch_throttle.get(ent, self._default_switch_throttle_seconds)
+                or self._default_switch_throttle_seconds
+            )
         except Exception:
             _ignored_exc()
+            current = float(self._default_switch_throttle_seconds)
+
+        try:
+            count = len(recent)
+            excess = max(0, count - int(self._flipflop_warn_threshold))
+            var_multiplier = float(self._adaptive_throttle_multiplier) + (
+                float(self._adaptive_throttle_backoff_step)
+                * float(excess)
+                * float(getattr(self, "_adaptive_mode_factor", 1.0))
+            )
+            var_multiplier = min(var_multiplier, float(self._adaptive_throttle_max_multiplier))
+        except Exception:
+            _ignored_exc()
+            var_multiplier = float(self._adaptive_throttle_multiplier)
+
+        try:
+            desired = max(current * float(var_multiplier), float(self._adaptive_throttle_min_seconds))
+        except Exception:
+            _ignored_exc()
+            desired = float(self._adaptive_throttle_min_seconds)
+
+        try:
+            meta_entry: dict | None = self._adaptive_throttle_overrides.get(ent)
+        except Exception:
+            meta_entry = None
+
+        if not meta_entry:
+            try:
+                orig = float(
+                    self._device_switch_throttle.get(ent, self._default_switch_throttle_seconds)
+                    or self._default_switch_throttle_seconds
+                )
+                self._adaptive_throttle_overrides[ent] = {
+                    "original": orig,
+                    "applied": float(desired),
+                    "expires": float(now_epoch + float(self._adaptive_throttle_duration_seconds)),
+                }
+                self._device_switch_throttle[ent] = float(desired)
+                _LOGGER.info(
+                    "Adaptive throttle applied for %s = %.1fs (original %.1fs) until %.0f",
+                    ent,
+                    float(desired),
+                    float(self._adaptive_throttle_overrides.get(ent, {}).get("original", 0.0)),
+                    float(now_epoch + float(self._adaptive_throttle_duration_seconds)),
+                )
+            except Exception:
+                _ignored_exc()
+        else:
+            try:
+                meta_applied = float(meta_entry.get("applied", 0.0) or 0.0)
+                new_applied = max(meta_applied, float(desired))
+                meta_entry["applied"] = new_applied
+                meta_entry["expires"] = float(now_epoch + float(self._adaptive_throttle_duration_seconds))
+                self._adaptive_throttle_overrides[ent] = meta_entry
+                self._device_switch_throttle[ent] = float(new_applied)
+            except Exception:
+                _ignored_exc()
+            return
+
+        
 
     def _float_state(self, entity_id: str | None) -> float | None:
         if not entity_id:
