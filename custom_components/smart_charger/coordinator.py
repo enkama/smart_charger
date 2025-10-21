@@ -2278,6 +2278,98 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             confidence += 0.1
         return max(0.2, min(0.95, confidence))
 
+    def _compute_required_duration_minutes(
+        self,
+        device: DeviceConfig,
+        charge_deficit: float,
+        avg_speed: float,
+        speed_confident: bool,
+        hours_until_alarm: float,
+    ) -> float:
+        """Compute required charging duration in minutes for a device.
+
+        Encapsulates the heuristics that determine how many minutes of
+        charging are needed given average speed, confidence and the time to
+        alarm. Returns a duration in minutes.
+        """
+        if charge_deficit <= 0.0:
+            return 0.0
+
+        if avg_speed > 0.0:
+            duration_hours = charge_deficit / max(avg_speed, 1e-3)
+            duration_min = min(duration_hours * 60.0, 24 * 60)
+            if not speed_confident:
+                heuristic_min = charge_deficit * DEFAULT_FALLBACK_MINUTES_PER_PERCENT
+                heuristic_min = min(heuristic_min, 24 * 60)
+                if heuristic_min > 0:
+                    duration_min = min(duration_min, heuristic_min * 1.2)
+        else:
+            duration_min = 24 * 60
+
+        if hours_until_alarm > 0:
+            min_window_hours = 0.25
+            duration_min = max(duration_min, min_window_hours * 60.0)
+            duration_min = min(duration_min, hours_until_alarm * 60.0)
+
+        return duration_min
+
+    def _resolve_charger_switch_state(
+        self, device: DeviceConfig, now_local: datetime
+    ) -> tuple[bool, str, bool]:
+        """Return (charger_available, charger_state_value, charger_is_on).
+
+        Encapsulates reading the charger switch entity and applying the
+        coordinator "assumed state" fallback when the entity reports an
+        unknown/unavailable state but a recent coordinator action suggests a
+        different implied state.
+        """
+        charger_state_obj = self.hass.states.get(device.charger_switch)
+        if charger_state_obj and charger_state_obj.state not in UNKNOWN_STATES:
+            charger_available = True
+            charger_state_value = str(charger_state_obj.state).lower()
+        else:
+            charger_available = False
+            charger_state_value = ""
+
+        charger_is_on = charger_available and charger_state_value in (
+            "on",
+            "charging",
+            STATE_ON,
+        )
+
+        # If the switch reports off/unavailable, allow the coordinator's
+        # most-recent intended action to be used when a recent switch was
+        # issued (throttle window) so tests/integrations with lagging
+        # entity states behave deterministically.
+        if not charger_is_on:
+            throttle_seconds = self._device_switch_throttle.get(
+                device.charger_switch, self._default_switch_throttle_seconds
+            )
+            try:
+                throttle_window = float(throttle_seconds) if throttle_seconds else 5.0
+            except Exception:
+                throttle_window = 5.0
+
+            last_action = self._last_action_state.get(device.charger_switch)
+            last_ts = self._last_switch_time.get(device.charger_switch)
+            if last_action is not None and last_ts is not None:
+                now_for_cmp = (
+                    getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                )
+                try:
+                    now_ts = float(dt_util.as_timestamp(now_for_cmp))
+                    if isinstance(last_ts, (int, float)):
+                        last_epoch = float(last_ts)
+                    else:
+                        last_epoch = float(dt_util.as_timestamp(last_ts))
+                    elapsed = now_ts - last_epoch
+                    if elapsed >= 0 and elapsed <= float(throttle_window):
+                        charger_is_on = bool(last_action)
+                except Exception:
+                    _ignored_exc()
+
+        return charger_available, charger_state_value, charger_is_on
+
     async def _build_plan(  # noqa: C901
         self,
         device: DeviceConfig,
@@ -2340,25 +2432,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         predicted_level = max(0.0, battery - expected_drain)
 
         charge_deficit = max(0.0, device.target_level - predicted_level)
-        if charge_deficit > 0.0:
-            if avg_speed > 0.0:
-                duration_hours = charge_deficit / max(avg_speed, 1e-3)
-                duration_min = min(duration_hours * 60.0, 24 * 60)
-                if not speed_confident:
-                    heuristic_min = (
-                        charge_deficit * DEFAULT_FALLBACK_MINUTES_PER_PERCENT
-                    )
-                    heuristic_min = min(heuristic_min, 24 * 60)
-                    if heuristic_min > 0:
-                        duration_min = min(duration_min, heuristic_min * 1.2)
-            else:
-                duration_min = 24 * 60
-            if hours_until_alarm > 0:
-                min_window_hours = 0.25
-                duration_min = max(duration_min, min_window_hours * 60.0)
-                duration_min = min(duration_min, hours_until_alarm * 60.0)
-        else:
-            duration_min = 0.0
+        duration_min = self._compute_required_duration_minutes(
+            device,
+            charge_deficit,
+            avg_speed,
+            speed_confident,
+            hours_until_alarm,
+        )
 
         start_time, smart_start_active, duration_min = self._resolve_start_window(
             alarm_dt=alarm_dt,
@@ -2367,17 +2447,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         )
         main_duration_min = duration_min
 
-        charger_state = self.hass.states.get(device.charger_switch)
-        if charger_state and charger_state.state not in UNKNOWN_STATES:
-            charger_available = True
-            charger_state_value = str(charger_state.state).lower()
-        else:
-            charger_available = False
-            charger_state_value = ""
-        charger_is_on = charger_available and charger_state_value in (
-            "on",
-            "charging",
-            STATE_ON,
+        charger_available, charger_state_value, charger_is_on = (
+            self._resolve_charger_switch_state(device, now_local)
         )
         # Consider the coordinator's last intended action as an "assumed"
         # state when available. Many tests and some integrations rely on the
