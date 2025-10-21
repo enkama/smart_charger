@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-import asyncio
 import pytest
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -45,7 +44,12 @@ async def test_no_alarm_time_is_ignored(hass):
     }
 
     now = dt_util.utcnow()
-    pd = {"charger_switch": "switch.no_alarm", "alarm_time": None, "target": 90, "battery": 10}
+    pd = {
+        "charger_switch": "switch.no_alarm",
+        "alarm_time": None,
+        "target": 90,
+        "battery": 10,
+    }
     # call helper directly
     coordinator._handle_post_alarm_self_heal({"D": pd}, now)
 
@@ -59,7 +63,12 @@ async def test_future_alarm_is_ignored(hass):
 
     now = dt_util.utcnow()
     future_alarm = now + timedelta(hours=1)
-    pd = {"charger_switch": "switch.future", "alarm_time": dt_util.as_local(future_alarm).isoformat(), "target": 90, "battery": 10}
+    pd = {
+        "charger_switch": "switch.future",
+        "alarm_time": dt_util.as_local(future_alarm).isoformat(),
+        "target": 90,
+        "battery": 10,
+    }
     coordinator._handle_post_alarm_self_heal({"D": pd}, now)
 
     assert "switch.future" not in coordinator._post_alarm_last_handled
@@ -71,7 +80,12 @@ async def test_battery_at_or_above_target_marks_handled(hass):
 
     now = dt_util.utcnow()
     past = now - timedelta(minutes=2)
-    pd = {"charger_switch": "switch.at_target", "alarm_time": dt_util.as_local(past).isoformat(), "target": 50, "battery": 50}
+    pd = {
+        "charger_switch": "switch.at_target",
+        "alarm_time": dt_util.as_local(past).isoformat(),
+        "target": 50,
+        "battery": 50,
+    }
     coordinator._handle_post_alarm_self_heal({"D": pd}, now)
 
     # Should be marked handled because battery reached target

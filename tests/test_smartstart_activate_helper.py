@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-
-from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
-from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_mock_service,
+)
 
 from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 from custom_components.smart_charger.const import DOMAIN

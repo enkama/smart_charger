@@ -1,5 +1,4 @@
 import time
-from datetime import datetime
 
 from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -18,7 +17,11 @@ def test_expire_adaptive_overrides(hass):
 
     # create an override that already expired
     now = time.time()
-    coord._adaptive_throttle_overrides[ent] = {"original": 5.0, "applied": 10.0, "expires": now - 10}
+    coord._adaptive_throttle_overrides[ent] = {
+        "original": 5.0,
+        "applied": 10.0,
+        "expires": now - 10,
+    }
 
     # call helper
     coord._expire_adaptive_overrides(now)

@@ -471,6 +471,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._forecast_holdoff: dict[str, bool] = {}
         # Last rendered action log to avoid duplicate logging spam
         self._last_action_log = {}
+        # Bind the concrete plan builder to an instance attribute so tests
+        # can monkeypatch ``self._build_plan`` with a replacement callable.
+        # The real implementation lives in ``_build_plan_impl``.
+        self._build_plan = self._build_plan_impl
 
     def _normalize_entity_id(self, raw_entity: Any) -> str | None:
         """Normalize an entity identifier used as dict keys.
@@ -1300,12 +1304,19 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         except Exception:
             _ignored_exc()
 
+        # Prune flip-flop event lists to the configured lookback window so
+        # subsequent logic operates on only recent events. Extracted to a
+        # helper for clarity and testability.
+        try:
+            self._prune_flipflop_events(now_epoch)
+        except Exception:
+            _ignored_exc()
+
         # Analyze flip-flop events and apply adaptive throttles where needed
         try:
             for ent, events in list(self._flipflop_events.items()):
                 try:
-                    recent = [e for e in events if e >= cutoff]
-                    self._flipflop_events[ent] = recent
+                    recent = self._flipflop_events.get(ent, [])
                 except Exception:
                     _ignored_exc()
                     continue
@@ -1464,6 +1475,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                     _ignored_exc()
                         except Exception:
                             _ignored_exc()
+            except Exception:
+                _ignored_exc()
+
+        except Exception:
+            _ignored_exc()
+
+
     async def async_throttled_refresh(self) -> None:
         """Request an update only when the interval threshold is respected."""
         try:
@@ -1517,6 +1535,35 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         self._adaptive_throttle_overrides.pop(ent, None)
                     except Exception:
                         _ignored_exc()
+        except Exception:
+            _ignored_exc()
+
+    def _prune_flipflop_events(self, now_epoch: float) -> None:
+        """Prune recorded flip-flop event timestamps to the configured window.
+
+        This keeps the in-memory lists small and centralizes the cutoff logic
+        so it can be exercised by focused unit tests.
+        """
+        try:
+            cutoff = float(now_epoch) - float(self._flipflop_window_seconds)
+        except Exception:
+            _ignored_exc()
+            return
+
+        try:
+            for ent, events in list(self._flipflop_events.items()):
+                try:
+                    recent = [e for e in (events or []) if (e or 0.0) >= cutoff]
+                    # Only store back the pruned list if different to avoid
+                    # unnecessary churn during tight loops.
+                    if recent:
+                        self._flipflop_events[ent] = recent
+                    else:
+                        # Remove empty lists to keep the dict compact
+                        self._flipflop_events.pop(ent, None)
+                except Exception:
+                    _ignored_exc()
+                    continue
         except Exception:
             _ignored_exc()
 
@@ -1935,7 +1982,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         return charger_available, charger_state_value, charger_is_on
 
-    async def _build_plan(
+    async def _build_plan_impl(
         self,
         device: DeviceConfig,
         now_local: datetime,

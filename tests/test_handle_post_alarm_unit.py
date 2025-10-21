@@ -38,4 +38,7 @@ async def test_handle_post_alarm_marks_handled_and_records_correction(hass):
 
     # The entry should be marked as handled and a correction should be recorded
     assert "switch.unit_test" in coordinator._post_alarm_last_handled
-    assert any(c.get("entity") == "switch.unit_test" for c in coordinator._post_alarm_corrections)
+    assert any(
+        c.get("entity") == "switch.unit_test"
+        for c in coordinator._post_alarm_corrections
+    )
