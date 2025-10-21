@@ -517,6 +517,134 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             _ignored_exc()
         return None
 
+    # --- Helper utilities to reduce duplication and complexity ---
+    def _parse_epoch(self, raw: Any) -> float | None:
+        """Robustly parse a stored epoch-like value into float seconds or None.
+
+        Accepts ints/floats, strings (parsed with dt_util.parse_datetime),
+        or datetime-like objects handled by dt_util.as_timestamp.
+        """
+        if raw is None:
+            return None
+        try:
+            if isinstance(raw, (int, float)):
+                return float(raw)
+            if isinstance(raw, str):
+                parsed = dt_util.parse_datetime(raw)
+                return float(dt_util.as_timestamp(parsed)) if parsed else None
+            # Fallback: attempt to convert using dt_util
+            return float(dt_util.as_timestamp(raw))
+        except Exception:
+            _ignored_exc()
+            return None
+
+    def _get_now_epoch(self) -> float:
+        """Return the current evaluation epoch (seconds since epoch).
+
+        Uses _current_eval_time when present to keep evaluations deterministic
+        during a single coordinator run; otherwise falls back to utcnow().
+        """
+        return float(
+            dt_util.as_timestamp(
+                getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+            )
+        )
+
+    def _get_last_action_state(self, norm: str) -> bool | None:
+        """Return the coordinator-recorded last action state, or probe the entity state.
+
+        Returns True/False when available, or None when unknown.
+        """
+        last = self._last_action_state.get(norm)
+        if last is not None:
+            return bool(last)
+        try:
+            st = self.hass.states.get(norm)
+            return bool(st and st.state == STATE_ON)
+        except Exception:
+            _ignored_exc()
+            return None
+
+    def _get_throttle_seconds(self, norm: str) -> float | None:
+        """Return the configured throttle seconds for an entity or None if disabled.
+
+        Treat falsy (None/0/"") throttle values as disabled (None).
+        """
+        try:
+            raw = self._device_switch_throttle.get(
+                norm, self._default_switch_throttle_seconds
+            )
+            if not raw:
+                return None
+            val = float(raw)
+            if val <= 0:
+                return None
+            return val
+        except Exception:
+            _ignored_exc()
+            try:
+                return float(self._default_switch_throttle_seconds)
+            except Exception:
+                return None
+
+    def _normalize_last_epoch(self, raw_last: Any) -> float | None:
+        """Normalize a last-switch stored value into epoch seconds or None."""
+        try:
+            return self._parse_epoch(raw_last)
+        except Exception:
+            _ignored_exc()
+            return None
+
+    def _throttle_value_for(self, norm: str) -> float:
+        """Return a numeric throttle value (seconds) for entity, falling back to default."""
+        try:
+            raw = self._device_switch_throttle.get(
+                norm, self._default_switch_throttle_seconds
+            )
+            try:
+                return float(raw)
+            except Exception:
+                return float(self._default_switch_throttle_seconds)
+        except Exception:
+            _ignored_exc()
+            return float(self._default_switch_throttle_seconds)
+
+    def _final_guard_should_suppress(
+        self, norm: str, pre_epoch: float, desired: bool
+    ) -> bool:
+        """Conservative final guard to prevent immediate reversals before recording a switch.
+
+        Returns True when the planned action should be suppressed.
+        """
+        try:
+            stored = self._last_switch_time.get(norm)
+            stored_epoch_final = self._parse_epoch(stored)
+            throttle_final = self._throttle_value_for(norm)
+            if stored_epoch_final is not None and pre_epoch is not None:
+                elapsed_final = float(pre_epoch) - float(stored_epoch_final)
+                last_action_for_final = (
+                    self._last_action_state.get(norm)
+                    if self._last_action_state.get(norm) is not None
+                    else (lambda: None)()
+                )
+                if last_action_for_final is None:
+                    try:
+                        st = self.hass.states.get(norm)
+                        last_action_for_final = bool(st and st.state == STATE_ON)
+                    except Exception:
+                        last_action_for_final = None
+
+                if (
+                    last_action_for_final is not None
+                    and elapsed_final >= 0
+                    and elapsed_final < float(throttle_final)
+                    and bool(last_action_for_final) != bool(desired)
+                ):
+                    return True
+        except Exception:
+            _ignored_exc()
+        return False
+
     def _early_suppress_checks(
         self, norm: str, desired: bool, force: bool, bypass_throttle: bool
     ) -> bool:  # noqa: C901
@@ -529,44 +657,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             return False
         # Authoritative early suppression
         try:
-            stored_raw = self._last_switch_time.get(norm)
-            stored_epoch_auth = None
-            if stored_raw is not None:
-                try:
-                    if isinstance(stored_raw, (int, float)):
-                        stored_epoch_auth = float(stored_raw)
-                    elif isinstance(stored_raw, str):
-                        parsed = dt_util.parse_datetime(stored_raw)
-                        stored_epoch_auth = (
-                            float(dt_util.as_timestamp(parsed)) if parsed else None
-                        )
-                    else:
-                        stored_epoch_auth = float(dt_util.as_timestamp(stored_raw))
-                except Exception:
-                    _ignored_exc()
-                    stored_epoch_auth = None
-
-            throttle_cfg_auth = float(
-                self._device_switch_throttle.get(
-                    norm, self._default_switch_throttle_seconds
-                )
-                or self._default_switch_throttle_seconds
-            )
+            stored_epoch_auth = self._parse_epoch(self._last_switch_time.get(norm))
+            throttle_cfg_auth = self._get_throttle_seconds(norm)
             if stored_epoch_auth is not None and throttle_cfg_auth:
-                now_epoch_auth = float(
-                    dt_util.as_timestamp(
-                        getattr(self, "_current_eval_time", None) or dt_util.utcnow()
-                    )
-                )
+                now_epoch_auth = self._get_now_epoch()
                 elapsed_auth = now_epoch_auth - stored_epoch_auth
-                last_act_auth = self._last_action_state.get(norm)
-                if last_act_auth is None:
-                    try:
-                        st = self.hass.states.get(norm)
-                        last_act_auth = bool(st and st.state == STATE_ON)
-                    except Exception:
-                        _ignored_exc()
-                        last_act_auth = None
+                last_act_auth = self._get_last_action_state(norm)
                 if (
                     last_act_auth is not None
                     and elapsed_auth >= 0
@@ -587,57 +683,25 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         # Very-early deterministic quick-suppress
         try:
-            last_raw_quick = self._last_switch_time.get(norm)
-            last_act_quick = self._last_action_state.get(norm)
-            throttle_quick = self._device_switch_throttle.get(
-                norm, self._default_switch_throttle_seconds
-            )
-            if last_raw_quick is not None and throttle_quick:
-                try:
-                    if isinstance(last_raw_quick, (int, float)):
-                        last_epoch_q = float(last_raw_quick)
-                    elif isinstance(last_raw_quick, str):
-                        parsed_q = dt_util.parse_datetime(last_raw_quick)
-                        last_epoch_q = (
-                            float(dt_util.as_timestamp(parsed_q)) if parsed_q else None
+            last_epoch_q = self._parse_epoch(self._last_switch_time.get(norm))
+            thr_q = self._get_throttle_seconds(norm)
+            last_act_quick = self._get_last_action_state(norm)
+            if last_epoch_q is not None and thr_q:
+                now_epoch_q = self._get_now_epoch()
+                elapsed_q = now_epoch_q - last_epoch_q
+                if elapsed_q >= 0 and elapsed_q < float(thr_q):
+                    if last_act_quick is not None and bool(last_act_quick) != bool(
+                        desired
+                    ):
+                        _LOGGER.info(
+                            "VERY_EARLY_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
+                            norm,
+                            elapsed_q,
+                            thr_q,
+                            last_act_quick,
+                            desired,
                         )
-                    else:
-                        last_epoch_q = float(dt_util.as_timestamp(last_raw_quick))
-                except Exception:
-                    _ignored_exc()
-                    last_epoch_q = None
-                if last_epoch_q is not None:
-                    now_epoch_q = float(
-                        dt_util.as_timestamp(
-                            getattr(self, "_current_eval_time", None)
-                            or dt_util.utcnow()
-                        )
-                    )
-                    try:
-                        thr_q = float(throttle_quick)
-                    except Exception:
-                        _ignored_exc()
-                        thr_q = float(self._default_switch_throttle_seconds)
-                    elapsed_q = now_epoch_q - last_epoch_q
-                    if elapsed_q >= 0 and elapsed_q < thr_q:
-                        if last_act_quick is None:
-                            try:
-                                st = self.hass.states.get(norm)
-                                last_act_quick = bool(st and st.state == STATE_ON)
-                            except Exception:
-                                last_act_quick = None
-                        if last_act_quick is not None and bool(last_act_quick) != bool(
-                            desired
-                        ):
-                            _LOGGER.info(
-                                "VERY_EARLY_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
-                                norm,
-                                elapsed_q,
-                                thr_q,
-                                last_act_quick,
-                                desired,
-                            )
-                            return True
+                        return True
         except Exception:
             _ignored_exc()
 
@@ -670,47 +734,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # Early authoritative throttle/reversal suppression
         if should_check:
             try:
-                last_raw = self._last_switch_time.get(norm)
-                if last_raw is not None:
-                    try:
-                        if isinstance(last_raw, (int, float)):
-                            last_epoch_check = float(last_raw)
-                        elif isinstance(last_raw, str):
-                            parsed_lr = dt_util.parse_datetime(last_raw)
-                            last_epoch_check = (
-                                float(dt_util.as_timestamp(parsed_lr))
-                                if parsed_lr
-                                else None
-                            )
-                        else:
-                            last_epoch_check = float(dt_util.as_timestamp(last_raw))
-                    except Exception:
-                        last_epoch_check = None
-                else:
-                    last_epoch_check = None
-
-                if last_epoch_check is not None:
-                    now_epoch_check = float(
-                        dt_util.as_timestamp(
-                            getattr(self, "_current_eval_time", None)
-                            or dt_util.utcnow()
-                        )
-                    )
-                    thr_cfg = float(
-                        self._device_switch_throttle.get(
-                            norm, self._default_switch_throttle_seconds
-                        )
-                        or self._default_switch_throttle_seconds
-                    )
+                last_epoch_check = self._parse_epoch(self._last_switch_time.get(norm))
+                thr_cfg = self._get_throttle_seconds(norm)
+                if last_epoch_check is not None and thr_cfg:
+                    now_epoch_check = self._get_now_epoch()
                     elapsed_check = now_epoch_check - last_epoch_check
                     if elapsed_check >= 0 and elapsed_check < float(thr_cfg):
-                        last_action_check = self._last_action_state.get(norm)
-                        if last_action_check is None:
-                            try:
-                                st = self.hass.states.get(norm)
-                                last_action_check = bool(st and st.state == STATE_ON)
-                            except Exception:
-                                last_action_check = None
+                        last_action_check = self._get_last_action_state(norm)
                         if last_action_check is not None and bool(
                             last_action_check
                         ) != bool(desired):
@@ -739,81 +769,57 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             except Exception:
                 _ignored_exc()
             # Local typed sentinel for subsequent throttle checks
-            last_raw = self._last_switch_time.get(norm)
-            last_act = self._last_action_state.get(norm)
-            throttle_cfg = self._device_switch_throttle.get(
-                norm, self._default_switch_throttle_seconds
-            )
-            if last_raw is not None and last_act is not None and throttle_cfg:
+            last_epoch = self._parse_epoch(self._last_switch_time.get(norm))
+            last_act = self._get_last_action_state(norm)
+            throttle_val = self._get_throttle_seconds(norm)
+            if last_epoch is not None and last_act is not None and throttle_val:
+                now_epoch = self._get_now_epoch()
                 try:
-                    if isinstance(last_raw, (int, float)):
-                        last_epoch = float(last_raw)
-                    elif isinstance(last_raw, str):
-                        parsed = dt_util.parse_datetime(last_raw)
-                        last_epoch = (
-                            float(dt_util.as_timestamp(parsed)) if parsed else None
-                        )
-                    else:
-                        last_epoch = float(dt_util.as_timestamp(last_raw))
+                    tval = float(throttle_val)
                 except Exception:
-                    last_epoch = None
-                if last_epoch is not None:
-                    now_epoch = float(
-                        dt_util.as_timestamp(
-                            getattr(self, "_current_eval_time", None)
-                            or dt_util.utcnow()
+                    tval = float(self._default_switch_throttle_seconds)
+                elapsed = now_epoch - last_epoch
+                if last_act is None:
+                    last_act = self._get_last_action_state(norm)
+                    try:
+                        _LOGGER.debug(
+                            "DBG_CANONICAL: entity=%s last_epoch=%r last_act=%r now_epoch=%r elapsed=%r throttle_val=%r desired=%r last_eval=%r cur_eval=%r",
+                            norm,
+                            last_epoch,
+                            last_act,
+                            now_epoch,
+                            elapsed,
+                            tval,
+                            desired,
+                            self._last_switch_eval.get(norm),
+                            getattr(self, "_current_eval_id", None),
                         )
+                    except Exception:
+                        _ignored_exc()
+                if (
+                    elapsed >= 0
+                    and elapsed < float(tval)
+                    and last_act is not None
+                    and bool(last_act) != bool(desired)
+                ):
+                    _LOGGER.debug(
+                        "CANONICAL_THROTTLE_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
+                        norm,
+                        elapsed,
+                        tval,
+                        last_act,
+                        desired,
                     )
                     try:
-                        throttle_val = float(throttle_cfg)
-                    except Exception:
-                        throttle_val = float(self._default_switch_throttle_seconds)
-                    elapsed = now_epoch - last_epoch
-                    if last_act is None:
-                        try:
-                            st = self.hass.states.get(norm)
-                            last_act = bool(st and st.state == STATE_ON)
-                        except Exception:
-                            last_act = None
-                        try:
-                            _LOGGER.debug(
-                                "DBG_CANONICAL: entity=%s last_epoch=%r last_act=%r now_epoch=%r elapsed=%r throttle_val=%r desired=%r last_eval=%r cur_eval=%r",
-                                norm,
-                                last_epoch,
-                                last_act,
-                                now_epoch,
-                                elapsed,
-                                throttle_val,
-                                desired,
-                                self._last_switch_eval.get(norm),
-                                getattr(self, "_current_eval_id", None),
-                            )
-                        except Exception:
-                            _ignored_exc()
-                    if (
-                        elapsed >= 0
-                        and elapsed < float(throttle_val)
-                        and last_act is not None
-                        and bool(last_act) != bool(desired)
-                    ):
-                        _LOGGER.debug(
-                            "CANONICAL_THROTTLE_SUPPRESS: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
-                            norm,
-                            elapsed,
-                            throttle_val,
-                            last_act,
-                            desired,
-                        )
-                        try:
-                            last_eval = self._last_switch_eval.get(norm)
-                            cur_eval = int(getattr(self, "_current_eval_id", 0) or 0)
-                            if (
-                                last_eval is None
-                                or abs(cur_eval - int(last_eval or 0)) <= 1
-                            ):
-                                return True
-                        except Exception:
+                        last_eval = self._last_switch_eval.get(norm)
+                        cur_eval = int(getattr(self, "_current_eval_id", 0) or 0)
+                        if (
+                            last_eval is None
+                            or abs(cur_eval - int(last_eval or 0)) <= 1
+                        ):
                             return True
+                    except Exception:
+                        return True
 
         # Recent-eval suppression guard
         if should_check:
@@ -3397,70 +3403,18 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 )
             except Exception:
                 _ignored_exc()
-            # Consolidated robust quick-gate: compute normalized epoch values
-            # and decisively suppress immediate reversals. This is a more
-            # defensive check that avoids subtle type/timebase mismatches
-            # seen in unit tests where the multiple earlier quick-gates
-            # sometimes missed the reversal condition.
-            try:
+                # Consolidated quick-gate: use helper utilities to normalize
+                # epoch/throttle/state values and decisively suppress immediate
+                # reversals when detected.
                 try:
-                    _LOGGER.debug(
-                        "DBG_CONSOL_QUICK_GATE_START: entity=%s last_raw=%r",
-                        norm,
-                        self._last_switch_time.get(norm),
+                    last_epoch_val = self._normalize_last_epoch(
+                        self._last_switch_time.get(norm)
                     )
-                except Exception:
-                    _ignored_exc()
-                last_raw = self._last_switch_time.get(norm)
-                if last_raw is not None:
-                    # Normalize last timestamp to epoch float
-                    if isinstance(last_raw, (int, float)):
-                        last_epoch_val = float(last_raw)
-                    elif isinstance(last_raw, str):
-                        parsed = dt_util.parse_datetime(last_raw)
-                        last_epoch_val = (
-                            float(dt_util.as_timestamp(parsed)) if parsed else None
-                        )
-                    else:
-                        last_epoch_val = float(dt_util.as_timestamp(last_raw))
-
                     if last_epoch_val is not None:
-                        now_epoch_val = float(
-                            dt_util.as_timestamp(
-                                getattr(self, "_current_eval_time", None)
-                                or dt_util.utcnow()
-                            )
-                        )
-                        throttle_val = float(
-                            self._device_switch_throttle.get(
-                                norm, self._default_switch_throttle_seconds
-                            )
-                            or self._default_switch_throttle_seconds
-                        )
-                        last_action_state = self._last_action_state.get(norm)
-                        if last_action_state is None:
-                            try:
-                                st = self.hass.states.get(norm)
-                                last_action_state = bool(st and st.state == STATE_ON)
-                            except Exception:
-                                last_action_state = None
+                        now_epoch_val = self._get_now_epoch()
+                        throttle_val = self._throttle_value_for(norm)
+                        last_action_state = self._get_last_action_state(norm)
                         elapsed_val = now_epoch_val - float(last_epoch_val)
-                        # Diagnostic print to stdout to avoid logging handle issues
-                        try:
-                            _LOGGER.debug(
-                                "PRINT_QUICK_GATE: entity=%s last_epoch=%r last_action=%r now_epoch=%.3f elapsed=%.3f throttle=%.3f current_eval=%r last_eval=%r desired=%r",
-                                norm,
-                                last_epoch_val,
-                                last_action_state,
-                                now_epoch_val,
-                                elapsed_val,
-                                throttle_val,
-                                getattr(self, "_current_eval_id", None),
-                                self._last_switch_eval.get(norm),
-                                desired,
-                            )
-                        except Exception:
-                            _ignored_exc()
                         _LOGGER.debug(
                             "CONSOLIDATED_QUICK_GATE_INPUTS: entity=%s last_epoch=%.3f now_epoch=%.3f elapsed=%.3f throttle=%.3f last_action=%r desired=%s",
                             norm,
@@ -3485,9 +3439,6 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 last_action_state,
                                 desired,
                             )
-                            # If the last switch happened in the same evaluation
-                            # or the immediately previous one, prefer suppression
-                            # to avoid flip-flopping due to multiple code paths.
                             try:
                                 last_eval = self._last_switch_eval.get(norm)
                                 if (
@@ -3502,80 +3453,40 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             except Exception:
                                 return False
                             return False
-            except Exception:
-                # Non-fatal: fall back to existing per-branch logic below
-                _LOGGER.debug("Consolidated quick-gate failed for %s", norm)
-            # Extra conservative quick-gate: ensure we suppress immediate
-            # reversals using the same epoch timebase as _async_switch_call.
+                except Exception:
+                    _LOGGER.debug("Consolidated quick-gate failed for %s", norm)
+            # Extra conservative quick-gate: same logic but using helpers
             try:
-                last_val = self._last_switch_time.get(norm)
-                throttle_cfg_quick = self._device_switch_throttle.get(
-                    norm, self._default_switch_throttle_seconds
-                )
-                if last_val is not None and throttle_cfg_quick:
-                    if isinstance(last_val, (int, float)):
-                        last_e = float(last_val)
-                    elif isinstance(last_val, str):
-                        parsed = dt_util.parse_datetime(last_val)
-                        last_e = float(dt_util.as_timestamp(parsed)) if parsed else None
-                    else:
-                        last_e = float(dt_util.as_timestamp(last_val))
-                    if last_e is not None:
-                        now_e = float(
-                            dt_util.as_timestamp(
-                                getattr(self, "_current_eval_time", None)
-                                or dt_util.utcnow()
-                            )
+                last_e = self._normalize_last_epoch(self._last_switch_time.get(norm))
+                thr_q = self._get_throttle_seconds(norm)
+                if last_e is not None and thr_q:
+                    now_e = self._get_now_epoch()
+                    last_act_quick = self._get_last_action_state(norm)
+                    _LOGGER.debug(
+                        "QUICK_GATE_DEBUG: entity=%s last_e=%.3f now_e=%.3f elapsed=%.3f throttle_quick=%.3f last_act_quick=%r desired=%s current_eval_time=%s",
+                        norm,
+                        float(last_e) if last_e is not None else float("nan"),
+                        now_e,
+                        (now_e - last_e) if last_e is not None else float("nan"),
+                        thr_q,
+                        last_act_quick,
+                        desired,
+                        getattr(self, "_current_eval_time", None),
+                    )
+                    if (
+                        last_act_quick is not None
+                        and (now_e - last_e) < float(thr_q)
+                        and bool(last_act_quick) != bool(desired)
+                    ):
+                        _LOGGER.info(
+                            "EARLY_SUPPRESS_V2: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
+                            norm,
+                            now_e - last_e,
+                            thr_q,
+                            last_act_quick,
+                            desired,
                         )
-                        try:
-                            throttle_val_quick = float(throttle_cfg_quick)
-                        except Exception:
-                            throttle_val_quick = float(
-                                self._default_switch_throttle_seconds
-                            )
-                        last_act_quick = self._last_action_state.get(norm)
-                        if last_act_quick is None:
-                            try:
-                                st = self.hass.states.get(norm)
-                                last_act_quick = bool(st and st.state == STATE_ON)
-                            except Exception:
-                                last_act_quick = None
-                        # Debug snapshot for quick-gate evaluation
-                        try:
-                            _LOGGER.debug(
-                                "QUICK_GATE_DEBUG: entity=%s last_e=%.3f now_e=%.3f elapsed=%.3f throttle_quick=%.3f last_act_quick=%r desired=%s current_eval_time=%s",
-                                norm,
-                                float(last_e) if last_e is not None else float("nan"),
-                                now_e,
-                                (
-                                    (now_e - last_e)
-                                    if last_e is not None
-                                    else float("nan")
-                                ),
-                                throttle_val_quick,
-                                last_act_quick,
-                                desired,
-                                getattr(self, "_current_eval_time", None),
-                            )
-                        except Exception:
-                            _ignored_exc()
-                        # Evaluate suppression regardless of whether last_act_quick
-                        # was retrieved from the coordinator or inferred from the
-                        # entity state.
-                        if (
-                            last_act_quick is not None
-                            and (now_e - last_e) < throttle_val_quick
-                            and bool(last_act_quick) != bool(desired)
-                        ):
-                            _LOGGER.info(
-                                "EARLY_SUPPRESS_V2: entity=%s elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
-                                norm,
-                                now_e - last_e,
-                                throttle_val_quick,
-                                last_act_quick,
-                                desired,
-                            )
-                            return False
+                        return False
             except Exception:
                 _ignored_exc()
             try:
@@ -3584,32 +3495,17 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     norm, self._default_switch_throttle_seconds
                 )
                 if last_raw is not None and throttle_cfg:
-                    try:
-                        if isinstance(last_raw, (int, float)):
-                            last_epoch = float(last_raw)
-                        elif isinstance(last_raw, str):
-                            parsed = dt_util.parse_datetime(last_raw)
-                            last_epoch = (
-                                float(dt_util.as_timestamp(parsed)) if parsed else None
-                            )
-                        else:
-                            last_epoch = float(dt_util.as_timestamp(last_raw))
-                    except Exception:
-                        last_epoch = None
+                    last_epoch = self._normalize_last_epoch(last_raw)
                     if last_epoch is not None:
-                        now_epoch = float(
-                            dt_util.as_timestamp(
-                                getattr(self, "_current_eval_time", None)
-                                or dt_util.utcnow()
-                            )
-                        )
+                        now_epoch = self._get_now_epoch()
                         # Prepare numeric inputs for logging
                         try:
                             throttle_val = float(throttle_cfg)
                         except Exception:
                             throttle_val = float(self._default_switch_throttle_seconds)
-                        last_act = self._last_action_state.get(norm)
+                        last_act = self._get_last_action_state(norm)
                         elapsed_val = now_epoch - float(last_epoch)
+
                         _LOGGER.info(
                             "EARLY_SUPPRESS_CHECK: entity=%s last_epoch=%.3f now_epoch=%.3f elapsed=%.3f throttle=%.3f last_act=%r desired=%s",
                             norm,
