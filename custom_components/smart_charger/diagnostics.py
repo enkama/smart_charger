@@ -363,6 +363,8 @@ def _capture_coordinator_state(
             "flipflop_ewma": getattr(coordinator, "_flipflop_ewma", None),
             # Expose runtime adaptive override when set
             "adaptive_mode_override": getattr(coordinator, "_adaptive_mode_override", None),
+            # Recent post-alarm corrections/suggestions recorded by coordinator
+            "post_alarm_corrections": list(getattr(coordinator, "_post_alarm_corrections", []) or []),
         }
 
     return coordinator_state, coordinator_plans, coordinator_insights

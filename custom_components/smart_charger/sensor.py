@@ -403,6 +403,8 @@ class SmartChargerAdaptiveSensor(SensorEntity):
             "flipflop_ewma_exceeded": ewma_exceeded,
             "active_overrides": active,
             "active_override_count": len(active),
+            "post_alarm_corrections": getattr(self.coordinator, "_post_alarm_corrections", []),
+            "post_alarm_correction_count": len(getattr(self.coordinator, "_post_alarm_corrections", []) or []),
             "last_update": dt_util.now().isoformat(),
         }
         self.async_write_ha_state()

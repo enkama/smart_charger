@@ -187,6 +187,10 @@
         "name": "Adaptive Telemetrie Hilfe",
         "description": "Dieser Sensor gibt Laufzeitmetriken zur adaptiven Flip‑Flop‑Abmilderung aus: pro Entität die Anzahl kürzlicher Flip‑Flops, abgeleitete Raten (Ereignisse/Sekunde und Ereignisse/Minute), einen EWMA‑Gleitende Mittelwert der Ereignisrate sowie aktive adaptive Drosselungsüberschreibungen (angewendete Sekunden und Ablaufzeit). Verwende diesen Sensor, um das adaptive Verhalten zu überwachen und zu justieren."
       },
+      "adaptive_telemetry_post_alarm": {
+        "name": "Post-Alarm Korrekturen",
+        "description": "Auflistung der jüngsten Korrekturen oder Vorschläge nachdem eine Weckzeit vergangen ist und das Ladeziel nicht erreicht wurde. Jede Korrektur enthält Ursache (z.B. Flip‑Flops, zu später Start, Fehleinschätzung der Entladung) und zusätzliche Details."
+      },
       "device_status": {
         "name": "Smart Charger Gerätestatus",
         "state": {
