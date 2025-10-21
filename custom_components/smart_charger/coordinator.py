@@ -144,7 +144,7 @@ def _ignored_exc() -> None:
             _REAL_LOGGER.debug("Ignored exception (suppressed) and logging failed")
         except Exception:
             _ignored_exc()
-
+    
 
 def _coerce_margin(value: Any) -> float | None:
     if value in (None, ""):
@@ -989,38 +989,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 _LOGGER.warning(
                     "Skipping invalid device configuration %s: %s", raw, err
                 )
-
+        # end _iter_device_configs
+        
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
-        results: dict[str, dict[str, Any]] = {}
-        # New evaluation - advance the eval id to avoid duplicate recordings
-        # within the same refresh cycle.
-        try:
-            try:
-                # Render a human-friendly snapshot at DEBUG level only.
-                rendered = {}
-                for k, v in self._last_switch_time.items():
-                    try:
-                        if isinstance(v, (int, float)):
-                            rendered[k] = datetime.fromtimestamp(float(v)).isoformat()
-                        else:
-                            iso = getattr(v, "isoformat", None)
-                            rendered[k] = iso() if callable(iso) else repr(v)
-                    except Exception:
-                        _ignored_exc()
-                        rendered[k] = repr(v)
-                _LOGGER.debug("SNAPSHOT(last_switch_time): %s", rendered)
-            except Exception:
-                _ignored_exc()
-            self._current_eval_id += 1
-            # Clear any in-flight markers at the start of a new evaluation so
-            # they only protect against reversals within the same coordinator
-            # refresh cycle.
-            try:
-                self._inflight_switches = {}
-            except Exception:
-                _ignored_exc()
-        except Exception:
-            self._current_eval_id = getattr(self, "_current_eval_id", 1)
         # Record the logical evaluation time so switch throttling and
         # confirmation can be evaluated against the same simulated time used
         # by the plan builder (useful for deterministic tests which pass a
@@ -1039,6 +1010,38 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
         try:
             raw_config = self._raw_config()
+            results: dict[str, dict[str, Any]] = {}
+            # New evaluation - advance the eval id to avoid duplicate recordings
+            # within the same refresh cycle.
+            try:
+                try:
+                    # Render a human-friendly snapshot at DEBUG level only.
+                    rendered = {}
+                    for k, v in self._last_switch_time.items():
+                        try:
+                            if isinstance(v, (int, float)):
+                                rendered[k] = datetime.fromtimestamp(
+                                    float(v)
+                                ).isoformat()
+                            else:
+                                iso = getattr(v, "isoformat", None)
+                                rendered[k] = iso() if callable(iso) else repr(v)
+                        except Exception:
+                            _ignored_exc()
+                            rendered[k] = repr(v)
+                    _LOGGER.debug("SNAPSHOT(last_switch_time): %s", rendered)
+                except Exception:
+                    _ignored_exc()
+                self._current_eval_id += 1
+                # Clear any in-flight markers at the start of a new evaluation so
+                # they only protect against reversals within the same coordinator
+                # refresh cycle.
+                try:
+                    self._inflight_switches = {}
+                except Exception:
+                    _ignored_exc()
+            except Exception:
+                self._current_eval_id = getattr(self, "_current_eval_id", 1)
             _LOGGER.debug(
                 "_async_update_data: raw device count=%d",
                 len(raw_config.get("devices", []) or []),
@@ -1422,6 +1425,23 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             cutoff = float(now_epoch) - float(self._flipflop_window_seconds)
         except Exception:
             _ignored_exc()
+            return
+
+        try:
+            # Iterate over a shallow copy since we may remove keys
+            for ent, evts in list(self._flipflop_events.items()):
+                try:
+                    trimmed = [float(e) for e in (evts or []) if float(e) >= cutoff]
+                    if trimmed:
+                        self._flipflop_events[ent] = trimmed
+                    else:
+                        # Remove empty lists to keep the dict small
+                        self._flipflop_events.pop(ent, None)
+                except Exception:
+                    _ignored_exc()
+                    continue
+        except Exception:
+            _ignored_exc()
 
     def _apply_adaptive_throttle_for_entity(self, ent: str, recent: list[float], now_epoch: float) -> None:
         """Compute and apply an adaptive throttle override for a single entity.
@@ -1559,6 +1579,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                     _ignored_exc()
                             except Exception:
                                 _ignored_exc()
+
+                            # (moved _record_flipflop_event to class scope)
                     except Exception:
                         _ignored_exc()
                 else:
@@ -2925,12 +2947,8 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     )
                 except Exception:
                     epoch = float(dt_util.as_timestamp(dt_util.utcnow()))
-                evts = self._flipflop_events.setdefault(entity, [])
-                evts.append(epoch)
-                # trim to window to avoid unbounded growth
                 try:
-                    cutoff = epoch - float(self._flipflop_window_seconds)
-                    self._flipflop_events[entity] = [e for e in evts if e >= cutoff]
+                    self._record_flipflop_event(entity, epoch)
                 except Exception:
                     _ignored_exc()
 
@@ -2950,6 +2968,25 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             required,
             self._current_eval_id,
         )
+
+    def _record_flipflop_event(self, entity: str, epoch: float) -> None:
+        """Record and trim a flip-flop event timestamp for an entity.
+
+        Centralized helper extracted to make the behavior unit-testable and
+        keep trimming logic in one place.
+        """
+        try:
+            evts = self._flipflop_events.setdefault(entity, [])
+            evts.append(float(epoch))
+        except Exception:
+            _ignored_exc()
+            return
+
+        try:
+            cutoff = float(epoch) - float(getattr(self, "_flipflop_window_seconds", 300.0))
+            self._flipflop_events[entity] = [e for e in evts if e >= cutoff]
+        except Exception:
+            _ignored_exc()
 
     async def _maybe_switch(
         self,
