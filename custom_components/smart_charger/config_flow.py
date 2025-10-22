@@ -1112,12 +1112,14 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             import os
 
             package_dir = os.path.dirname(__file__)
-            lang = (getattr(getattr(self.hass, "config", None), "language", None) or "en").split("-")[0]
+            lang = (
+                getattr(getattr(self.hass, "config", None), "language", None) or "en"
+            ).split("-")[0]
             # Prefer language-specific translation file when available
             trans_path = os.path.join(package_dir, "translations", f"{lang}.json")
             if not os.path.exists(trans_path):
                 trans_path = os.path.join(package_dir, "strings.json")
-            with open(trans_path, "r", encoding="utf-8") as fh:
+            with open(trans_path, encoding="utf-8") as fh:
                 data = json.load(fh)
             none_label = (
                 data.get("entity", {})
@@ -1138,31 +1140,36 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             {"value": "(none)", "label": none_label},
         ]
         for ent in entity_ids:
-            # Prefer device registry / device entry friendly name when
-            # available (more user-friendly than state.name). Fall back to
-            # state.name and finally the entity_id.
-            label = None
+            # Resolve friendly label using the entity registry -> device
+            # mapping. Priority:
+            # 1) Device entry name (device.name or name_by_user)
+            # 2) Entity registry custom name (entry.name)
+            # 3) State object name (state.name)
+            # 4) Fallback to entity_id string
+            label: str | None = None
             try:
-                # device registry lookup
                 from homeassistant.helpers import device_registry as dr
+                from homeassistant.helpers import entity_registry as er
 
-                registry = dr.async_get(self.hass)
-                # Find devices that include this entity
-                device_name = None
-                for device in registry.devices.values():
-                    # device.entities may not be present on older HA versions;
-                    # check device.config_entries and entity registry if needed.
-                    # We keep this simple and attempt to read device.name.
-                    if device.name:
-                        # We cannot easily map entity->device without entity registry access,
-                        # so we skip detailed mapping and prefer the state name below.
-                        device_name = device.name
-                        break
-                st = self.hass.states.get(ent)
-                if device_name:
-                    label = device_name
-                elif st is not None:
-                    label = st.name or ent
+                ent_reg = er.async_get(self.hass)
+                entry = ent_reg.async_get(ent)
+                if entry is not None:
+                    # If the entity is tied to a device, try the device name
+                    device_id = getattr(entry, "device_id", None)
+                    if device_id:
+                        dev_reg = dr.async_get(self.hass)
+                        device = dev_reg.async_get(device_id)
+                        if device is not None:
+                            # Prefer name_by_user if present, then device.name
+                            label = getattr(device, "name_by_user", None) or getattr(device, "name", None)
+                    # If we don't have a device label, prefer the entity's configured name
+                    if not label:
+                        label = getattr(entry, "name", None) or getattr(entry, "original_name", None)
+                # Finally fall back to state name
+                if not label:
+                    st = self.hass.states.get(ent)
+                    if st is not None:
+                        label = st.name
             except Exception:
                 label = None
             entity_options.append({"value": ent, "label": label or ent})
@@ -1176,7 +1183,12 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         # the 'action' field so the UI renders localized labels. The entity
         # field uses a SelectSelector which stores the selected entity_id as
         # its value.
-        schema = vol.Schema({vol.Required("action", default="none"): str, vol.Optional("entity", default="(none)"): ENTITY_SELECTOR})
+        schema = vol.Schema(
+            {
+                vol.Required("action", default="none"): str,
+                vol.Optional("entity", default="(none)"): ENTITY_SELECTOR,
+            }
+        )
         if user_input and user_input.get("action") in (
             "accept_entity",
             "revert_entity",
@@ -1240,10 +1252,14 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         # localized labels for the action dropdown.
         return self.async_show_form(
             step_id="review_suggestions",
-            data_schema=vol.Schema({
-                vol.Required("action", default="none"): REVIEW_SUGGESTIONS_ACTION_SELECTOR,
-                vol.Optional("entity", default="(none)"): vol.In(entity_options),
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "action", default="none"
+                    ): REVIEW_SUGGESTIONS_ACTION_SELECTOR,
+                    vol.Optional("entity", default="(none)"): vol.In(entity_options),
+                }
+            ),
             description_placeholders={"info": "\n".join(lines)},
         )
 
