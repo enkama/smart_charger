@@ -47,8 +47,6 @@ async def test_coordinator_precharge_guard(hass):
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={})
     entry.add_to_hass(hass)
     coordinator = SmartChargerCoordinator(hass, entry)
-
-    
     # No exceptions when checking precharge guard: call the current helper that
     # performs a similar safety check. It returns a boolean; we only assert no
     # exception is raised.
