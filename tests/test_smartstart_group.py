@@ -44,3 +44,56 @@ async def test_smartstart_activation_and_ignore(hass):
     await coordinator._smartstart_activate_if_needed("SS1", "switch.ss1", {"entity_id": "switch.ss1"}, False)
     # If activation logic runs, it will update coordinator state; we assert no exceptions
     assert True
+
+
+def test_smartstart_ignore_distant_forecast_check(hass):
+    # Added from test_smartstart_helper.py
+    entry = MockConfigEntry(domain=DOMAIN, data={"devices": []})
+    entry.add_to_hass(hass)
+    coord = SmartChargerCoordinator(hass, entry)
+
+    now = dt_util.now()
+    device_name = "Test"
+    battery = 50.0
+    window_threshold = 5.0
+    # start_time equal to now should cause the helper to return expected_on
+    start_time = now
+    res = coord._smartstart_ignore_distant_forecast_check(
+        device_name, battery, window_threshold, start_time, now, expected_on=True
+    )
+    assert res is True
+
+    # start_time in future should return None
+    future = now + timedelta(hours=1)
+    res2 = coord._smartstart_ignore_distant_forecast_check(
+        device_name, battery, window_threshold, future, now, expected_on=True
+    )
+    assert res2 is None
+
+
+def test_smartstart_activate_if_needed_calls_switch(hass):
+    # Added from test_smartstart_activate_helper.py
+    entry = MockConfigEntry(domain=DOMAIN, data={"devices": []})
+    entry.add_to_hass(hass)
+    coord = SmartChargerCoordinator(hass, entry)
+
+    # Prepare service spy
+    from pytest_homeassistant_custom_component.common import async_mock_service
+
+    turn_on_calls = async_mock_service(hass, "switch", "turn_on")
+
+    service_data = {"entity_id": "switch.test"}
+    # Call helper: charger_is_on False should cause activation
+    res = hass.loop.run_until_complete(
+        coord._smartstart_activate_if_needed("Test", "switch.test", service_data, False)
+    )
+    assert res is True
+    assert len(turn_on_calls) == 1
+
+    # If charger already on, nothing should be called
+    turn_on_calls.clear()
+    res2 = hass.loop.run_until_complete(
+        coord._smartstart_activate_if_needed("Test", "switch.test", service_data, True)
+    )
+    assert res2 is None
+    assert len(turn_on_calls) == 0
