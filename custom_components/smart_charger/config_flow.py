@@ -85,26 +85,33 @@ from .const import (
     DOMAIN,
 )
 
+
+# Local logger for the config flow module.
 _LOGGER = logging.getLogger(__name__)
 
-WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
-    CONF_ALARM_MONDAY,
-    CONF_ALARM_TUESDAY,
-    CONF_ALARM_WEDNESDAY,
-    CONF_ALARM_THURSDAY,
-    CONF_ALARM_FRIDAY,
-    CONF_ALARM_SATURDAY,
-    CONF_ALARM_SUNDAY,
-)
 
-SENSOR_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["sensor"]))
-CHARGING_SELECTOR = EntitySelector(
-    EntitySelectorConfig(domain=["binary_sensor", "sensor"])
-)
-SWITCH_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["switch"]))
-PRESENCE_SELECTOR = EntitySelector(
-    EntitySelectorConfig(domain=["person", "device_tracker"])
-)
+# Attempt to reuse coordinator._ignored_exc to record suppressed
+# exceptions in a consistent way. Import locally to avoid cycles.
+try:
+    from .coordinator import _ignored_exc  # type: ignore
+
+    try:
+        _ignored_exc()
+    except Exception:
+        # If importing or logging fails, log at debug level ensuring the
+        # traceback is recorded. Avoid bare except: pass to satisfy
+        # Bandit B110.
+        _LOGGER.debug("Ignored exception in config flow (inner)", exc_info=True)
+except Exception:
+    # As a last resort, if anything goes wrong we intentionally avoid
+    # breaking the config flow UI. Log at debug level; if logging itself
+    # fails, emit an exception on the module logger as a final fallback.
+    try:
+        _LOGGER.debug("Ignored exception in config flow (outer)", exc_info=True)
+    except Exception as err:  # pragma: no cover - extremely unlikely
+        logging.getLogger(__name__).exception(
+            "Failed to log suppressed exception in config flow: %s", err
+        )
 ALARM_SELECTOR = EntitySelector(
     EntitySelectorConfig(domain=["sensor", "input_datetime"])
 )
@@ -132,6 +139,29 @@ ADAPTIVE_MODE_SELECTOR = SelectSelector(
         multiple=False,
         mode=SelectSelectorMode.DROPDOWN,
     )
+)
+
+
+# Weekday-alarm field names (mirrors coordinator) used by the flow handlers.
+WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
+    CONF_ALARM_MONDAY,
+    CONF_ALARM_TUESDAY,
+    CONF_ALARM_WEDNESDAY,
+    CONF_ALARM_THURSDAY,
+    CONF_ALARM_FRIDAY,
+    CONF_ALARM_SATURDAY,
+    CONF_ALARM_SUNDAY,
+)
+
+
+# Common selector presets used by schema fields in this module.
+SENSOR_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["sensor"]))
+SWITCH_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["switch"]))
+CHARGING_SELECTOR = EntitySelector(
+    EntitySelectorConfig(domain=["sensor", "binary_sensor"])
+)
+PRESENCE_SELECTOR = EntitySelector(
+    EntitySelectorConfig(domain=["device_tracker", "person"])
 )
 
 OPTIONAL_ENTITY_FIELDS: tuple[str, ...] = (
@@ -1175,6 +1205,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
 
                 _ignored_exc()
             except Exception:
-                # If importing or logging fails, silently ignore to preserve flow
-                # behavior; we avoid re-raising to keep the config flow usable.
-                pass
+                # If importing or logging fails, record the exception at
+                # DEBUG level so we avoid a bare except: pass pattern
+                # (Bandit B110) while still not breaking the user flow.
+                _LOGGER.debug("Ignored exception applying suggestions", exc_info=True)
