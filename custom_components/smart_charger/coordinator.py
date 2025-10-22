@@ -41,6 +41,7 @@ from .const import (
     CONF_CHARGING_SENSOR,
     CONF_LEARNING_RECENT_SAMPLE_HOURS,
     CONF_MIN_LEVEL,
+    CONF_PRECHARGE_COOLDOWN_MINUTES,
     CONF_PRECHARGE_COUNTDOWN_WINDOW,
     CONF_PRECHARGE_LEVEL,
     CONF_PRECHARGE_MARGIN_OFF,
@@ -64,12 +65,11 @@ from .const import (
     DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER,
     DEFAULT_FALLBACK_MINUTES_PER_PERCENT,
     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+    DEFAULT_PRECHARGE_COOLDOWN_MINUTES,
     DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     DEFAULT_PRECHARGE_MARGIN_OFF,
     DEFAULT_PRECHARGE_MARGIN_ON,
     DEFAULT_PRECHARGE_MIN_DROP_PERCENT,
-    CONF_PRECHARGE_COOLDOWN_MINUTES,
-    DEFAULT_PRECHARGE_COOLDOWN_MINUTES,
     DEFAULT_SMART_START_MARGIN,
     DEFAULT_SWITCH_CONFIRMATION_COUNT,
     DEFAULT_SWITCH_THROTTLE_SECONDS,
@@ -2536,9 +2536,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 # contains the converted seconds value used for comparisons.
                 try:
                     last_ts = self._precharge_last_release_ts.get(device.name)
-                    if last_ts is not None and getattr(
-                        self, "_precharge_cooldown_effective_seconds", None
-                    ) is not None:
+                    if (
+                        last_ts is not None
+                        and getattr(self, "_precharge_cooldown_effective_seconds", None)
+                        is not None
+                    ):
                         now_epoch = float(
                             dt_util.as_timestamp(
                                 getattr(self, "_current_eval_time", None)
@@ -2680,9 +2682,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             )
                         except Exception:
                             try:
-                                self._precharge_last_release_ts[
-                                    device.name
-                                ] = float(dt_util.as_timestamp(dt_util.utcnow()))
+                                self._precharge_last_release_ts[device.name] = float(
+                                    dt_util.as_timestamp(dt_util.utcnow())
+                                )
                             except Exception:
                                 _ignored_exc()
                 except Exception:

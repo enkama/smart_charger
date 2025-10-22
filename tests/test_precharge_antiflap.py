@@ -1,13 +1,16 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from homeassistant.util import dt as dt_util
 
-from custom_components.smart_charger.coordinator import SmartChargerCoordinator, DeviceConfig
 from custom_components.smart_charger.const import (
-    CONF_PRECHARGE_MIN_DROP_PERCENT,
     CONF_PRECHARGE_COOLDOWN_MINUTES,
+    CONF_PRECHARGE_MIN_DROP_PERCENT,
+)
+from custom_components.smart_charger.coordinator import (
+    DeviceConfig,
+    SmartChargerCoordinator,
 )
 
 
@@ -33,7 +36,9 @@ async def test_precharge_antiflap_min_drop_and_cooldown(monkeypatch, hass):
     hass.data["smart_charger"].setdefault("entries", {})
     # Ensure config_entries has async_update_entry callable (some test harnesses provide it)
     if not hasattr(hass, "config_entries"):
-        hass.config_entries = type("C", (), {"async_update_entry": lambda *a, **k: None})()
+        hass.config_entries = type(
+            "C", (), {"async_update_entry": lambda *a, **k: None}
+        )()
 
     # Inject options: min drop 10% and cooldown 1 minute for test
     entry.options[CONF_PRECHARGE_MIN_DROP_PERCENT] = 10.0
@@ -73,7 +78,9 @@ async def test_precharge_antiflap_min_drop_and_cooldown(monkeypatch, hass):
     # Patch _maybe_switch to capture calls; in blocked case it must not be invoked
     called = {}
 
-    async def fake_maybe_switch_block(action, service_data, desired=True, bypass_throttle=False, **kw):
+    async def fake_maybe_switch_block(
+        action, service_data, desired=True, bypass_throttle=False, **kw
+    ):
         called["action"] = action
         called["desired"] = desired
         return True
@@ -90,7 +97,9 @@ async def test_precharge_antiflap_min_drop_and_cooldown(monkeypatch, hass):
     )
 
     # No activation should be attempted and helper should indicate it blocked activation
-    assert handled is False, "Activation should be blocked immediately when battery hasn't dropped"
+    assert (
+        handled is False
+    ), "Activation should be blocked immediately when battery hasn't dropped"
     assert not called, "_maybe_switch should not be called when blocked by min-drop"
 
     # Case 2: battery drops enough (below 45 => 55 - 10%) -> activation allowed
@@ -103,7 +112,9 @@ async def test_precharge_antiflap_min_drop_and_cooldown(monkeypatch, hass):
     # Monkeypatch _maybe_switch to capture call instead of performing it
     called = {}
 
-    async def fake_maybe_switch(action, service_data, desired=True, bypass_throttle=False, **kw):
+    async def fake_maybe_switch(
+        action, service_data, desired=True, bypass_throttle=False, **kw
+    ):
         called["action"] = action
         called["desired"] = desired
         return True
@@ -119,11 +130,15 @@ async def test_precharge_antiflap_min_drop_and_cooldown(monkeypatch, hass):
         service_data={"entity_id": device.charger_switch},
     )
 
-    assert handled is True and called.get("action") == "turn_on", "Activation should be allowed after battery drop and cooldown expired"
+    assert (
+        handled is True and called.get("action") == "turn_on"
+    ), "Activation should be allowed after battery drop and cooldown expired"
 
     # Case 3: after release but before cooldown expired, activation is blocked even if battery dropped
     # Reset last_release_ts to now and set battery below threshold
-    coord._precharge_last_release_ts[device.name] = float(dt_util.as_timestamp(dt_util.utcnow()))
+    coord._precharge_last_release_ts[device.name] = float(
+        dt_util.as_timestamp(dt_util.utcnow())
+    )
     coord._state = {device.name: {"battery": 44.0}}
     called.clear()
 

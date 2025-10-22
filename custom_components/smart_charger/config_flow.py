@@ -1177,10 +1177,14 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                         device = dev_reg.async_get(device_id)
                         if device is not None:
                             # Prefer name_by_user if present, then device.name
-                            label = getattr(device, "name_by_user", None) or getattr(device, "name", None)
+                            label = getattr(device, "name_by_user", None) or getattr(
+                                device, "name", None
+                            )
                     # If we don't have a device label, prefer the entity's configured name
                     if not label:
-                        label = getattr(entry, "name", None) or getattr(entry, "original_name", None)
+                        label = getattr(entry, "name", None) or getattr(
+                            entry, "original_name", None
+                        )
                 # Finally fall back to state name
                 if not label:
                     st = self.hass.states.get(ent)
