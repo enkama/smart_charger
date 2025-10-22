@@ -19,15 +19,8 @@ async def test_smartstart_helpers_basic(hass):
     entry.add_to_hass(hass)
     coordinator = SmartChargerCoordinator(hass, entry)
 
-    _now = dt_util.utcnow()
     # Ensure that smartstart ignores when not configured. Call the async
     # smartstart activation helper and ensure it doesn't raise.
-    _pd = {
-        "charger_switch": "switch.ss",
-        "alarm_time": None,
-        "target": 90,
-        "battery": 10,
-    }
     # helper is async - await it
     await coordinator._smartstart_activate_if_needed("", "switch.ss", {}, False)
     # no exceptions

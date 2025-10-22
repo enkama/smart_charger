@@ -68,13 +68,7 @@ async def test_coordinator_last_action_guard_behaviour(hass):
     entry.add_to_hass(hass)
     coordinator = SmartChargerCoordinator(hass, entry)
 
-    _now = dt_util.utcnow()
-    _pd = {
-        "charger_switch": "switch.c2",
-    "alarm_time": dt_util.as_local(_now - timedelta(seconds=5)).isoformat(),
-        "target": 80,
-        "battery": 20,
-    }
+    # (no local alarm data needed for this guard check)
     # Use _final_guard_should_suppress to exercise the same guard behaviour
     coordinator._final_guard_should_suppress("switch.c2", 0.0, True)
     assert True
