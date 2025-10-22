@@ -49,7 +49,7 @@ async def test_coordinator_precharge_guard(hass):
     entry.add_to_hass(hass)
     coordinator = SmartChargerCoordinator(hass, entry)
 
-    _now = dt_util.utcnow()
+    
     # No exceptions when checking precharge guard: call the current helper that
     # performs a similar safety check. It returns a boolean; we only assert no
     # exception is raised.

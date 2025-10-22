@@ -39,7 +39,6 @@ async def test_smartstart_activation_and_ignore(hass):
     coordinator = SmartChargerCoordinator(hass, entry)
 
     _now = dt_util.utcnow()
-    alarm = _now - timedelta(minutes=5)
     # local prediction data not required for this activation smoke-test
 
     # The async helper may decide to activate/pause; await it to ensure
