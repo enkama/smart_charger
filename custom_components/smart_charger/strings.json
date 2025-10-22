@@ -242,5 +242,21 @@
         "entity": "Choose an entity to accept or revert the suggested persisted change for."
       }
     }
+  ,
+    "review_suggestions_actions": {
+      "options": {
+        "none": "No action",
+        "accept_all": "Accept all suggested changes",
+        "revert_all": "Revert all suggested changes",
+        "accept_entity": "Accept for selected entity",
+        "revert_entity": "Revert for selected entity"
+      },
+      "help": {
+        "accept_all": "Persist all suggested changes into the integration options (smart-start margins and adaptive-mode overrides).",
+        "revert_all": "Remove any persisted suggestions and restore runtime defaults.",
+        "accept_entity": "Persist the suggested change for the selected entity only.",
+        "revert_entity": "Revert persisted suggestions for the selected entity and restore runtime state."
+      }
+    }
   }
 }

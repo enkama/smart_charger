@@ -189,6 +189,23 @@
       }
     }
 
+    ,
+    "review_suggestions_actions": {
+      "options": {
+        "none": "Keine Aktion",
+        "accept_all": "Alle vorgeschlagenen Änderungen akzeptieren",
+        "revert_all": "Alle vorgeschlagenen Änderungen verwerfen",
+        "accept_entity": "Für ausgewählte Entität akzeptieren",
+        "revert_entity": "Für ausgewählte Entität verwerfen"
+      },
+      "help": {
+        "accept_all": "Persistiere alle vorgeschlagenen Änderungen in den Integrationsoptionen (SmartStart-Margen und adaptive Modus-Überschreibungen).",
+        "revert_all": "Entferne alle persistierten Vorschläge und stelle die Laufzeit-Standardeinstellungen wieder her.",
+        "accept_entity": "Persistiere die vorgeschlagene Änderung nur für die ausgewählte Entität.",
+        "revert_entity": "Verwerfe persistierte Vorschläge für die ausgewählte Entität und stelle die Laufzeit-Einstellungen wieder her."
+      }
+    }
+
     }
   },
   "selector": {

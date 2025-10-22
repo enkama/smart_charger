@@ -141,6 +141,24 @@ ADAPTIVE_MODE_SELECTOR = SelectSelector(
 )
 
 
+# Selector for review_suggestions action choices. Use translation_key so option
+# labels are localized via strings.json -> selector.review_suggestions_actions.options
+REVIEW_SUGGESTIONS_ACTION_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=[
+            "none",
+            "accept_all",
+            "revert_all",
+            "accept_entity",
+            "revert_entity",
+        ],
+        translation_key="review_suggestions_actions",
+        multiple=False,
+        mode=SelectSelectorMode.DROPDOWN,
+    )
+)
+
+
 # Weekday-alarm field names (mirrors coordinator) used by the flow handlers.
 WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
     CONF_ALARM_MONDAY,
@@ -1088,20 +1106,10 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             )
         ]
 
-        schema = vol.Schema(
-            {
-                vol.Required("action", default="none"): vol.In(
-                    {
-                        "none": "No action",
-                        "accept_all": "Accept all",
-                        "revert_all": "Revert all",
-                        "accept_entity": "Accept selected entity",
-                        "revert_entity": "Revert selected entity",
-                    }
-                ),
-                vol.Optional("entity", default="(none)"): vol.In(entity_options),
-            }
-        )
+        # Build a simple schema mapping keys to selectors/validators. We use
+        # vol.Schema for the underlying validation, but provide a selector for
+        # the 'action' field so the UI renders localized labels.
+        schema = vol.Schema({vol.Required("action", default="none"): str, vol.Optional("entity", default="(none)"): vol.In(entity_options)})
 
         if user_input and user_input.get("action") in (
             "accept_entity",
@@ -1157,9 +1165,18 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 )
                 return self.async_create_entry(title="", data={})
 
+        # Render form using selectors mapping for richer UI. Home Assistant's
+        # form API accepts a mapping `data_schema` and `description_placeholders`;
+        # selectors are provided via the `data_schema` by passing in the actual
+        # selector validator object for the UI. We reuse the schema above for
+        # validation but supply REVIEW_SUGGESTIONS_ACTION_SELECTOR to get
+        # localized labels for the action dropdown.
         return self.async_show_form(
             step_id="review_suggestions",
-            data_schema=schema,
+            data_schema=vol.Schema({
+                vol.Required("action", default="none"): REVIEW_SUGGESTIONS_ACTION_SELECTOR,
+                vol.Optional("entity", default="(none)"): vol.In(entity_options),
+            }),
             description_placeholders={"info": "\n".join(lines)},
         )
 
