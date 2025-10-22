@@ -28,10 +28,7 @@ from custom_components.smart_charger.const import (
     CONF_USE_PREDICTIVE_MODE,
     DOMAIN,
 )
-from custom_components.smart_charger.coordinator import (
-    DeviceConfig,
-    SmartChargerCoordinator,
-)
+from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 
 pytestmark = pytest.mark.asyncio
 
