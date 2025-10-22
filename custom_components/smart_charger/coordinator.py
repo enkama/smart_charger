@@ -2444,13 +2444,13 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             self._log_action(
                 device_name,
-                logging.INFO,
+                logging.DEBUG,
                 "[Precharge] %s requires precharge -> activating charger %s until %.1f%%",
                 device_name,
                 charger_ent,
                 target_release,
             )
-            _LOGGER.info(
+            _LOGGER.debug(
                 "About to call _maybe_switch turn_on for %s (entity=%s)",
                 device_name,
                 charger_ent,
