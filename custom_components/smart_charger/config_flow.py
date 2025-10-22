@@ -1096,35 +1096,53 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         if not suggested_smart_start and not suggested_adaptive:
             lines.append("(No suggestions present)")
 
-        # Build entity list for per-entity actions
-        entity_options = ["(none)"] + [
-            str(e)
-            for e in sorted(
-                set(
-                    list(suggested_smart_start.keys()) + list(suggested_adaptive.keys())
-                )
-            )
+        # Build entity list for per-entity actions. Use a SelectSelector so the
+        # UI displays friendly labels while the option value remains the
+        # entity_id which we can use directly when applying actions.
+        entity_ids = sorted(
+            set(list(suggested_smart_start.keys()) + list(suggested_adaptive.keys()))
+        )
+        entity_options: list[SelectOptionDict] = [
+            {"value": "(none)", "label": "(none)"},
         ]
+        for ent in entity_ids:
+            # Attempt to resolve a friendly name from the hass state machine;
+            # fall back to the entity_id if unavailable.
+            label = None
+            try:
+                st = self.hass.states.get(ent)
+                if st is not None:
+                    label = st.name or ent
+            except Exception:
+                # Keep behavior safe for config flow: default to ent on error
+                label = ent
+            entity_options.append({"value": ent, "label": label or ent})
+
+        ENTITY_SELECTOR = SelectSelector(
+            SelectSelectorConfig(options=entity_options, multiple=False)
+        )
 
         # Build a simple schema mapping keys to selectors/validators. We use
         # vol.Schema for the underlying validation, but provide a selector for
-        # the 'action' field so the UI renders localized labels.
-        schema = vol.Schema({vol.Required("action", default="none"): str, vol.Optional("entity", default="(none)"): vol.In(entity_options)})
-
+        # the 'action' field so the UI renders localized labels. The entity
+        # field uses a SelectSelector which stores the selected entity_id as
+        # its value.
+        schema = vol.Schema({vol.Required("action", default="none"): str, vol.Optional("entity", default="(none)"): ENTITY_SELECTOR})
         if user_input and user_input.get("action") in (
             "accept_entity",
             "revert_entity",
         ):
-            ent = user_input.get("entity")
-            if not ent or ent == "(none)":
+            # The entity selector returns the entity_id as the value. Validate
+            # that an actual entity_id was selected (not the '(none)' placeholder).
+            selected = user_input.get("entity")
+            if not selected or selected == "(none)":
                 return self.async_show_form(
                     step_id="review_suggestions",
                     data_schema=schema,
                     errors={"entity": "invalid_entity"},
                     description_placeholders={"info": "\n".join(lines)},
                 )
-            # map display string back to entity id
-            target_entity = str(ent)
+            target_entity = str(selected)
             if user_input.get("action") == "accept_entity":
                 # Accept single entity: call service to persist
                 self.hass.async_create_task(
