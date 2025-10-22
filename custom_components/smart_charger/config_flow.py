@@ -1166,5 +1166,15 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 )
                 return
         except Exception:
-            # Don't raise; flow should continue with a user-facing form if needed
-            pass
+            # Don't raise; flow should continue with a user-facing form if needed.
+            # Log the ignored exception at DEBUG so it is visible in diagnostics
+            # without causing the flow to error out. This centralizes the
+            # suppressed-exception behavior similar to the coordinator helper.
+            try:
+                from .coordinator import _ignored_exc
+
+                _ignored_exc()
+            except Exception:
+                # If importing or logging fails, silently ignore to preserve flow
+                # behavior; we avoid re-raising to keep the config flow usable.
+                pass
