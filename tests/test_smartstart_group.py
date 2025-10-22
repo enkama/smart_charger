@@ -40,13 +40,7 @@ async def test_smartstart_activation_and_ignore(hass):
 
     _now = dt_util.utcnow()
     alarm = _now - timedelta(minutes=5)
-    pd = {
-        "charger_switch": "switch.ss1",
-        "alarm_time": dt_util.as_local(alarm).isoformat(),
-        "target": 95,
-        "battery": 10,
-        "smart_start_margin": 1.0,
-    }
+    # local prediction data not required for this activation smoke-test
 
     # The async helper may decide to activate/pause; await it to ensure
     # the code path executes without raising.

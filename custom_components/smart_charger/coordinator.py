@@ -1301,7 +1301,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             _ignored_exc()
             return
 
-        _cutoff = now_epoch - float(self._flipflop_window_seconds)
+    # cutoff computed earlier is not used directly here; keep for clarity
         # Expire adaptive overrides (small helper)
         try:
             self._expire_adaptive_overrides(now_epoch)
@@ -4844,9 +4844,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         _ignored_exc()
                 else:
                     try:
-                        _pred_level = float(
-                            pd.get("predicted_level_at_alarm", 0.0) or 0.0
-                        )
+                        # predicted level not required in this branch
                         charge_duration_min = float(
                             pd.get("charge_duration_min") or 0.0
                         )
