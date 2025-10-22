@@ -172,7 +172,8 @@
       "description": "Prüfe und akzeptiere oder verwerfe vorgeschlagene, persistente Änderungen nach Alarmen. {info}",
       "data": {
         "action": "Aktion",
-        "entity": "Entität"
+        "entity": "Entität",
+        "entity_none": "Keine Entität"
       },
       "options": {
         "none": "Keine Aktion",

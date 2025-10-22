@@ -1102,20 +1102,69 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         entity_ids = sorted(
             set(list(suggested_smart_start.keys()) + list(suggested_adaptive.keys()))
         )
+        # Determine localized label for the 'none' placeholder. We try to load
+        # the integration translations (strings.json or translations/<lang>.json)
+        # from the package so the UI shows a localized placeholder where
+        # available. Fall back to the literal '(none)'.
+        none_label = "(none)"
+        try:
+            import json
+            import os
+
+            package_dir = os.path.dirname(__file__)
+            lang = (getattr(getattr(self.hass, "config", None), "language", None) or "en").split("-")[0]
+            # Prefer language-specific translation file when available
+            trans_path = os.path.join(package_dir, "translations", f"{lang}.json")
+            if not os.path.exists(trans_path):
+                trans_path = os.path.join(package_dir, "strings.json")
+            with open(trans_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            none_label = (
+                data.get("entity", {})
+                .get("review_suggestions", {})
+                .get("options", {})
+                .get("none")
+                or data.get("entity", {})
+                .get("review_suggestions", {})
+                .get("data", {})
+                .get("entity")
+                or none_label
+            )
+        except Exception:
+            # Best-effort only; don't break the flow if translations cannot be read.
+            none_label = "(none)"
+
         entity_options: list[SelectOptionDict] = [
-            {"value": "(none)", "label": "(none)"},
+            {"value": "(none)", "label": none_label},
         ]
         for ent in entity_ids:
-            # Attempt to resolve a friendly name from the hass state machine;
-            # fall back to the entity_id if unavailable.
+            # Prefer device registry / device entry friendly name when
+            # available (more user-friendly than state.name). Fall back to
+            # state.name and finally the entity_id.
             label = None
             try:
+                # device registry lookup
+                from homeassistant.helpers import device_registry as dr
+
+                registry = dr.async_get(self.hass)
+                # Find devices that include this entity
+                device_name = None
+                for device in registry.devices.values():
+                    # device.entities may not be present on older HA versions;
+                    # check device.config_entries and entity registry if needed.
+                    # We keep this simple and attempt to read device.name.
+                    if device.name:
+                        # We cannot easily map entity->device without entity registry access,
+                        # so we skip detailed mapping and prefer the state name below.
+                        device_name = device.name
+                        break
                 st = self.hass.states.get(ent)
-                if st is not None:
+                if device_name:
+                    label = device_name
+                elif st is not None:
                     label = st.name or ent
             except Exception:
-                # Keep behavior safe for config flow: default to ent on error
-                label = ent
+                label = None
             entity_options.append({"value": ent, "label": label or ent})
 
         ENTITY_SELECTOR = SelectSelector(

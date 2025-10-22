@@ -226,7 +226,8 @@
       "description": "Review and accept or revert suggested persisted changes made after alarms. {info}",
       "data": {
         "action": "Action",
-        "entity": "Entity"
+        "entity": "Entity",
+        "entity_none": "No entity"
       },
       "options": {
         "none": "No action",
