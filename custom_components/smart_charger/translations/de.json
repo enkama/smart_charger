@@ -72,7 +72,8 @@
         "menu_options": {
           "edit_device": "⚙️ Gerät bearbeiten",
           "advanced_settings": "🔧 Erweiterte Einstellungen",
-          "delete_device": "🗑️ Gerät löschen"
+          "delete_device": "🗑️ Gerät löschen",
+          "review_suggestions": "💡 Vorschläge prüfen"
         }
       },
       "edit_device": {
@@ -162,6 +163,15 @@
           "adaptive_throttle_max_multiplier": "Maximaler Multiplikator, der auf die konfigurierte Schalter-Drosselung angewendet wird. Drosselstärke wird dadurch begrenzt."
         }
       }
+    ,
+    "review_suggestions": {
+      "title": "Vorgeschlagene Änderungen prüfen",
+      "description": "Prüfe und akzeptiere oder verwerfe vorgeschlagene, persistente Änderungen nach Alarmen. {info}",
+      "data": {
+        "action": "Aktion",
+        "entity": "Entität"
+      }
+    }
     }
   },
   "selector": {

@@ -72,7 +72,8 @@
         "menu_options": {
           "edit_device": "⚙️ Edit existing device",
           "advanced_settings": "🔧 Advanced settings",
-          "delete_device": "🗑️ Delete device"
+        "delete_device": "🗑️ Delete device",
+        "review_suggestions": "💡 Review suggestions"
         }
       },
       "edit_device": {
@@ -214,6 +215,15 @@
           "last_update": { "name": "Last update" },
           "info": { "name": "Information" }
         }
+      }
+    }
+  ,
+    "review_suggestions": {
+      "title": "Review suggested persisted changes",
+      "description": "Review and accept or revert suggested persisted changes made after alarms. {info}",
+      "data": {
+        "action": "Action",
+        "entity": "Entity"
       }
     }
   }
