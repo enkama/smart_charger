@@ -5610,7 +5610,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     device_name,
                     charger_ent,
                 )
-                await self._maybe_switch("turn_on", service_data, desired=True)
+                # Activation should bypass normal throttle/confirmation gates so
+                # scheduled SmartStart activations are not suppressed by recent
+                # coordinator-issued switches or confirmation debounce.
+                await self._maybe_switch(
+                    "turn_on", service_data, desired=True, bypass_throttle=True
+                )
                 return True
         except Exception:
             _ignored_exc()
