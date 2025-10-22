@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -15,11 +15,11 @@ from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 
 
 class DummyHass:
-    states = {}
+    states: dict[str, Any] = {}
 
 
 class DummyEntry:
-    options = {}
+    options: dict[str, Any] = {}
 
 
 class DummyConfigEntries:
@@ -34,7 +34,7 @@ class DummyConfigEntries:
 class DummyHassWithConfig:
     def __init__(self):
         self.config_entries = DummyConfigEntries()
-        self.states = {}
+        self.states: dict[str, Any] = {}
 
 
 @pytest.mark.asyncio

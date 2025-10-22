@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 
 import pytest
 from homeassistant.util import dt as dt_util
@@ -109,7 +110,7 @@ async def _build_plan_for_test(
 async def test_precharge_turns_on_charger_when_threshold_hit(hass) -> None:
     """Ensure precharge engages the charger when the hysteresis window latches."""
 
-    device_dict = {
+    device_dict: dict[str, Any] = {
         "name": "Test Vehicle",
         CONF_BATTERY_SENSOR: "sensor.test_battery",
         CONF_CHARGER_SWITCH: "switch.test_charger",
@@ -158,7 +159,7 @@ async def test_precharge_turns_on_charger_when_threshold_hit(hass) -> None:
 async def test_plan_hides_optional_durations_without_precharge(hass) -> None:
     """Optional duration fields should be omitted when they add no extra information."""
 
-    device_dict = {
+    device_dict: dict[str, Any] = {
         "name": "NoPrecharge",
         CONF_BATTERY_SENSOR: "sensor.no_precharge_battery",
         CONF_CHARGER_SWITCH: "switch.no_precharge_charger",
@@ -205,7 +206,7 @@ async def test_plan_hides_optional_durations_without_precharge(hass) -> None:
 async def test_plan_exposes_precharge_durations_when_active(hass) -> None:
     """When precharge is active, optional duration fields should be included."""
 
-    device_dict = {
+    device_dict: dict[str, Any] = {
         "name": "PrechargeActive",
         CONF_BATTERY_SENSOR: "sensor.precharge_battery",
         CONF_CHARGER_SWITCH: "switch.precharge_charger",
@@ -253,7 +254,7 @@ async def test_plan_exposes_precharge_durations_when_active(hass) -> None:
 async def test_smart_start_waits_until_window_when_not_precharging(hass) -> None:
     """Ensure charger pauses while waiting for smart-start window if no precharge required."""
 
-    device_dict = {
+    device_dict: dict[str, Any] = {
         "name": "Test Vehicle",
         CONF_BATTERY_SENSOR: "sensor.test_battery",
         CONF_CHARGER_SWITCH: "switch.test_charger",
@@ -295,7 +296,7 @@ async def test_smart_start_waits_until_window_when_not_precharging(hass) -> None
 async def test_observed_drain_spike_tempered(hass) -> None:
     """A large observed drop should not explode the predicted drain duration."""
 
-    device_dict = {
+    device_dict: dict[str, Any] = {
         "name": "DrainSpike EV",
         CONF_BATTERY_SENSOR: "sensor.drain_battery",
         CONF_CHARGER_SWITCH: "switch.drain_charger",
@@ -350,7 +351,7 @@ async def test_observed_drain_spike_tempered(hass) -> None:
 async def test_observed_drain_ignores_recent_charging_sample(hass) -> None:
     """Drain calculation should ignore history captured while the device was charging."""
 
-    device_dict = {
+    device_dict: dict[str, Any] = {
         "name": "ChargeHistory EV",
         CONF_BATTERY_SENSOR: "sensor.charge_history_battery",
         CONF_CHARGER_SWITCH: "switch.charge_history_charger",
@@ -401,7 +402,7 @@ async def test_observed_drain_ignores_recent_charging_sample(hass) -> None:
 async def test_precharge_not_triggered_when_well_above_threshold(hass) -> None:
     """High battery levels must not spuriously trigger a precharge latch."""
 
-    device_dict = {
+    device_dict: dict[str, Any] = {
         "name": "No Precharge",
         CONF_BATTERY_SENSOR: "sensor.no_precharge_battery",
         CONF_CHARGER_SWITCH: "switch.no_precharge_charger",

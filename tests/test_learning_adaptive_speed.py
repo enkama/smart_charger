@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from homeassistant.util import dt as dt_util
@@ -20,7 +21,7 @@ pytestmark = pytest.mark.asyncio
 
 class _MockHass:
     def __init__(self) -> None:
-        self.data = {}
+        self.data: dict[str, Any] = {}
         self.config = SimpleNamespace(config_dir=".")
         self.loop = asyncio.get_event_loop()
         self.state = None

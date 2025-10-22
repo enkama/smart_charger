@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Any
 
 from homeassistant.util import dt as dt_util
 
@@ -6,11 +7,11 @@ from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 
 
 class DummyHass:
-    states = {}
+    states: dict[str, Any] = {}
 
 
 class DummyEntry:
-    options = {}
+    options: dict[str, Any] = {}
 
 
 class DummyConfigEntries:
@@ -25,13 +26,13 @@ class DummyConfigEntries:
 class DummyHassWithConfig:
     def __init__(self):
         self.config_entries = DummyConfigEntries()
-        self.states = {}
+        self.states: dict[str, Any] = {}
 
 
 def test_prune_flipflop_events():
     hass = DummyHass()
     entry = DummyEntry()
-    coord = SmartChargerCoordinator(hass, entry)
+    coord = SmartChargerCoordinator(hass, entry)  # type: ignore[arg-type]
 
     now = dt_util.utcnow()
     now_epoch = float((now - timedelta(seconds=0)).timestamp())
@@ -58,7 +59,7 @@ def test_prune_flipflop_events():
 def test_apply_adaptive_throttle_creates_override():
     hass = DummyHass()
     entry = DummyEntry()
-    coord = SmartChargerCoordinator(hass, entry)
+    coord = SmartChargerCoordinator(hass, entry)  # type: ignore[arg-type]
 
     now = dt_util.utcnow()
     now_epoch = float(now.timestamp())
@@ -88,7 +89,7 @@ def test_apply_adaptive_throttle_creates_override():
 def test_update_flipflop_ewma_and_mode():
     hass = DummyHassWithConfig()
     entry = DummyEntry()
-    coord = SmartChargerCoordinator(hass, entry)
+    coord = SmartChargerCoordinator(hass, entry)  # type: ignore[arg-type]
 
     now = dt_util.utcnow()
     now_epoch = float(now.timestamp())
@@ -120,7 +121,7 @@ def test_update_flipflop_ewma_and_mode():
 def test_record_flipflop_event_trims_old():
     hass = DummyHass()
     entry = DummyEntry()
-    coord = SmartChargerCoordinator(hass, entry)
+    coord = SmartChargerCoordinator(hass, entry)  # type: ignore[arg-type]
 
     now = dt_util.utcnow()
     now_epoch = float(now.timestamp())

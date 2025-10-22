@@ -5620,7 +5620,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 # logic inside _maybe_switch).
                 try:
                     await self.hass.services.async_call(
-                        "switch", "turn_on", dict(service_data), blocking=False
+                        "switch", "turn_on", dict(service_data), blocking=True
                     )
                 except Exception:
                     _ignored_exc()

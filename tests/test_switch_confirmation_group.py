@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 
 import pytest
 from homeassistant.util import dt as dt_util
@@ -34,7 +35,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_rapid_alternation_prevents_confirmation(hass) -> None:
-    device_dict = {
+    device_dict: dict[str, Any] = {
         "name": "Alternator",
         CONF_BATTERY_SENSOR: "sensor.alt_batt",
         CONF_CHARGER_SWITCH: "switch.alt_chg",
@@ -71,7 +72,7 @@ async def test_rapid_alternation_prevents_confirmation(hass) -> None:
 
 
 async def test_confirmation_enforced_after_coordinator_reinit(hass) -> None:
-    device_dict = {
+    device_dict: dict[str, Any] = {
         "name": "Persist",
         CONF_BATTERY_SENSOR: "sensor.persist_batt",
         CONF_CHARGER_SWITCH: "switch.persist_chg",
@@ -112,7 +113,7 @@ async def test_confirmation_enforced_after_coordinator_reinit(hass) -> None:
 
 
 async def test_confirmation_required_before_switch_and_throttle(hass) -> None:
-    device_dict = {
+    device_dict: dict[str, Any] = {
         "name": "ConfirmVehicle",
         CONF_BATTERY_SENSOR: "sensor.confirm_battery",
         CONF_CHARGER_SWITCH: "switch.confirm_charger",
@@ -150,7 +151,7 @@ async def test_confirmation_required_before_switch_and_throttle(hass) -> None:
     assert len(turn_on_calls) == 1
 
     # Throttle prevention test
-    device_dict2 = {
+    device_dict2: dict[str, Any] = {
         "name": "ThrottleVehicle",
         CONF_BATTERY_SENSOR: "sensor.throttle_battery",
         CONF_CHARGER_SWITCH: "switch.throttle_charger",
