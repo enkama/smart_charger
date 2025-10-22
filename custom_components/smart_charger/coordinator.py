@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import inspect
 import logging
 import math
@@ -3035,6 +3034,154 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         except Exception:
             _ignored_exc()
 
+    def _quick_gate_suppress(
+        self, norm: str, last_epoch_quick: float | None, throttle: Any, desired: bool
+    ) -> bool:
+        """Evaluate the quick conservative gate and return True to suppress.
+
+        This extracts the inlined logic from _maybe_switch that computes elapsed
+        since the last switch and compares against a throttle; if the last
+        action state differs from the desired state and the elapsed time is
+        inside the throttle window, the call should be suppressed.
+        """
+        try:
+            if last_epoch_quick is None:
+                return False
+
+            now_for_quick = getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+            now_epoch_val = float(dt_util.as_timestamp(now_for_quick))
+            elapsed_quick = now_epoch_val - float(last_epoch_quick)
+
+            try:
+                throttle_val = float(throttle)
+            except Exception:
+                throttle_val = float(self._default_switch_throttle_seconds)
+
+            last_action_state = self._last_action_state.get(norm)
+            if last_action_state is None:
+                try:
+                    st = self.hass.states.get(norm)
+                    last_action_state = bool(st and st.state == STATE_ON)
+                except Exception:
+                    last_action_state = None
+
+            if elapsed_quick is not None and elapsed_quick < throttle_val:
+                if last_action_state is not None and bool(last_action_state) != bool(desired):
+                    return True
+            return False
+        except Exception:
+            _LOGGER.exception("Quick gate evaluation failed for %s", norm)
+            return False
+
+    def _throttle_suppress(self, norm: str, last: Any, throttle_cfg: Any, desired: bool) -> bool:
+        """Evaluate the throttle suppression using a normalized last timestamp.
+
+        Returns True when the action should be suppressed due to being inside
+        the per-device throttle window and the last action state differing
+        from the desired state.
+        """
+        try:
+            if last is None:
+                return False
+
+            last_epoch = None
+            try:
+                if isinstance(last, (int, float)):
+                    last_epoch = float(last)
+                elif isinstance(last, str):
+                    parsed = dt_util.parse_datetime(last)
+                    last_epoch = float(dt_util.as_timestamp(parsed)) if parsed else None
+                else:
+                    last_epoch = float(dt_util.as_timestamp(last))
+            except Exception:
+                last_epoch = None
+
+            if last_epoch is None:
+                return False
+
+            now_for_cmp = dt_util.utcnow()
+            now_ts = float(dt_util.as_timestamp(now_for_cmp))
+            last_ts_val = float(last_epoch)
+            elapsed = now_ts - last_ts_val
+
+            try:
+                throttle_val = float(throttle_cfg)
+            except Exception:
+                throttle_val = float(self._default_switch_throttle_seconds)
+
+            if elapsed < 0:
+                # treat future timestamps as expired
+                return False
+
+            last_act = self._get_last_action_state(norm)
+            if last_act is not None and elapsed < throttle_val and bool(last_act) != bool(desired):
+                return True
+            return False
+        except Exception:
+            _ignored_exc()
+            return False
+
+    def _confirmation_and_throttle_check(self, norm: str, desired: bool):
+        """Handle confirmation debounce and throttle pre-check.
+
+        Returns True when the call should be suppressed (waiting for confirmation
+        or inside throttle window), False when processing should continue.
+        """
+        try:
+            # Record desired state for confirmation counting (idempotent per-eval)
+            self._record_desired_state(norm, desired)
+            confirm_key = f"{norm}::confirm"
+            required = int(
+                self._device_switch_throttle.get(
+                    confirm_key, float(self._confirmation_required)
+                )
+            )
+            hist = self._desired_state_history.get(norm, (desired, 0))
+            count = hist[1]
+
+            if count < required:
+                _LOGGER.debug(
+                    "Waiting for confirmation for %s -> desired=%s (count=%d/%d)",
+                    norm,
+                    desired,
+                    count,
+                    required,
+                )
+                _LOGGER.debug(
+                    "DBG_WAIT: entity=%s desired=%s count=%d required=%d eval=%s",
+                    norm,
+                    desired,
+                    count,
+                    required,
+                    getattr(self, "_current_eval_id", None),
+                )
+                return True, hist, required, count
+
+            # compute quick epoch normalized value for throttle checks
+            last = self._last_switch_time.get(norm)
+            try:
+                if isinstance(last, (int, float)):
+                    last_epoch_quick = float(last)
+                elif isinstance(last, str):
+                    parsed = dt_util.parse_datetime(last)
+                    last_epoch_quick = (
+                        float(dt_util.as_timestamp(parsed)) if parsed else None
+                    )
+                else:
+                    last_epoch_quick = float(dt_util.as_timestamp(last)) if last is not None else None
+            except Exception:
+                last_epoch_quick = None
+
+            throttle = self._device_switch_throttle.get(norm, self._default_switch_throttle_seconds)
+            # Early throttle suppression
+            if self._throttle_suppress(norm, last, throttle, desired):
+                return True, hist, required, count
+
+            return False, hist, required, count
+        except Exception:
+            _ignored_exc()
+            return False, (desired, 0), int(self._confirmation_required), 0
+
     async def _maybe_switch(
         self,
         action: str,
@@ -3432,15 +3579,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             # observed desired state for confirmation counting. The helper will
             # increment or reset the consecutive counter as appropriate.
             # Record using normalized key
-            self._record_desired_state(norm, desired)
-            confirm_key = f"{norm}::confirm"
-            required = int(
-                self._device_switch_throttle.get(
-                    confirm_key, float(self._confirmation_required)
-                )
+            suppress, hist, required, count = self._confirmation_and_throttle_check(
+                norm, desired
             )
-            hist = self._desired_state_history.get(norm, (desired, 0))
-            count = hist[1]
+            if suppress:
+                return False
+            # helper handled recording/required/count when needed
             # Emit a concise summary so failing CI/tests produce actionable
             # logs without scanning DEBUG output.
             _LOGGER.debug(
@@ -3507,6 +3651,19 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             except Exception:
                 last_epoch_quick = None
 
+            # Extracted helper: throttle timestamp suppression check
+            try:
+                if self._throttle_suppress(norm, last, throttle, desired):
+                    _LOGGER.info(
+                        "EARLY_SUPPRESS: entity=%s last_action=%s desired=%s elapsed suppressed",
+                        norm,
+                        self._get_last_action_state(norm),
+                        desired,
+                    )
+                    return False
+            except Exception:
+                _ignored_exc()
+
             # Quick conservative gate: if the last action differs from the
             # current desired state and the last switch happened inside the
             # throttle window, suppress the opposite call. This avoids races
@@ -3514,55 +3671,12 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             # action due to timing differences.
             try:
                 _LOGGER.debug("DEBUG_QUICK_GATE: raw last=%r type=%s", last, type(last))
-                if last_epoch_quick is not None:
-                    # Use the coordinator logical evaluation time when available
-                    # for deterministic behavior in tests; fall back to real UTC.
-                    now_for_quick = (
-                        getattr(self, "_current_eval_time", None) or dt_util.utcnow()
-                    )
-                    now_epoch_val = float(dt_util.as_timestamp(now_for_quick))
-                    elapsed_quick = now_epoch_val - float(last_epoch_quick)
-                    # Ensure throttle is a float
-                    try:
-                        throttle_val = float(throttle)
-                    except Exception:
-                        throttle_val = float(self._default_switch_throttle_seconds)
-
-                    last_action_state = self._last_action_state.get(norm)
-                    # Fallback: if we don't have a recorded last_action_state,
-                    # infer from the current HA entity state to decide whether
-                    # this would be a reversal.
-                    if last_action_state is None:
-                        try:
-                            st = self.hass.states.get(norm)
-                            last_action_state = bool(st and st.state == STATE_ON)
-                        except Exception:
-                            last_action_state = None
-
+                if self._quick_gate_suppress(norm, last_epoch_quick, throttle, desired):
                     _LOGGER.debug(
-                        "QUICK_GATE_INPUTS: entity=%s last_epoch=%.3f now_epoch=%.3f elapsed_quick=%.3f last_action=%r desired=%s throttle=%s",
+                        "QUICK_SUPPRESS: entity=%s suppression triggered by quick gate",
                         norm,
-                        float(last_epoch_quick),
-                        now_epoch_val,
-                        elapsed_quick,
-                        last_action_state,
-                        desired,
-                        throttle_val,
                     )
-
-                    if elapsed_quick is not None and elapsed_quick < throttle_val:
-                        if last_action_state is not None and bool(
-                            last_action_state
-                        ) != bool(desired):
-                            _LOGGER.debug(
-                                "QUICK_SUPPRESS: entity=%s last_action=%s desired=%s elapsed=%.3f throttle=%s",
-                                norm,
-                                last_action_state,
-                                desired,
-                                elapsed_quick,
-                                throttle_val,
-                            )
-                            return False
+                    return False
             except Exception:
                 # Be conservative and do not suppress on unexpected errors
                 _LOGGER.exception("Quick gate evaluation failed for %s", norm)

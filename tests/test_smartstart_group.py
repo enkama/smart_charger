@@ -37,8 +37,6 @@ async def test_smartstart_activation_and_ignore(hass):
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={})
     entry.add_to_hass(hass)
     coordinator = SmartChargerCoordinator(hass, entry)
-
-    
     # local prediction data not required for this activation smoke-test
 
     # The async helper may decide to activate/pause; await it to ensure
@@ -50,7 +48,7 @@ async def test_smartstart_activation_and_ignore(hass):
     assert True
 
 
-def test_smartstart_ignore_distant_forecast_check(hass):
+async def test_smartstart_ignore_distant_forecast_check(hass):
     # Added from test_smartstart_helper.py
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": []})
     entry.add_to_hass(hass)
@@ -75,7 +73,7 @@ def test_smartstart_ignore_distant_forecast_check(hass):
     assert res2 is None
 
 
-def test_smartstart_activate_if_needed_calls_switch(hass):
+async def test_smartstart_activate_if_needed_calls_switch(hass):
     # Added from test_smartstart_activate_helper.py
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": []})
     entry.add_to_hass(hass)
@@ -88,16 +86,16 @@ def test_smartstart_activate_if_needed_calls_switch(hass):
 
     service_data = {"entity_id": "switch.test"}
     # Call helper: charger_is_on False should cause activation
-    res = hass.loop.run_until_complete(
-        coord._smartstart_activate_if_needed("Test", "switch.test", service_data, False)
+    res = await coord._smartstart_activate_if_needed(
+        "Test", "switch.test", service_data, False
     )
     assert res is True
     assert len(turn_on_calls) == 1
 
     # If charger already on, nothing should be called
     turn_on_calls.clear()
-    res2 = hass.loop.run_until_complete(
-        coord._smartstart_activate_if_needed("Test", "switch.test", service_data, True)
+    res2 = await coord._smartstart_activate_if_needed(
+        "Test", "switch.test", service_data, True
     )
     assert res2 is None
     assert len(turn_on_calls) == 0

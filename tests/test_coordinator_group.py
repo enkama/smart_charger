@@ -25,7 +25,7 @@ from custom_components.smart_charger.const import (
     CONF_SMART_START_MARGIN,
     CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
-    
+
     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
     DOMAIN,
 )
@@ -46,7 +46,7 @@ async def test_coordinator_precharge_guard(hass):
     }
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={})
     entry.add_to_hass(hass)
-    coordinator = SmartChargerCoordinator(hass, entry)
+    coordinator = SmartChargerCoordinator(hass, entry)  # noqa: F841
     # No exceptions when checking precharge guard: call the current helper that
     # performs a similar safety check. It returns a boolean; we only assert no
     # exception is raised.
@@ -63,7 +63,7 @@ async def test_coordinator_last_action_guard_behaviour(hass):
     }
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={})
     entry.add_to_hass(hass)
-    coordinator = SmartChargerCoordinator(hass, entry)
+    coordinator = SmartChargerCoordinator(hass, entry)  # noqa: F841
 
     # (no local alarm data needed for this guard check)
     # Use _final_guard_should_suppress to exercise the same guard behaviour
@@ -127,7 +127,7 @@ async def test_precharge_turns_on_charger_when_threshold_hit(hass) -> None:
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device_dict]})
     entry.add_to_hass(hass)
 
-    coordinator = SmartChargerCoordinator(hass, entry)
+    coordinator = SmartChargerCoordinator(hass, entry)  # noqa: F841
 
     hass.states.async_set("sensor.test_battery", "40")
     hass.states.async_set("switch.test_charger", "off")
@@ -173,7 +173,7 @@ async def test_plan_hides_optional_durations_without_precharge(hass) -> None:
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device_dict]})
     entry.add_to_hass(hass)
 
-    coordinator = SmartChargerCoordinator(hass, entry)
+    coordinator = SmartChargerCoordinator(hass, entry)  # noqa: F841
 
     now = dt_util.now()
     hass.states.async_set("sensor.no_precharge_battery", "70")
@@ -222,7 +222,7 @@ async def test_plan_exposes_precharge_durations_when_active(hass) -> None:
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device_dict]})
     entry.add_to_hass(hass)
 
-    coordinator = SmartChargerCoordinator(hass, entry)
+    coordinator = SmartChargerCoordinator(hass, entry)  # noqa: F841
 
     now = dt_util.now()
     hass.states.async_set("sensor.precharge_battery", "40")
@@ -269,7 +269,7 @@ async def test_smart_start_waits_until_window_when_not_precharging(hass) -> None
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device_dict]})
     entry.add_to_hass(hass)
 
-    coordinator = SmartChargerCoordinator(hass, entry)
+    coordinator = SmartChargerCoordinator(hass, entry)  # noqa: F841
 
     now = dt_util.now()
     hass.states.async_set("sensor.test_battery", "73")
@@ -312,7 +312,7 @@ async def test_observed_drain_spike_tempered(hass) -> None:
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device_dict]})
     entry.add_to_hass(hass)
 
-    coordinator = SmartChargerCoordinator(hass, entry)
+    coordinator = SmartChargerCoordinator(hass, entry)  # noqa: F841
 
     now = dt_util.now().replace(hour=22, minute=30, second=0, microsecond=0)
     hass.states.async_set("sensor.drain_battery", "55")
@@ -366,7 +366,7 @@ async def test_observed_drain_ignores_recent_charging_sample(hass) -> None:
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device_dict]})
     entry.add_to_hass(hass)
 
-    coordinator = SmartChargerCoordinator(hass, entry)
+    coordinator = SmartChargerCoordinator(hass, entry)  # noqa: F841
 
     now = dt_util.now().replace(minute=0, second=0, microsecond=0)
     hass.states.async_set("sensor.charge_history_battery", "57")
@@ -416,8 +416,6 @@ async def test_precharge_not_triggered_when_well_above_threshold(hass) -> None:
 
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device_dict]})
     entry.add_to_hass(hass)
-
-    coordinator = SmartChargerCoordinator(hass, entry)
 
     now = dt_util.now().replace(hour=15, minute=0, second=0, microsecond=0)
     hass.states.async_set("sensor.no_precharge_battery", "70")
