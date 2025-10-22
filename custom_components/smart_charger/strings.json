@@ -139,8 +139,11 @@
           "smart_start_margin": "SmartStart finish margin (%)",
           "precharge_countdown_window": "Precharge release countdown window (%)",
           "suggestion_threshold": "Suggestion threshold",
-          "sensor_stale_seconds": "Sensor timeout (seconds)",
+        "sensor_stale_seconds": "Sensor timeout (seconds)",
           "learning_recent_sample_hours": "Recent sample window (hours)",
+        "adaptive_ewma_alpha": "Adaptive EWMA alpha",
+        "switch_throttle_seconds": "Switch throttle (seconds)",
+        "switch_confirmation_count": "Switch confirmation count",
           "adaptive_throttle_enabled": "Enable adaptive throttle mitigation",
           "adaptive_throttle_multiplier": "Adaptive throttle multiplier",
           "adaptive_throttle_min_seconds": "Adaptive throttle minimum (seconds)",
@@ -224,6 +227,19 @@
       "data": {
         "action": "Action",
         "entity": "Entity"
+      },
+      "options": {
+        "none": "No action",
+        "accept_all": "Accept all suggested changes",
+        "revert_all": "Revert all suggested changes",
+        "accept_entity": "Accept suggested change for selected entity",
+        "revert_entity": "Revert suggested change for selected entity"
+      },
+      "errors": {
+        "invalid_entity": "Please select a valid entity"
+      },
+      "help": {
+        "entity": "Choose an entity to accept or revert the suggested persisted change for."
       }
     }
   }

@@ -142,6 +142,9 @@
           "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)",
           "learning_recent_sample_hours": "Fenster für aktuelle Ladesamples (Stunden)"
           ,
+          "adaptive_ewma_alpha": "Adaptive EWMA Alpha",
+          "switch_throttle_seconds": "Schalter-Drosselung (Sekunden)",
+          "switch_confirmation_count": "Schalter-Bestätigungsanzahl",
           "adaptive_throttle_enabled": "Adaptive Drosselung aktivieren",
           "adaptive_throttle_multiplier": "Adaptive Drosselungs-Multiplikator",
           "adaptive_throttle_min_seconds": "Minimale Adaptive Drosselung (Sekunden)",
@@ -170,8 +173,22 @@
       "data": {
         "action": "Aktion",
         "entity": "Entität"
+      },
+      "options": {
+        "none": "Keine Aktion",
+        "accept_all": "Alle vorgeschlagenen Änderungen akzeptieren",
+        "revert_all": "Alle vorgeschlagenen Änderungen verwerfen",
+        "accept_entity": "Vorgeschlagene Änderung für ausgewählte Entität akzeptieren",
+        "revert_entity": "Vorgeschlagene Änderung für ausgewählte Entität verwerfen"
+      },
+      "errors": {
+        "invalid_entity": "Bitte wähle eine gültige Entität"
+      },
+      "help": {
+        "entity": "Wähle eine Entität aus, für die die vorgeschlagene persistente Änderung akzeptiert oder verworfen werden soll."
       }
     }
+
     }
   },
   "selector": {
