@@ -48,14 +48,18 @@ async def test_adaptive_backoff_grows_with_mode(hass):
         CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER: 10.0,
     }
 
-    entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options=base_options)
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={"devices": [device]}, options=base_options
+    )
     entry.add_to_hass(hass)
 
     results = {}
 
     for mode in ("conservative", "normal", "aggressive"):
         opts = dict(base_options, **{CONF_ADAPTIVE_THROTTLE_MODE: mode})
-        mode_entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options=opts)
+        mode_entry = MockConfigEntry(
+            domain=DOMAIN, data={"devices": [device]}, options=opts
+        )
         mode_entry.add_to_hass(hass)
         mode_coordinator = SmartChargerCoordinator(hass, mode_entry)
 

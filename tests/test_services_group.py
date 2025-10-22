@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 import pytest
-from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.smart_charger.const import DOMAIN
@@ -19,7 +16,12 @@ async def test_services_override_entity_and_entry(hass):
     # entry-level override persistence, and post-alarm services (list/accept/revert/clear).
 
     # --- Setup entry and coordinator ---
-    device = {"name": "SV1", "battery_sensor": "sensor.sv1", "charger_switch": "switch.sv1", "target_level": 95}
+    device = {
+        "name": "SV1",
+        "battery_sensor": "sensor.sv1",
+        "charger_switch": "switch.sv1",
+        "target_level": 95,
+    }
     entry = MockConfigEntry(domain=DOMAIN, data={"devices": [device]}, options={})
     entry.add_to_hass(hass)
     # Register services like the original tests do
@@ -45,7 +47,9 @@ async def test_services_override_entity_and_entry(hass):
         "applied": 2.0,
         "expires": 999999.0,
     }
-    assert (coordinator._adaptive_throttle_overrides.get("switch.sv1") or {}).get("applied") == 2.0
+    assert (coordinator._adaptive_throttle_overrides.get("switch.sv1") or {}).get(
+        "applied"
+    ) == 2.0
 
     # --- Entry-level override service semantics ---
     assert getattr(coordinator, "_adaptive_mode_override", None) is None
@@ -97,7 +101,7 @@ async def test_services_override_entity_and_entry(hass):
         blocking=True,
     )
     await asyncio.sleep(0)
-    assert (entry.options.get("adaptive_mode_overrides") or {})
+    assert entry.options.get("adaptive_mode_overrides") or {}
 
     # Revert suggested persistence via service
     await hass.services.async_call(
@@ -110,8 +114,18 @@ async def test_services_override_entity_and_entry(hass):
     assert "switch.sv1" not in (entry.options.get("adaptive_mode_overrides") or {})
 
     # Clear post-alarm corrections
-    coordinator._post_alarm_corrections.append({"entity": "switch.sv1", "reason": "flipflop"})
-    coordinator._post_alarm_corrections.append({"entity": "switch.other", "reason": "late_start"})
+    coordinator._post_alarm_corrections.append(
+        {"entity": "switch.sv1", "reason": "flipflop"}
+    )
+    coordinator._post_alarm_corrections.append(
+        {"entity": "switch.other", "reason": "late_start"}
+    )
     # simulate clear for switch.sv1
-    coordinator._post_alarm_corrections = [c for c in coordinator._post_alarm_corrections if c.get("entity") != "switch.sv1"]
-    assert all(c.get("entity") != "switch.sv1" for c in coordinator._post_alarm_corrections)
+    coordinator._post_alarm_corrections = [
+        c
+        for c in coordinator._post_alarm_corrections
+        if c.get("entity") != "switch.sv1"
+    ]
+    assert all(
+        c.get("entity") != "switch.sv1" for c in coordinator._post_alarm_corrections
+    )

@@ -258,5 +258,12 @@ async def test_post_alarm_self_heal_flows(hass):
 
     hass.config_entries.async_update_entry = orig_update
 
-    evidence = bool(called or coordinator._post_alarm_temp_overrides or coordinator._adaptive_throttle_overrides or coordinator._post_alarm_miss_streaks or coordinator._post_alarm_corrections or coordinator._post_alarm_last_handled)
+    evidence = bool(
+        called
+        or coordinator._post_alarm_temp_overrides
+        or coordinator._adaptive_throttle_overrides
+        or coordinator._post_alarm_miss_streaks
+        or coordinator._post_alarm_corrections
+        or coordinator._post_alarm_last_handled
+    )
     assert evidence

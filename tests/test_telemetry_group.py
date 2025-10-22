@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from homeassistant.util import dt as dt_util
@@ -136,7 +136,10 @@ def test_update_flipflop_ewma_and_mode():
     # Seed many recent events to produce a high rate
     coord._flipflop_window_seconds = 10.0
     # several events within window
-    coord._flipflop_events = {"e1": [now_epoch - 1, now_epoch - 2, now_epoch - 3], "e2": [now_epoch - 1, now_epoch - 2]}
+    coord._flipflop_events = {
+        "e1": [now_epoch - 1, now_epoch - 2, now_epoch - 3],
+        "e2": [now_epoch - 1, now_epoch - 2],
+    }
 
     # Ensure default alpha is used
     coord._flipflop_ewma = 0.0
@@ -170,4 +173,7 @@ def test_record_flipflop_event_trims_old():
     coord._record_flipflop_event(ent, now_epoch)
 
     assert ent in coord._flipflop_events
-    assert all(e >= now_epoch - coord._flipflop_window_seconds for e in coord._flipflop_events[ent])
+    assert all(
+        e >= now_epoch - coord._flipflop_window_seconds
+        for e in coord._flipflop_events[ent]
+    )

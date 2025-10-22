@@ -5,7 +5,7 @@ import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Iterable, Mapping
 
 from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant
@@ -144,7 +144,7 @@ def _ignored_exc() -> None:
             _REAL_LOGGER.debug("Ignored exception (suppressed) and logging failed")
         except Exception:
             _ignored_exc()
-    
+
 
 def _coerce_margin(value: Any) -> float | None:
     if value in (None, ""):
@@ -990,7 +990,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     "Skipping invalid device configuration %s: %s", raw, err
                 )
         # end _iter_device_configs
-        
+
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         # Record the logical evaluation time so switch throttling and
         # confirmation can be evaluated against the same simulated time used
@@ -1231,7 +1231,6 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         except Exception as err:
             _LOGGER.debug("Adaptive interval calculation failed: %s", err)
 
-
     async def _prepare_device_and_build_plan(
         self, device: DeviceConfig, now_local: datetime, learning
     ) -> dict[str, Any] | None:
@@ -1261,7 +1260,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         1.0, float(device.switch_throttle_seconds)
                     )
                 else:
-                    self._device_switch_throttle[ent] = self._default_switch_throttle_seconds
+                    self._device_switch_throttle[ent] = (
+                        self._default_switch_throttle_seconds
+                    )
                 # confirmation count
                 if device.switch_confirmation_count is not None:
                     self._desired_state_history.setdefault(ent, (False, 0))
@@ -1300,7 +1301,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             _ignored_exc()
             return
 
-        cutoff = now_epoch - float(self._flipflop_window_seconds)
+        _cutoff = now_epoch - float(self._flipflop_window_seconds)
         # Expire adaptive overrides (small helper)
         try:
             self._expire_adaptive_overrides(now_epoch)
@@ -1319,7 +1320,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             for ent, events in list(self._flipflop_events.items()):
                 try:
-                    recent = self._flipflop_events.get(ent, [])
+                    recent = events or []
                 except Exception:
                     _ignored_exc()
                     continue
@@ -1337,14 +1338,18 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 except Exception:
                     _ignored_exc()
 
+                # current throttle is read for informational purposes only
+                # and not used later in this function; compute it defensively
+                # but don't bind to a variable that flake8 treats as unused.
                 try:
-                    current = float(
-                        self._device_switch_throttle.get(ent, self._default_switch_throttle_seconds)
+                    float(
+                        self._device_switch_throttle.get(
+                            ent, self._default_switch_throttle_seconds
+                        )
                         or self._default_switch_throttle_seconds
                     )
                 except Exception:
                     _ignored_exc()
-                    current = float(self._default_switch_throttle_seconds)
 
                 try:
                     self._apply_adaptive_throttle_for_entity(ent, recent, now_epoch)
@@ -1442,7 +1447,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         except Exception:
             _ignored_exc()
 
-    def _apply_adaptive_throttle_for_entity(self, ent: str, recent: list[float], now_epoch: float) -> None:
+    def _apply_adaptive_throttle_for_entity(
+        self, ent: str, recent: list[float], now_epoch: float
+    ) -> None:
         """Compute and apply an adaptive throttle override for a single entity.
 
         This encapsulates the multiplier/backoff logic and the details of
@@ -1450,7 +1457,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         """
         try:
             current = float(
-                self._device_switch_throttle.get(ent, self._default_switch_throttle_seconds)
+                self._device_switch_throttle.get(
+                    ent, self._default_switch_throttle_seconds
+                )
                 or self._default_switch_throttle_seconds
             )
         except Exception:
@@ -1465,13 +1474,18 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 * float(excess)
                 * float(getattr(self, "_adaptive_mode_factor", 1.0))
             )
-            var_multiplier = min(var_multiplier, float(self._adaptive_throttle_max_multiplier))
+            var_multiplier = min(
+                var_multiplier, float(self._adaptive_throttle_max_multiplier)
+            )
         except Exception:
             _ignored_exc()
             var_multiplier = float(self._adaptive_throttle_multiplier)
 
         try:
-            desired = max(current * float(var_multiplier), float(self._adaptive_throttle_min_seconds))
+            desired = max(
+                current * float(var_multiplier),
+                float(self._adaptive_throttle_min_seconds),
+            )
         except Exception:
             _ignored_exc()
             desired = float(self._adaptive_throttle_min_seconds)
@@ -1484,20 +1498,28 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         if not meta_entry:
             try:
                 orig = float(
-                    self._device_switch_throttle.get(ent, self._default_switch_throttle_seconds)
+                    self._device_switch_throttle.get(
+                        ent, self._default_switch_throttle_seconds
+                    )
                     or self._default_switch_throttle_seconds
                 )
                 self._adaptive_throttle_overrides[ent] = {
                     "original": orig,
                     "applied": float(desired),
-                    "expires": float(now_epoch + float(self._adaptive_throttle_duration_seconds)),
+                    "expires": float(
+                        now_epoch + float(self._adaptive_throttle_duration_seconds)
+                    ),
                 }
                 self._device_switch_throttle[ent] = float(desired)
                 _LOGGER.info(
                     "Adaptive throttle applied for %s = %.1fs (original %.1fs) until %.0f",
                     ent,
                     float(desired),
-                    float(self._adaptive_throttle_overrides.get(ent, {}).get("original", 0.0)),
+                    float(
+                        self._adaptive_throttle_overrides.get(ent, {}).get(
+                            "original", 0.0
+                        )
+                    ),
                     float(now_epoch + float(self._adaptive_throttle_duration_seconds)),
                 )
             except Exception:
@@ -1507,7 +1529,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 meta_applied = float(meta_entry.get("applied", 0.0) or 0.0)
                 new_applied = max(meta_applied, float(desired))
                 meta_entry["applied"] = new_applied
-                meta_entry["expires"] = float(now_epoch + float(self._adaptive_throttle_duration_seconds))
+                meta_entry["expires"] = float(
+                    now_epoch + float(self._adaptive_throttle_duration_seconds)
+                )
                 self._adaptive_throttle_overrides[ent] = meta_entry
                 self._device_switch_throttle[ent] = float(new_applied)
             except Exception:
@@ -1523,14 +1547,24 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         """
         try:
             total_events = sum(len(v) for v in self._flipflop_events.values())
-            window = float(getattr(self, "_flipflop_window_seconds", DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS))
+            window = float(
+                getattr(
+                    self,
+                    "_flipflop_window_seconds",
+                    DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+                )
+            )
             rate_per_sec = float(total_events) / window if window > 0 else 0.0
 
             try:
                 entry_obj = getattr(self, "entry", None)
                 if entry_obj and getattr(entry_obj, "options", None) is not None:
                     raw_alpha = entry_obj.options.get(CONF_ADAPTIVE_EWMA_ALPHA)
-                    alpha = float(raw_alpha) if raw_alpha is not None else DEFAULT_ADAPTIVE_EWMA_ALPHA
+                    alpha = (
+                        float(raw_alpha)
+                        if raw_alpha is not None
+                        else DEFAULT_ADAPTIVE_EWMA_ALPHA
+                    )
                 else:
                     alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
             except Exception:
@@ -1546,7 +1580,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             try:
                 self._flipflop_ewma = ewma
                 self._flipflop_ewma_last_update = float(now_epoch)
-                exceeded_threshold = float(self._flipflop_warn_threshold) / max(1.0, float(self._flipflop_window_seconds))
+                exceeded_threshold = float(self._flipflop_warn_threshold) / max(
+                    1.0, float(self._flipflop_window_seconds)
+                )
                 prev_exceeded = bool(getattr(self, "_flipflop_ewma_exceeded", False))
                 new_exceeded = ewma >= exceeded_threshold
                 self._flipflop_ewma_exceeded = new_exceeded
@@ -1561,19 +1597,29 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     )
                 elif new_exceeded and prev_exceeded:
                     try:
-                        since = float(getattr(self, "_flipflop_ewma_exceeded_since", now_ts) or now_ts)
+                        since = float(
+                            getattr(self, "_flipflop_ewma_exceeded_since", now_ts)
+                            or now_ts
+                        )
                         duration = now_ts - since
-                        if duration >= 300.0 and self._adaptive_mode_override != "aggressive":
+                        if (
+                            duration >= 300.0
+                            and self._adaptive_mode_override != "aggressive"
+                        ):
                             self._adaptive_mode_override = "aggressive"
                             _LOGGER.warning(
                                 "Adaptive mode override applied: aggressive (sustained EWMA for %.0fs)",
                                 duration,
                             )
                             try:
-                                new_opts = dict(getattr(self.entry, "options", {}) or {})
+                                new_opts = dict(
+                                    getattr(self.entry, "options", {}) or {}
+                                )
                                 new_opts["adaptive_mode_override"] = "aggressive"
                                 try:
-                                    self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                    self.hass.config_entries.async_update_entry(
+                                        self.entry, options=new_opts
+                                    )
                                 except Exception:
                                     _ignored_exc()
                             except Exception:
@@ -1592,7 +1638,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             if "adaptive_mode_override" in new_opts:
                                 new_opts.pop("adaptive_mode_override", None)
                                 try:
-                                    self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                    self.hass.config_entries.async_update_entry(
+                                        self.entry, options=new_opts
+                                    )
                                 except Exception:
                                     _ignored_exc()
                         except Exception:
@@ -1601,8 +1649,6 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 _ignored_exc()
         except Exception:
             _ignored_exc()
-
-        
 
     def _float_state(self, entity_id: str | None) -> float | None:
         if not entity_id:
@@ -2982,7 +3028,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             return
 
         try:
-            cutoff = float(epoch) - float(getattr(self, "_flipflop_window_seconds", 300.0))
+            cutoff = float(epoch) - float(
+                getattr(self, "_flipflop_window_seconds", 300.0)
+            )
             self._flipflop_events[entity] = [e for e in evts if e >= cutoff]
         except Exception:
             _ignored_exc()
@@ -4650,7 +4698,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             entries = self.hass.data.get(DOMAIN, {}).get("entries", {})
             entry_data = entries.get(getattr(self.entry, "entry_id", ""), {}) or {}
-            state_machine = entry_data.get("state_machine") if isinstance(entry_data, dict) else None
+            state_machine = (
+                entry_data.get("state_machine")
+                if isinstance(entry_data, dict)
+                else None
+            )
         except Exception:
             entry_data = {}
             state_machine = None
@@ -4676,7 +4728,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 if now_epoch < alarm_epoch:
                     continue
                 # Avoid handling the same alarm repeatedly
-                last_handled = float(self._post_alarm_last_handled.get(charger_ent, 0.0) or 0.0)
+                last_handled = float(
+                    self._post_alarm_last_handled.get(charger_ent, 0.0) or 0.0
+                )
                 if last_handled >= alarm_epoch:
                     continue
                 # If battery reached target, nothing to do
@@ -4686,8 +4740,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
 
                 # Count flip-flop events
                 try:
-                    cutoff = now_epoch - float(getattr(self, "_flipflop_window_seconds", 300.0))
-                    events = [e for e in (self._flipflop_events.get(charger_ent) or []) if e >= cutoff]
+                    cutoff = now_epoch - float(
+                        getattr(self, "_flipflop_window_seconds", 300.0)
+                    )
+                    events = [
+                        e
+                        for e in (self._flipflop_events.get(charger_ent) or [])
+                        if e >= cutoff
+                    ]
                     flipflop_count = len(events)
                 except Exception:
                     flipflop_count = 0
@@ -4696,15 +4756,44 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 details: dict[str, Any] = {}
                 if flipflop_count >= int(getattr(self, "_flipflop_warn_threshold", 3)):
                     try:
-                        current = float(self._device_switch_throttle.get(charger_ent, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds)
+                        current = float(
+                            self._device_switch_throttle.get(
+                                charger_ent, self._default_switch_throttle_seconds
+                            )
+                            or self._default_switch_throttle_seconds
+                        )
                         mode_factor = 1.4
-                        var_multiplier = float(getattr(self, "_adaptive_throttle_multiplier", 2.0)) * float(mode_factor)
-                        desired = max(current * var_multiplier, float(getattr(self, "_adaptive_throttle_min_seconds", 120.0)))
-                        expires = float(now_epoch + float(getattr(self, "_adaptive_throttle_duration_seconds", 600.0)))
+                        var_multiplier = float(
+                            getattr(self, "_adaptive_throttle_multiplier", 2.0)
+                        ) * float(mode_factor)
+                        desired = max(
+                            current * var_multiplier,
+                            float(
+                                getattr(self, "_adaptive_throttle_min_seconds", 120.0)
+                            ),
+                        )
+                        expires = float(
+                            now_epoch
+                            + float(
+                                getattr(
+                                    self, "_adaptive_throttle_duration_seconds", 600.0
+                                )
+                            )
+                        )
                         try:
-                            self._post_alarm_temp_overrides[charger_ent] = {"applied": float(desired), "expires": float(expires), "reason": "flipflop"}
+                            self._post_alarm_temp_overrides[charger_ent] = {
+                                "applied": float(desired),
+                                "expires": float(expires),
+                                "reason": "flipflop",
+                            }
                             self._adaptive_throttle_overrides[charger_ent] = {
-                                "original": float(self._device_switch_throttle.get(charger_ent, self._default_switch_throttle_seconds) or self._default_switch_throttle_seconds),
+                                "original": float(
+                                    self._device_switch_throttle.get(
+                                        charger_ent,
+                                        self._default_switch_throttle_seconds,
+                                    )
+                                    or self._default_switch_throttle_seconds
+                                ),
                                 "applied": float(desired),
                                 "expires": float(expires),
                             }
@@ -4713,64 +4802,123 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                             _ignored_exc()
                         try:
                             if state_machine and hasattr(state_machine, "add_error"):
-                                state_machine.add_error(dev_name, f"post_alarm_missed_target:flipflop_count={flipflop_count}")
+                                state_machine.add_error(
+                                    dev_name,
+                                    f"post_alarm_missed_target:flipflop_count={flipflop_count}",
+                                )
                         except Exception:
                             _ignored_exc()
                         reason = "flipflop"
                         details["flipflop_count"] = int(flipflop_count)
                         details["applied_throttle"] = float(desired)
-                        streaks = self._post_alarm_miss_streaks.setdefault(charger_ent, {})
+                        streaks = self._post_alarm_miss_streaks.setdefault(
+                            charger_ent, {}
+                        )
                         streaks["flipflop"] = int(streaks.get("flipflop", 0)) + 1
                         try:
                             if int(streaks.get("flipflop", 0)) >= 2:
-                                new_opts = dict(getattr(self.entry, "options", {}) or {})
-                                mapping = dict(new_opts.get("adaptive_mode_overrides", {}) or {})
+                                new_opts = dict(
+                                    getattr(self.entry, "options", {}) or {}
+                                )
+                                mapping = dict(
+                                    new_opts.get("adaptive_mode_overrides", {}) or {}
+                                )
                                 mapping[charger_ent] = "aggressive"
                                 new_opts["adaptive_mode_overrides"] = mapping
                                 try:
-                                    self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
+                                    self.hass.config_entries.async_update_entry(
+                                        self.entry, options=new_opts
+                                    )
                                 except Exception:
                                     _ignored_exc()
                         except Exception:
                             _ignored_exc()
-                        _LOGGER.warning("Post-alarm correction applied for %s (%s): flipflop_count=%d applied_throttle=%.1fs", dev_name, charger_ent, flipflop_count, float(desired))
+                        _LOGGER.warning(
+                            "Post-alarm correction applied for %s (%s): flipflop_count=%d applied_throttle=%.1fs",
+                            dev_name,
+                            charger_ent,
+                            flipflop_count,
+                            float(desired),
+                        )
                     except Exception:
                         _ignored_exc()
                 else:
                     try:
-                        pred_level = float(pd.get("predicted_level_at_alarm", 0.0) or 0.0)
-                        charge_duration_min = float(pd.get("charge_duration_min") or 0.0)
+                        _pred_level = float(
+                            pd.get("predicted_level_at_alarm", 0.0) or 0.0
+                        )
+                        charge_duration_min = float(
+                            pd.get("charge_duration_min") or 0.0
+                        )
                         hours_until_alarm = None
                         try:
                             aiso = pd.get("alarm_time")
                             adt = dt_util.parse_datetime(str(aiso)) if aiso else None
                             if adt:
-                                hours_until_alarm = max(0.0, (adt - now_local).total_seconds() / 3600.0)
+                                hours_until_alarm = max(
+                                    0.0, (adt - now_local).total_seconds() / 3600.0
+                                )
                         except Exception:
                             hours_until_alarm = None
 
-                        if charge_duration_min and hours_until_alarm is not None and (charge_duration_min / 60.0) > hours_until_alarm + 0.01:
+                        if (
+                            charge_duration_min
+                            and hours_until_alarm is not None
+                            and (charge_duration_min / 60.0) > hours_until_alarm + 0.01
+                        ):
                             reason = "late_start"
                             details["charge_duration_min"] = float(charge_duration_min)
                             details["hours_until_alarm"] = float(hours_until_alarm)
                             try:
-                                streaks = self._post_alarm_miss_streaks.setdefault(charger_ent, {})
-                                streaks["late_start"] = int(streaks.get("late_start", 0)) + 1
+                                streaks = self._post_alarm_miss_streaks.setdefault(
+                                    charger_ent, {}
+                                )
+                                streaks["late_start"] = (
+                                    int(streaks.get("late_start", 0)) + 1
+                                )
                                 if int(streaks.get("late_start", 0)) >= 2:
                                     try:
-                                        device_margin = float(pd.get("smart_start_margin") or float(getattr(self, "_smart_start_margin", DEFAULT_SMART_START_MARGIN)))
+                                        device_margin = float(
+                                            pd.get("smart_start_margin")
+                                            or float(
+                                                getattr(
+                                                    self,
+                                                    "_smart_start_margin",
+                                                    DEFAULT_SMART_START_MARGIN,
+                                                )
+                                            )
+                                        )
                                     except Exception:
-                                        device_margin = float(getattr(self, "_smart_start_margin", DEFAULT_SMART_START_MARGIN))
+                                        device_margin = float(
+                                            getattr(
+                                                self,
+                                                "_smart_start_margin",
+                                                DEFAULT_SMART_START_MARGIN,
+                                            )
+                                        )
                                     bump = 1.5
                                     new_margin = max(0.0, device_margin + bump)
                                     try:
-                                        new_opts = dict(getattr(self.entry, "options", {}) or {})
-                                        mapping = dict(new_opts.get("smart_start_margin_overrides", {}) or {})
+                                        new_opts = dict(
+                                            getattr(self.entry, "options", {}) or {}
+                                        )
+                                        mapping = dict(
+                                            new_opts.get(
+                                                "smart_start_margin_overrides", {}
+                                            )
+                                            or {}
+                                        )
                                         mapping[charger_ent] = float(new_margin)
-                                        new_opts["smart_start_margin_overrides"] = mapping
+                                        new_opts["smart_start_margin_overrides"] = (
+                                            mapping
+                                        )
                                         try:
-                                            self.hass.config_entries.async_update_entry(self.entry, options=new_opts)
-                                            self._post_alarm_persisted_smart_start[charger_ent] = float(new_margin)
+                                            self.hass.config_entries.async_update_entry(
+                                                self.entry, options=new_opts
+                                            )
+                                            self._post_alarm_persisted_smart_start[
+                                                charger_ent
+                                            ] = float(new_margin)
                                         except Exception:
                                             _ignored_exc()
                                     except Exception:
@@ -4779,29 +4927,70 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                                 _ignored_exc()
                         else:
                             try:
-                                predicted_level = float(pd.get("predicted_level_at_alarm", 0.0) or 0.0)
+                                predicted_level = float(
+                                    pd.get("predicted_level_at_alarm", 0.0) or 0.0
+                                )
                                 actual_batt = float(pd.get("battery", 0.0) or 0.0)
                                 delta = predicted_level - actual_batt
                                 if delta >= 5.0:
                                     reason = "drain_miss"
-                                    details["predicted_level_at_alarm"] = float(predicted_level)
+                                    details["predicted_level_at_alarm"] = float(
+                                        predicted_level
+                                    )
                                     details["actual_battery"] = float(actual_batt)
                                     details["delta"] = float(delta)
                                     try:
                                         pid = dev_name
-                                        self._post_alarm_learning_retrain_requests[pid] = int(self._post_alarm_learning_retrain_requests.get(pid, 0)) + 1
-                                        if int(self._post_alarm_learning_retrain_requests.get(pid, 0)) >= 3:
+                                        self._post_alarm_learning_retrain_requests[
+                                            pid
+                                        ] = (
+                                            int(
+                                                self._post_alarm_learning_retrain_requests.get(
+                                                    pid, 0
+                                                )
+                                            )
+                                            + 1
+                                        )
+                                        if (
+                                            int(
+                                                self._post_alarm_learning_retrain_requests.get(
+                                                    pid, 0
+                                                )
+                                            )
+                                            >= 3
+                                        ):
                                             try:
-                                                learning = getattr(entry_data, "learning", None) or (entry_data.get("learning") if isinstance(entry_data, dict) else None)
+                                                learning = getattr(
+                                                    entry_data, "learning", None
+                                                ) or (
+                                                    entry_data.get("learning")
+                                                    if isinstance(entry_data, dict)
+                                                    else None
+                                                )
                                             except Exception:
                                                 learning = None
                                             try:
-                                                if learning and hasattr(learning, "async_reset_profile"):
-                                                    self.hass.async_create_task(learning.async_reset_profile(pid))
-                                                    if state_machine and hasattr(state_machine, "add_error"):
-                                                        state_machine.add_error(pid, "learning_reset_scheduled:drain_miss")
-                                                    self._post_alarm_learning_retrain_requests[pid] = 0
-                                                    details["learning_reset_scheduled"] = True
+                                                if learning and hasattr(
+                                                    learning, "async_reset_profile"
+                                                ):
+                                                    self.hass.async_create_task(
+                                                        learning.async_reset_profile(
+                                                            pid
+                                                        )
+                                                    )
+                                                    if state_machine and hasattr(
+                                                        state_machine, "add_error"
+                                                    ):
+                                                        state_machine.add_error(
+                                                            pid,
+                                                            "learning_reset_scheduled:drain_miss",
+                                                        )
+                                                    self._post_alarm_learning_retrain_requests[
+                                                        pid
+                                                    ] = 0
+                                                    details[
+                                                        "learning_reset_scheduled"
+                                                    ] = True
                                             except Exception:
                                                 _ignored_exc()
                                     except Exception:
@@ -4811,9 +5000,16 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     except Exception:
                         _ignored_exc()
 
-            # Record correction or suggestion into bounded history
+                # Record correction or suggestion into bounded history
                 try:
-                    entry = {"entity": charger_ent, "device": dev_name, "alarm_epoch": alarm_epoch, "timestamp": now_epoch, "reason": reason or "unknown", "details": details}
+                    entry = {
+                        "entity": charger_ent,
+                        "device": dev_name,
+                        "alarm_epoch": alarm_epoch,
+                        "timestamp": now_epoch,
+                        "reason": reason or "unknown",
+                        "details": details,
+                    }
                     self._post_alarm_corrections.insert(0, entry)
                     if len(self._post_alarm_corrections) > 50:
                         self._post_alarm_corrections = self._post_alarm_corrections[:50]
