@@ -71,7 +71,7 @@ def test_prune_flipflop_events():
     entry = DummyEntry()
     coord = SmartChargerCoordinator(hass, entry)
 
-    now = datetime.utcnow()
+    now = dt_util.utcnow()
     now_epoch = float((now - timedelta(seconds=0)).timestamp())
 
     # Seed events: one old, two recent
@@ -98,7 +98,7 @@ def test_apply_adaptive_throttle_creates_override():
     entry = DummyEntry()
     coord = SmartChargerCoordinator(hass, entry)
 
-    now = datetime.utcnow()
+    now = dt_util.utcnow()
     now_epoch = float(now.timestamp())
 
     # Configure coordinator thresholds to make behavior deterministic
@@ -128,7 +128,7 @@ def test_update_flipflop_ewma_and_mode():
     entry = DummyEntry()
     coord = SmartChargerCoordinator(hass, entry)
 
-    now = datetime.utcnow()
+    now = dt_util.utcnow()
     now_epoch = float(now.timestamp())
 
     # Seed many recent events to produce a high rate
@@ -157,7 +157,7 @@ def test_record_flipflop_event_trims_old():
     entry = DummyEntry()
     coord = SmartChargerCoordinator(hass, entry)
 
-    now = datetime.utcnow()
+    now = dt_util.utcnow()
     now_epoch = float(now.timestamp())
 
     ent = "switch.test"
