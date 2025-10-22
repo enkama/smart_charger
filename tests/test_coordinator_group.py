@@ -10,6 +10,7 @@ from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_mock_service,
 )
+
 from custom_components.smart_charger.const import (
     ALARM_MODE_SINGLE,
     CONF_ALARM_ENTITY,

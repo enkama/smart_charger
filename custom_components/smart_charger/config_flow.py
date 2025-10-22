@@ -85,7 +85,6 @@ from .const import (
     DOMAIN,
 )
 
-
 # Local logger for the config flow module.
 _LOGGER = logging.getLogger(__name__)
 

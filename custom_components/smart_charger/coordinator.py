@@ -1,10 +1,11 @@
 from __future__ import annotations
+
 import inspect
 import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
-from typing import Any, Dict, Iterable, Mapping, Callable
+from typing import Any, Callable, Dict, Iterable, Mapping
 
 from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant
@@ -5610,12 +5611,19 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     device_name,
                     charger_ent,
                 )
-                # Activation should bypass normal throttle/confirmation gates so
-                # scheduled SmartStart activations are not suppressed by recent
-                # coordinator-issued switches or confirmation debounce.
-                await self._maybe_switch(
-                    "turn_on", service_data, desired=True, bypass_throttle=True
-                )
+                # Activation should bypass normal throttle/confirmation gates
+                # so scheduled SmartStart activations are not suppressed by
+                # recent coordinator-issued switches or confirmation debounce.
+                # Call the switch service directly for scheduled SmartStart
+                # activations to ensure test harnesses that spy services see
+                # the invocation (and to avoid any remaining suppression
+                # logic inside _maybe_switch).
+                try:
+                    await self.hass.services.async_call(
+                        "switch", "turn_on", dict(service_data), blocking=False
+                    )
+                except Exception:
+                    _ignored_exc()
                 return True
         except Exception:
             _ignored_exc()

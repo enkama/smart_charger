@@ -1,8 +1,9 @@
 import time
 
-from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+
 from custom_components.smart_charger.const import DOMAIN
+from custom_components.smart_charger.coordinator import SmartChargerCoordinator
 
 
 def test_expire_adaptive_overrides(hass):

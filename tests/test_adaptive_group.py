@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 
-import time
 import pytest
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
