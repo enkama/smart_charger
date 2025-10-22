@@ -24,7 +24,12 @@ async def test_quick_gate_suppresses_when_recent_opposite(hass):
     # differs from desired (False) so suppression expected
     coord._device_switch_throttle[ent] = 10.0
 
-    assert coord._quick_gate_suppress(ent, last_epoch, coord._device_switch_throttle[ent], False) is True
+    assert (
+        coord._quick_gate_suppress(
+            ent, last_epoch, coord._device_switch_throttle[ent], False
+        )
+        is True
+    )
 
 
 async def test_quick_gate_allows_when_elapsed_exceeds_throttle(hass):
@@ -41,4 +46,9 @@ async def test_quick_gate_allows_when_elapsed_exceeds_throttle(hass):
 
     coord._device_switch_throttle[ent] = 5.0
 
-    assert coord._quick_gate_suppress(ent, last_epoch, coord._device_switch_throttle[ent], False) is False
+    assert (
+        coord._quick_gate_suppress(
+            ent, last_epoch, coord._device_switch_throttle[ent], False
+        )
+        is False
+    )

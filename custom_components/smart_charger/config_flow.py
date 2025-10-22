@@ -1027,23 +1027,13 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         if user_input:
             action = user_input.get("action")
             if action == "accept_all":
-                new_opts = dict(getattr(self.config_entry, "options", {}) or {})
-                if suggested_smart_start:
-                    new_opts["smart_start_margin_overrides"] = dict(
-                        suggested_smart_start
-                    )
-                if suggested_adaptive:
-                    new_opts["adaptive_mode_overrides"] = dict(suggested_adaptive)
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, options=new_opts
+                self._apply_suggestions_action(
+                    "accept_all", suggested_smart_start, suggested_adaptive
                 )
                 return self.async_create_entry(title="", data={})
             if action == "revert_all":
-                new_opts = dict(getattr(self.config_entry, "options", {}) or {})
-                new_opts.pop("smart_start_margin_overrides", None)
-                new_opts.pop("adaptive_mode_overrides", None)
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry, options=new_opts
+                self._apply_suggestions_action(
+                    "revert_all", suggested_smart_start, suggested_adaptive
                 )
                 return self.async_create_entry(title="", data={})
 
@@ -1128,6 +1118,34 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             # Use existing code path for accept/revert all
             action = user_input.get("action")
             if action == "accept_all":
+                self._apply_suggestions_action(
+                    "accept_all", suggested_smart_start, suggested_adaptive
+                )
+                return self.async_create_entry(title="", data={})
+            if action == "revert_all":
+                self._apply_suggestions_action(
+                    "revert_all", suggested_smart_start, suggested_adaptive
+                )
+                return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="review_suggestions",
+            data_schema=schema,
+            description_placeholders={"info": "\n".join(lines)},
+        )
+
+    def _apply_suggestions_action(
+        self,
+        action: str,
+        suggested_smart_start: dict[str, Any],
+        suggested_adaptive: dict[str, Any],
+    ) -> None:
+        """Apply or revert all suggested persisted changes.
+
+        Extracted to reduce duplication in the flow handler.
+        """
+        try:
+            if action == "accept_all":
                 new_opts = dict(getattr(self.config_entry, "options", {}) or {})
                 if suggested_smart_start:
                     new_opts["smart_start_margin_overrides"] = dict(
@@ -1138,7 +1156,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, options=new_opts
                 )
-                return self.async_create_entry(title="", data={})
+                return
             if action == "revert_all":
                 new_opts = dict(getattr(self.config_entry, "options", {}) or {})
                 new_opts.pop("smart_start_margin_overrides", None)
@@ -1146,10 +1164,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, options=new_opts
                 )
-                return self.async_create_entry(title="", data={})
-
-        return self.async_show_form(
-            step_id="review_suggestions",
-            data_schema=schema,
-            description_placeholders={"info": "\n".join(lines)},
-        )
+                return
+        except Exception:
+            # Don't raise; flow should continue with a user-facing form if needed
+            pass

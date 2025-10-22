@@ -25,7 +25,6 @@ from custom_components.smart_charger.const import (
     CONF_SMART_START_MARGIN,
     CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
-
     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
     DOMAIN,
 )
