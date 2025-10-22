@@ -23,6 +23,15 @@ CONF_PRECHARGE_MARGIN_ON = "precharge_margin_on"
 CONF_PRECHARGE_MARGIN_OFF = "precharge_margin_off"
 CONF_SMART_START_MARGIN = "smart_start_margin"
 CONF_PRECHARGE_COUNTDOWN_WINDOW = "precharge_countdown_window"
+# Minimum percent drop required after a precharge release before re-activating
+CONF_PRECHARGE_MIN_DROP_PERCENT = "precharge_min_drop_percent"
+# Default changed per user request: 10% required drop before re-activation
+DEFAULT_PRECHARGE_MIN_DROP_PERCENT = 10.0
+# Cooldown (minutes) after a precharge release before re-activating
+# Keep the option key unchanged for backwards compatibility (stored as minutes)
+CONF_PRECHARGE_COOLDOWN_MINUTES = "precharge_cooldown_minutes"
+# Default cooldown (minutes) per user request
+DEFAULT_PRECHARGE_COOLDOWN_MINUTES = 60.0
 CONF_LEARNING_RECENT_SAMPLE_HOURS = "learning_recent_sample_hours"
 CONF_SWITCH_THROTTLE_SECONDS = "switch_throttle_seconds"
 CONF_NOTIFY_ENABLED = "notify_enabled"
@@ -52,6 +61,9 @@ DEFAULT_PRECHARGE_MARGIN_ON = 1.0
 DEFAULT_PRECHARGE_MARGIN_OFF = 2.0
 DEFAULT_SMART_START_MARGIN = 2.0
 DEFAULT_PRECHARGE_COUNTDOWN_WINDOW = 5.0
+# Minimum percent drop required after a precharge release before re-activating
+CONF_PRECHARGE_MIN_DROP_PERCENT = "precharge_min_drop_percent"
+DEFAULT_PRECHARGE_MIN_DROP_PERCENT = 10.0
 DEFAULT_LEARNING_RECENT_SAMPLE_HOURS = 4.0
 DEFAULT_SWITCH_THROTTLE_SECONDS = 120.0
 CONF_SWITCH_CONFIRMATION_COUNT = "switch_confirmation_count"

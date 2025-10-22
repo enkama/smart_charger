@@ -295,6 +295,22 @@ ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
         default=DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     ),
     SchemaField(
+        "precharge_min_drop_percent",
+        selector=NumberSelector(
+            NumberSelectorConfig(min=0.0, max=100.0, step=0.1, unit_of_measurement="%")
+        ),
+        default=10.0,
+    ),
+    SchemaField(
+        "precharge_cooldown_minutes",
+        selector=NumberSelector(
+            # Present cooldown in minutes in the UI. Coordinator converts
+            # minutes -> seconds internally for epoch comparisons.
+            NumberSelectorConfig(min=0, max=1440, step=1, unit_of_measurement="min")
+        ),
+        default=60,
+    ),
+    SchemaField(
         CONF_SUGGESTION_THRESHOLD,
         selector=NumberSelector(NumberSelectorConfig(min=1, max=10, step=1)),
         default=DEFAULT_SUGGESTION_THRESHOLD,

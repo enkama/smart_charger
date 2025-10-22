@@ -45,6 +45,7 @@ from .const import (
     CONF_PRECHARGE_LEVEL,
     CONF_PRECHARGE_MARGIN_OFF,
     CONF_PRECHARGE_MARGIN_ON,
+    CONF_PRECHARGE_MIN_DROP_PERCENT,
     CONF_PRESENCE_SENSOR,
     CONF_SMART_START_MARGIN,
     CONF_SWITCH_CONFIRMATION_COUNT,
@@ -66,6 +67,9 @@ from .const import (
     DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     DEFAULT_PRECHARGE_MARGIN_OFF,
     DEFAULT_PRECHARGE_MARGIN_ON,
+    DEFAULT_PRECHARGE_MIN_DROP_PERCENT,
+    CONF_PRECHARGE_COOLDOWN_MINUTES,
+    DEFAULT_PRECHARGE_COOLDOWN_MINUTES,
     DEFAULT_SMART_START_MARGIN,
     DEFAULT_SWITCH_CONFIRMATION_COUNT,
     DEFAULT_SWITCH_THROTTLE_SECONDS,
@@ -435,6 +439,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # precharge_release_ready stores a datetime when the release will clear, or None
         self._precharge_release_ready: dict[str, datetime | None] = {}
         self._precharge_release_cleared_by_presence: dict[str, bool] = {}
+        # Track last release battery level per device to avoid immediate re-activation
+        # Structure: device.name -> float (battery level at release)
+        self._precharge_last_release_level: dict[str, float] = {}
+        # Track last release timestamp per device (epoch seconds)
+        self._precharge_last_release_ts: dict[str, float] = {}
         # Tracks precharge latches cleared because thresholds/predictions
         # indicate the precharge is no longer required. This allows the
         # coordinator to act immediately (pause charger) in the same
@@ -1611,6 +1620,32 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._precharge_countdown_window = self._option_float(
             CONF_PRECHARGE_COUNTDOWN_WINDOW, DEFAULT_PRECHARGE_COUNTDOWN_WINDOW
         )
+        # Minimum percent drop required after a precharge release before re-activating
+        try:
+            self._precharge_min_drop_percent = self._option_float(
+                CONF_PRECHARGE_MIN_DROP_PERCENT, DEFAULT_PRECHARGE_MIN_DROP_PERCENT
+            )
+        except Exception:
+            _ignored_exc()
+            self._precharge_min_drop_percent = float(DEFAULT_PRECHARGE_MIN_DROP_PERCENT)
+        try:
+            # Read minutes directly from the options key (UI stores minutes)
+            self._precharge_cooldown_minutes = self._option_float(
+                CONF_PRECHARGE_COOLDOWN_MINUTES, DEFAULT_PRECHARGE_COOLDOWN_MINUTES
+            )
+        except Exception:
+            _ignored_exc()
+            self._precharge_cooldown_minutes = float(DEFAULT_PRECHARGE_COOLDOWN_MINUTES)
+
+        # Convert minutes -> seconds for internal epoch/timestamp comparisons
+        try:
+            minutes = float(self._precharge_cooldown_minutes or 0.0)
+            self._precharge_cooldown_effective_seconds = max(0.0, minutes * 60.0)
+        except Exception:
+            _ignored_exc()
+            self._precharge_cooldown_effective_seconds = float(
+                DEFAULT_PRECHARGE_COOLDOWN_MINUTES * 60.0
+            )
 
         # Adaptive throttle options (coordinator-level defaults; per-device overrides still apply)
         try:
@@ -2456,6 +2491,75 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 charger_ent,
             )
             bypass = bool(forecast_holdoff)
+            # If we recently recorded a release level for this device, require
+            # the battery to drop at least `_precharge_min_drop_percent` before
+            # re-activating precharge to avoid rapid re-entry (flapping).
+            try:
+                last_release = self._precharge_last_release_level.get(device.name)
+                if (
+                    last_release is not None
+                    and isinstance(target_release, (int, float))
+                    and hasattr(self, "_precharge_min_drop_percent")
+                ):
+                    # compute required level to allow re-activation
+                    required_drop = float(last_release) - float(
+                        abs(float(self._precharge_min_drop_percent) or 0.0)
+                    )
+                    # Only allow re-activation when battery is below required_drop
+                    try:
+                        # derive current battery level from state snapshot if available
+                        cur_batt = None
+                        sd = self._state.get(device.name)
+                        if sd is not None:
+                            cur_batt = sd.get("battery")
+                        if cur_batt is None:
+                            # fallback: try reading current HA state
+                            st = self.hass.states.get(device.battery_sensor)
+                            if st is not None:
+                                try:
+                                    cur_batt = float(str(getattr(st, "state", "")))
+                                except Exception:
+                                    cur_batt = None
+                    except Exception:
+                        cur_batt = None
+                    if cur_batt is not None and cur_batt >= required_drop:
+                        _LOGGER.debug(
+                            "Precharge re-activation blocked: last_release=%.2f%% required_drop=%.2f%% cur=%.2f%%",
+                            float(last_release),
+                            float(required_drop),
+                            float(cur_batt),
+                        )
+                        return False
+                # Also block re-activation if we're still inside the cooldown
+                # window since the last recorded release. The option is stored
+                # as minutes in the UI; `self._precharge_cooldown_effective_seconds`
+                # contains the converted seconds value used for comparisons.
+                try:
+                    last_ts = self._precharge_last_release_ts.get(device.name)
+                    if last_ts is not None and getattr(
+                        self, "_precharge_cooldown_effective_seconds", None
+                    ) is not None:
+                        now_epoch = float(
+                            dt_util.as_timestamp(
+                                getattr(self, "_current_eval_time", None)
+                                or dt_util.utcnow()
+                            )
+                        )
+                        elapsed = now_epoch - float(last_ts)
+                        if elapsed >= 0 and elapsed < float(
+                            self._precharge_cooldown_effective_seconds
+                        ):
+                            _LOGGER.debug(
+                                "Precharge re-activation blocked by cooldown: last_release_ts=%.3f elapsed=%.3f cooldown=%.3f",
+                                float(last_ts),
+                                float(elapsed),
+                                float(self._precharge_cooldown_effective_seconds),
+                            )
+                            return False
+                except Exception:
+                    _ignored_exc()
+            except Exception:
+                _ignored_exc()
             if bypass:
                 try:
                     pre_ts_local = (
@@ -2561,6 +2665,28 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     previous_last_action=True,
                     bypass_throttle=bypass,
                 )
+                # Record the release level so we can avoid immediate re-activation
+                try:
+                    if device.name and isinstance(target_release, (int, float)):
+                        self._precharge_last_release_level[device.name] = float(
+                            target_release
+                        )
+                        try:
+                            self._precharge_last_release_ts[device.name] = float(
+                                dt_util.as_timestamp(
+                                    getattr(self, "_current_eval_time", None)
+                                    or dt_util.utcnow()
+                                )
+                            )
+                        except Exception:
+                            try:
+                                self._precharge_last_release_ts[
+                                    device.name
+                                ] = float(dt_util.as_timestamp(dt_util.utcnow()))
+                            except Exception:
+                                _ignored_exc()
+                except Exception:
+                    _ignored_exc()
                 return False
 
             handled_activate = await self._apply_charger_precharge_activate_if_needed(

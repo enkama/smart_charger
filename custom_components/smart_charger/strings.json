@@ -139,6 +139,8 @@
           "smart_start_margin": "SmartStart finish margin (%)",
           "precharge_countdown_window": "Precharge release countdown window (%)",
           "suggestion_threshold": "Suggestion threshold",
+  "precharge_min_drop_percent": "Precharge re-activation minimum drop (%)",
+  "precharge_cooldown_minutes": "Precharge cooldown (minutes)",
         "sensor_stale_seconds": "Sensor timeout (seconds)",
           "learning_recent_sample_hours": "Recent sample window (hours)",
         "adaptive_ewma_alpha": "Adaptive EWMA alpha",

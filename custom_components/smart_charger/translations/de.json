@@ -138,6 +138,8 @@
           "precharge_margin_off": "Wiederanlauf-Marge für Frühstart (%)",
           "smart_start_margin": "SmartStart-Abschlussmarge (%)",
           "precharge_countdown_window": "Countdown-Fenster für Frühstart-Freigabe (%)",
+          "precharge_min_drop_percent": "Minimale Abnahme vor Wiedereinschaltung (%)",
+          "precharge_cooldown_minutes": "Cooldown vor Wiedereinschaltung (Minuten)",
           "suggestion_threshold": "Vorschlags-Schwellenwert",
           "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)",
           "learning_recent_sample_hours": "Fenster für aktuelle Ladesamples (Stunden)"
