@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Sequence, cast
+from typing import Any, Callable, Iterable, Mapping, Sequence, cast
 
 import voluptuous as vol
 from homeassistant import config_entries
@@ -23,6 +23,16 @@ from homeassistant.helpers.selector import (
 from .const import (
     ALARM_MODE_PER_DAY,
     ALARM_MODE_SINGLE,
+    CONF_ADAPTIVE_EWMA_ALPHA,
+    CONF_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
+    CONF_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+    CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP,
+    CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS,
+    CONF_ADAPTIVE_THROTTLE_ENABLED,
+    CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
+    CONF_ADAPTIVE_THROTTLE_MIN_SECONDS,
+    CONF_ADAPTIVE_THROTTLE_MODE,
+    CONF_ADAPTIVE_THROTTLE_MULTIPLIER,
     CONF_ALARM_ENTITY,
     CONF_ALARM_FRIDAY,
     CONF_ALARM_MODE,
@@ -50,18 +60,18 @@ from .const import (
     CONF_SUGGESTION_THRESHOLD,
     CONF_SWITCH_CONFIRMATION_COUNT,
     CONF_SWITCH_THROTTLE_SECONDS,
-    CONF_ADAPTIVE_THROTTLE_ENABLED,
-    CONF_ADAPTIVE_THROTTLE_MULTIPLIER,
-    CONF_ADAPTIVE_THROTTLE_MIN_SECONDS,
-    CONF_ADAPTIVE_THROTTLE_DURATION_SECONDS,
-    CONF_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
-    CONF_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
-    CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP,
-    CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
-    CONF_ADAPTIVE_EWMA_ALPHA,
-    CONF_ADAPTIVE_THROTTLE_MODE,
     CONF_TARGET_LEVEL,
     CONF_USE_PREDICTIVE_MODE,
+    DEFAULT_ADAPTIVE_EWMA_ALPHA,
+    DEFAULT_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
+    DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
+    DEFAULT_ADAPTIVE_THROTTLE_BACKOFF_STEP,
+    DEFAULT_ADAPTIVE_THROTTLE_DURATION_SECONDS,
+    DEFAULT_ADAPTIVE_THROTTLE_ENABLED,
+    DEFAULT_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
+    DEFAULT_ADAPTIVE_THROTTLE_MIN_SECONDS,
+    DEFAULT_ADAPTIVE_THROTTLE_MODE,
+    DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER,
     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
     DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     DEFAULT_PRECHARGE_MARGIN_OFF,
@@ -71,40 +81,36 @@ from .const import (
     DEFAULT_SUGGESTION_THRESHOLD,
     DEFAULT_SWITCH_CONFIRMATION_COUNT,
     DEFAULT_SWITCH_THROTTLE_SECONDS,
-    DEFAULT_ADAPTIVE_THROTTLE_ENABLED,
-    DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER,
-    DEFAULT_ADAPTIVE_THROTTLE_MIN_SECONDS,
-    DEFAULT_ADAPTIVE_THROTTLE_DURATION_SECONDS,
-    DEFAULT_ADAPTIVE_FLIPFLOP_WINDOW_SECONDS,
-    DEFAULT_ADAPTIVE_FLIPFLOP_WARN_THRESHOLD,
-    DEFAULT_ADAPTIVE_THROTTLE_BACKOFF_STEP,
-    DEFAULT_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
-    DEFAULT_ADAPTIVE_EWMA_ALPHA,
-    DEFAULT_ADAPTIVE_THROTTLE_MODE,
     DEFAULT_TARGET_LEVEL,
     DOMAIN,
 )
 
+# Local logger for the config flow module.
 _LOGGER = logging.getLogger(__name__)
 
-WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
-    CONF_ALARM_MONDAY,
-    CONF_ALARM_TUESDAY,
-    CONF_ALARM_WEDNESDAY,
-    CONF_ALARM_THURSDAY,
-    CONF_ALARM_FRIDAY,
-    CONF_ALARM_SATURDAY,
-    CONF_ALARM_SUNDAY,
-)
 
-SENSOR_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["sensor"]))
-CHARGING_SELECTOR = EntitySelector(
-    EntitySelectorConfig(domain=["binary_sensor", "sensor"])
-)
-SWITCH_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["switch"]))
-PRESENCE_SELECTOR = EntitySelector(
-    EntitySelectorConfig(domain=["person", "device_tracker"])
-)
+# Attempt to reuse coordinator._ignored_exc to record suppressed
+# exceptions in a consistent way. Import locally to avoid cycles.
+try:
+    from .coordinator import _ignored_exc  # type: ignore
+
+    try:
+        _ignored_exc()
+    except Exception:
+        # If importing or logging fails, log at debug level ensuring the
+        # traceback is recorded. Avoid bare except: pass to satisfy
+        # Bandit B110.
+        _LOGGER.debug("Ignored exception in config flow (inner)", exc_info=True)
+except Exception:
+    # As a last resort, if anything goes wrong we intentionally avoid
+    # breaking the config flow UI. Log at debug level; if logging itself
+    # fails, emit an exception on the module logger as a final fallback.
+    try:
+        _LOGGER.debug("Ignored exception in config flow (outer)", exc_info=True)
+    except Exception as err:  # pragma: no cover - extremely unlikely
+        logging.getLogger(__name__).exception(
+            "Failed to log suppressed exception in config flow: %s", err
+        )
 ALARM_SELECTOR = EntitySelector(
     EntitySelectorConfig(domain=["sensor", "input_datetime"])
 )
@@ -120,15 +126,41 @@ ALARM_MODE_SELECTOR = SelectSelector(
 
 ADAPTIVE_MODE_SELECTOR = SelectSelector(
     SelectSelectorConfig(
-        options=cast(Sequence[SelectOptionDict], [
-            {"value": "conservative", "label": "Conservative"},
-            {"value": "normal", "label": "Normal"},
-            {"value": "aggressive", "label": "Aggressive"},
-        ]),
+        options=cast(
+            Sequence[SelectOptionDict],
+            [
+                {"value": "conservative", "label": "Conservative"},
+                {"value": "normal", "label": "Normal"},
+                {"value": "aggressive", "label": "Aggressive"},
+            ],
+        ),
         translation_key="adaptive_throttle_mode",
         multiple=False,
         mode=SelectSelectorMode.DROPDOWN,
     )
+)
+
+
+# Weekday-alarm field names (mirrors coordinator) used by the flow handlers.
+WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
+    CONF_ALARM_MONDAY,
+    CONF_ALARM_TUESDAY,
+    CONF_ALARM_WEDNESDAY,
+    CONF_ALARM_THURSDAY,
+    CONF_ALARM_FRIDAY,
+    CONF_ALARM_SATURDAY,
+    CONF_ALARM_SUNDAY,
+)
+
+
+# Common selector presets used by schema fields in this module.
+SENSOR_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["sensor"]))
+SWITCH_SELECTOR = EntitySelector(EntitySelectorConfig(domain=["switch"]))
+CHARGING_SELECTOR = EntitySelector(
+    EntitySelectorConfig(domain=["sensor", "binary_sensor"])
+)
+PRESENCE_SELECTOR = EntitySelector(
+    EntitySelectorConfig(domain=["device_tracker", "person"])
 )
 
 OPTIONAL_ENTITY_FIELDS: tuple[str, ...] = (
@@ -151,15 +183,15 @@ class SchemaField:
     required: bool = False
     validator: Any | None = None
     selector: Any | None = None
-    selector_factory: Callable[["SmartChargerFlowMixin"], Any] | None = None
+    selector_factory: Callable[[SmartChargerFlowMixin], Any] | None = None
     default: Any = MISSING
     default_factory: Callable[[], Any] | None = None
     existing_only: bool = False
 
     def build(
         self,
-        flow: "SmartChargerFlowMixin",
-        defaults: Optional[Mapping[str, Any]],
+        flow: SmartChargerFlowMixin,
+        defaults: Mapping[str, Any] | None,
     ) -> tuple[Any, Any]:
         value = MISSING
         if defaults and self.key in defaults:
@@ -189,7 +221,7 @@ class SchemaField:
         return field, validator
 
 
-def _notify_selector_from_flow(flow: "SmartChargerFlowMixin") -> SelectSelector:
+def _notify_selector_from_flow(flow: SmartChargerFlowMixin) -> SelectSelector:
     return _notify_selector(flow.hass)
 
 
@@ -287,9 +319,7 @@ ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
     ),
     SchemaField(
         CONF_ADAPTIVE_THROTTLE_MULTIPLIER,
-        selector=NumberSelector(
-            NumberSelectorConfig(min=1.0, max=10.0, step=0.1)
-        ),
+        selector=NumberSelector(NumberSelectorConfig(min=1.0, max=10.0, step=0.1)),
         default=DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER,
     ),
     SchemaField(
@@ -325,23 +355,17 @@ ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
     ),
     SchemaField(
         CONF_ADAPTIVE_THROTTLE_BACKOFF_STEP,
-        selector=NumberSelector(
-            NumberSelectorConfig(min=0.0, max=5.0, step=0.1)
-        ),
+        selector=NumberSelector(NumberSelectorConfig(min=0.0, max=5.0, step=0.1)),
         default=DEFAULT_ADAPTIVE_THROTTLE_BACKOFF_STEP,
     ),
     SchemaField(
         CONF_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
-        selector=NumberSelector(
-            NumberSelectorConfig(min=1.0, max=20.0, step=0.1)
-        ),
+        selector=NumberSelector(NumberSelectorConfig(min=1.0, max=20.0, step=0.1)),
         default=DEFAULT_ADAPTIVE_THROTTLE_MAX_MULTIPLIER,
     ),
     SchemaField(
         CONF_ADAPTIVE_EWMA_ALPHA,
-        selector=NumberSelector(
-            NumberSelectorConfig(min=0.01, max=1.0, step=0.01)
-        ),
+        selector=NumberSelector(NumberSelectorConfig(min=0.01, max=1.0, step=0.01)),
         default=DEFAULT_ADAPTIVE_EWMA_ALPHA,
     ),
 )
@@ -398,12 +422,12 @@ class SmartChargerFlowMixin:
     """Shared helpers for config and options flows."""
 
     hass: Any
-    _advanced_idx: Optional[int]
+    _advanced_idx: int | None
 
     def _schema_from_fields(
         self,
         fields: Iterable[SchemaField],
-        defaults: Optional[Mapping[str, Any]] = None,
+        defaults: Mapping[str, Any] | None = None,
     ) -> vol.Schema:
         schema_fields: dict[Any, Any] = {}
         for field in fields:
@@ -438,7 +462,7 @@ class SmartChargerFlowMixin:
         devices: Sequence[Mapping[str, Any]],
         name: str,
         *,
-        skip_idx: Optional[int] = None,
+        skip_idx: int | None = None,
     ) -> bool:
         for idx, device in enumerate(devices):
             if skip_idx is not None and idx == skip_idx:
@@ -511,7 +535,7 @@ class SmartChargerFlowMixin:
         return errors
 
     @staticmethod
-    def _sanitize_optional_entities(data: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_optional_entities(data: dict[str, Any]) -> dict[str, Any]:
         cleaned = dict(data)
         for key in OPTIONAL_ENTITY_FIELDS:
             if not cleaned.get(key):
@@ -519,7 +543,7 @@ class SmartChargerFlowMixin:
         return cleaned
 
     def _build_basic_schema(
-        self, device: Optional[Mapping[str, Any]] = None, *, include_name: bool = True
+        self, device: Mapping[str, Any] | None = None, *, include_name: bool = True
     ) -> vol.Schema:
         fields: tuple[SchemaField, ...]
         fields = BASIC_DEVICE_FIELDS
@@ -529,7 +553,7 @@ class SmartChargerFlowMixin:
 
     def _build_target_schema(
         self,
-        device: Optional[Mapping[str, Any]] = None,
+        device: Mapping[str, Any] | None = None,
         *,
         include_advanced: bool = False,
     ) -> vol.Schema:
@@ -541,7 +565,7 @@ class SmartChargerFlowMixin:
         return self._schema_from_fields(fields, device)
 
     def _build_alarm_schema(
-        self, device: Optional[Mapping[str, Any]] = None
+        self, device: Mapping[str, Any] | None = None
     ) -> vol.Schema:
         return self._schema_from_fields(ALARM_FIELDS, device)
 
@@ -567,9 +591,9 @@ class SmartChargerFlowMixin:
         self,
         device: Mapping[str, Any],
         *,
-        defaults: Optional[Mapping[str, Any]] = None,
+        defaults: Mapping[str, Any] | None = None,
     ) -> vol.Schema:
-        merged: Dict[str, Any] = {}
+        merged: dict[str, Any] = {}
         if defaults:
             merged.update(defaults)
         merged.update(device)
@@ -594,10 +618,10 @@ class SmartChargerConfigFlow(
     VERSION = 1
 
     def __init__(self) -> None:
-        self._devices: list[Dict[str, Any]] = []
-        self._new_device: Dict[str, Any] = {}
+        self._devices: list[dict[str, Any]] = []
+        self._new_device: dict[str, Any] = {}
 
-    def _get_devices(self) -> list[Dict[str, Any]]:
+    def _get_devices(self) -> list[dict[str, Any]]:
         if self._devices:
             return self._devices
         domain_store = self.hass.data.setdefault(DOMAIN, {})
@@ -606,12 +630,12 @@ class SmartChargerConfigFlow(
             self._devices = deepcopy(cached)
         return self._devices
 
-    def _save_devices(self, devices: list[Dict[str, Any]]) -> None:
+    def _save_devices(self, devices: list[dict[str, Any]]) -> None:
         self._devices = devices
         self.hass.data.setdefault(DOMAIN, {})["flow_devices"] = deepcopy(devices)
 
     async def async_step_user(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         menu = (
@@ -626,7 +650,7 @@ class SmartChargerConfigFlow(
         )
 
     async def async_step_add_device(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         schema = self._build_basic_schema(include_name=True)
@@ -648,7 +672,7 @@ class SmartChargerConfigFlow(
         )
 
     async def async_step_add_device_page_2(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         schema = self._build_target_schema(self._new_device)
         errors: dict[str, str] = {}
@@ -665,7 +689,7 @@ class SmartChargerConfigFlow(
         )
 
     async def async_step_add_device_page_3(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         schema = self._build_alarm_schema(self._new_device)
         errors: dict[str, str] = {}
@@ -692,7 +716,7 @@ class SmartChargerConfigFlow(
         )
 
     async def async_step_edit_device(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         if not devices:
@@ -707,7 +731,7 @@ class SmartChargerConfigFlow(
         return self.async_show_form(step_id="edit_device", data_schema=schema)
 
     async def async_step_edit_device_details(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         if not user_input or "idx" not in user_input:
@@ -746,7 +770,7 @@ class SmartChargerConfigFlow(
         )
 
     async def async_step_delete_device(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         if not devices:
@@ -764,7 +788,7 @@ class SmartChargerConfigFlow(
         return self.async_show_form(step_id="delete_device", data_schema=schema)
 
     async def async_step_confirm_delete(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         idx = getattr(self, "_idx_to_delete", None)
@@ -786,7 +810,7 @@ class SmartChargerConfigFlow(
         )
 
     async def async_step_finish(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         devices = self._get_devices()
         return self.async_create_entry(
@@ -808,12 +832,12 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self.config_entry = config_entry
-        self.devices: list[Dict[str, Any]] = deepcopy(
+        self.devices: list[dict[str, Any]] = deepcopy(
             config_entry.data.get("devices", [])
         )
 
     async def async_step_init(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         if user_input:
             action = user_input.get("action")
@@ -828,12 +852,17 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         info = self._device_count_message(len(self.devices))
         return self.async_show_menu(
             step_id="init",
-            menu_options=["edit_device", "advanced_settings", "delete_device"],
+            menu_options=[
+                "edit_device",
+                "advanced_settings",
+                "delete_device",
+                "review_suggestions",
+            ],
             description_placeholders={"info": info},
         )
 
     async def async_step_edit_device(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         if not self.devices:
             return self.async_abort(reason="no_devices")
@@ -850,7 +879,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         return self.async_show_form(step_id="edit_device", data_schema=schema)
 
     async def async_step_edit_device_details(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         if not user_input or "idx" not in user_input:
             return self.async_abort(reason="invalid_device")
@@ -890,7 +919,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         )
 
     async def async_step_delete_device(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         if not self.devices:
             return self.async_abort(reason="no_devices")
@@ -916,7 +945,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         return self.async_show_form(step_id="delete_device", data_schema=schema)
 
     async def async_step_advanced_settings(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         if user_input and user_input.get("next_step_id"):
             next_step = user_input["next_step_id"]
@@ -934,7 +963,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         )
 
     async def async_step_advanced_settings_device(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         if not self.devices:
             return self.async_abort(reason="no_devices")
@@ -959,7 +988,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         )
 
     async def async_step_advanced_settings_device_details(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         idx = getattr(self, "_advanced_idx", None)
         if idx is None or idx >= len(self.devices):
@@ -1007,3 +1036,175 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 "device_name": device.get("name", ""),
             },
         )
+
+    async def async_step_review_suggestions(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Allow user to review/accept/revert post-alarm suggested persisted changes."""
+        entries = self.hass.data.get(DOMAIN, {}).get("entries", {})
+        entry_data = entries.get(getattr(self.config_entry, "entry_id", ""), {})
+        coord = entry_data.get("coordinator")
+
+        suggested_smart_start = dict(
+            getattr(coord, "_post_alarm_persisted_smart_start", {}) or {}
+        )
+        suggested_adaptive = dict(
+            getattr(self.config_entry, "options", {}).get("adaptive_mode_overrides", {})
+            or {}
+        )
+
+        if user_input:
+            action = user_input.get("action")
+            if action == "accept_all":
+                self._apply_suggestions_action(
+                    "accept_all", suggested_smart_start, suggested_adaptive
+                )
+                return self.async_create_entry(title="", data={})
+            if action == "revert_all":
+                self._apply_suggestions_action(
+                    "revert_all", suggested_smart_start, suggested_adaptive
+                )
+                return self.async_create_entry(title="", data={})
+
+        lines = ["Suggested persisted changes:"]
+        if suggested_smart_start:
+            lines.append("Smart start bumps:")
+            for ent, m in suggested_smart_start.items():
+                lines.append(f"• {ent}: +{float(m)}%")
+        if suggested_adaptive:
+            lines.append("Adaptive mode overrides:")
+            for ent, mode in suggested_adaptive.items():
+                lines.append(f"• {ent}: {mode}")
+        if not suggested_smart_start and not suggested_adaptive:
+            lines.append("(No suggestions present)")
+
+        # Build entity list for per-entity actions
+        entity_options = ["(none)"] + [
+            str(e)
+            for e in sorted(
+                set(
+                    list(suggested_smart_start.keys()) + list(suggested_adaptive.keys())
+                )
+            )
+        ]
+
+        schema = vol.Schema(
+            {
+                vol.Required("action", default="none"): vol.In(
+                    {
+                        "none": "No action",
+                        "accept_all": "Accept all",
+                        "revert_all": "Revert all",
+                        "accept_entity": "Accept selected entity",
+                        "revert_entity": "Revert selected entity",
+                    }
+                ),
+                vol.Optional("entity", default="(none)"): vol.In(entity_options),
+            }
+        )
+
+        if user_input and user_input.get("action") in (
+            "accept_entity",
+            "revert_entity",
+        ):
+            ent = user_input.get("entity")
+            if not ent or ent == "(none)":
+                return self.async_show_form(
+                    step_id="review_suggestions",
+                    data_schema=schema,
+                    errors={"entity": "invalid_entity"},
+                    description_placeholders={"info": "\n".join(lines)},
+                )
+            # map display string back to entity id
+            target_entity = str(ent)
+            if user_input.get("action") == "accept_entity":
+                # Accept single entity: call service to persist
+                self.hass.async_create_task(
+                    self.hass.services.async_call(
+                        DOMAIN,
+                        "accept_suggested_persistence",
+                        {
+                            "entry_id": self.config_entry.entry_id,
+                            "entity_id": target_entity,
+                        },
+                    )
+                )
+                return self.async_create_entry(title="", data={})
+            else:
+                self.hass.async_create_task(
+                    self.hass.services.async_call(
+                        DOMAIN,
+                        "revert_suggested_persistence",
+                        {
+                            "entry_id": self.config_entry.entry_id,
+                            "entity_id": target_entity,
+                        },
+                    )
+                )
+                return self.async_create_entry(title="", data={})
+
+        if user_input and user_input.get("action") in ("accept_all", "revert_all"):
+            # Use existing code path for accept/revert all
+            action = user_input.get("action")
+            if action == "accept_all":
+                self._apply_suggestions_action(
+                    "accept_all", suggested_smart_start, suggested_adaptive
+                )
+                return self.async_create_entry(title="", data={})
+            if action == "revert_all":
+                self._apply_suggestions_action(
+                    "revert_all", suggested_smart_start, suggested_adaptive
+                )
+                return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="review_suggestions",
+            data_schema=schema,
+            description_placeholders={"info": "\n".join(lines)},
+        )
+
+    def _apply_suggestions_action(
+        self,
+        action: str,
+        suggested_smart_start: dict[str, Any],
+        suggested_adaptive: dict[str, Any],
+    ) -> None:
+        """Apply or revert all suggested persisted changes.
+
+        Extracted to reduce duplication in the flow handler.
+        """
+        try:
+            if action == "accept_all":
+                new_opts = dict(getattr(self.config_entry, "options", {}) or {})
+                if suggested_smart_start:
+                    new_opts["smart_start_margin_overrides"] = dict(
+                        suggested_smart_start
+                    )
+                if suggested_adaptive:
+                    new_opts["adaptive_mode_overrides"] = dict(suggested_adaptive)
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, options=new_opts
+                )
+                return
+            if action == "revert_all":
+                new_opts = dict(getattr(self.config_entry, "options", {}) or {})
+                new_opts.pop("smart_start_margin_overrides", None)
+                new_opts.pop("adaptive_mode_overrides", None)
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, options=new_opts
+                )
+                return
+        except Exception:
+            # Don't raise; flow should continue with a user-facing form if needed.
+            # Log the ignored exception at DEBUG so it is visible in diagnostics
+            # without causing the flow to error out. This centralizes the
+            # suppressed-exception behavior similar to the coordinator helper.
+            try:
+                from .coordinator import _ignored_exc
+
+                _ignored_exc()
+            except Exception:
+                # If importing or logging fails, record the exception at
+                # DEBUG level so we avoid a bare except: pass pattern
+                # (Bandit B110) while still not breaking the user flow.
+                _LOGGER.debug("Ignored exception applying suggestions", exc_info=True)

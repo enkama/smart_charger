@@ -4,7 +4,7 @@ import asyncio
 import copy
 import logging
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable
 
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
@@ -46,7 +46,7 @@ def _time_bucket(hour: int) -> str:
 
 
 def _ema_update(
-    previous: Optional[float], value: float, alpha: float = LEARNING_EMA_ALPHA
+    previous: float | None, value: float, alpha: float = LEARNING_EMA_ALPHA
 ) -> float:
     if previous is None:
         return value
@@ -54,7 +54,7 @@ def _ema_update(
 
 
 def _decay_to_baseline(
-    value: float, hours_old: Optional[float], baseline: float = 1.0
+    value: float, hours_old: float | None, baseline: float = 1.0
 ) -> float:
     if hours_old is None or hours_old <= 0:
         return value
@@ -68,9 +68,9 @@ class SmartChargerLearning:
     STORAGE_VERSION = 1
     # Explicit attribute annotations to satisfy static analysis
     _store: Store
-    _legacy_store: Optional[Store]
+    _legacy_store: Store | None
 
-    def __init__(self, hass, entry_id: Optional[str] = None) -> None:
+    def __init__(self, hass, entry_id: str | None = None) -> None:
         self.hass = hass
         self._entry_id = entry_id
         storage_key = (
@@ -82,15 +82,15 @@ class SmartChargerLearning:
             if not entry_id
             else Store(hass, self.STORAGE_VERSION, STORAGE_KEY_LEGACY)
         )
-        self._data: Dict[str, Any] = self._default_storage()
-        self._save_debounce_unsub: Optional[Callable[[], None]] = None
-        self._session_retry_unsubs: Dict[str, Callable[[], None]] = {}
-        self._avg_cache: Dict[str, Tuple[float, float]] = {}
+        self._data: dict[str, Any] = self._default_storage()
+        self._save_debounce_unsub: Callable[[], None] | None = None
+        self._session_retry_unsubs: dict[str, Callable[[], None]] = {}
+        self._avg_cache: dict[str, tuple[float, float]] = {}
         self._lock = asyncio.Lock()
         self._migrated_from_legacy = False
         self._recent_sample_max_age_hours = DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
 
-    def _default_meta(self) -> Dict[str, Any]:
+    def _default_meta(self) -> dict[str, Any]:
         now_iso = dt_util.utcnow().isoformat()
         return {
             "model_revision": PROFILE_SCHEMA_VERSION,
@@ -102,15 +102,15 @@ class SmartChargerLearning:
             "cycle_count": 0,
         }
 
-    def _default_storage(self) -> Dict[str, Any]:
+    def _default_storage(self) -> dict[str, Any]:
         return {"meta": self._default_meta(), "profiles": {}}
 
     @property
-    def _profiles(self) -> Dict[str, Dict[str, Any]]:
+    def _profiles(self) -> dict[str, dict[str, Any]]:
         return self._data.setdefault("profiles", {})
 
     @property
-    def _meta(self) -> Dict[str, Any]:
+    def _meta(self) -> dict[str, Any]:
         return self._data.setdefault("meta", self._default_meta())
 
     def _refresh_meta(self) -> None:
@@ -121,7 +121,7 @@ class SmartChargerLearning:
         meta["cycle_count"] = sum(len(p.get("cycles", [])) for p in profiles.values())
         meta["updated"] = dt_util.utcnow().isoformat()
 
-    async def async_load(self, profile_id: Optional[str] = None) -> None:
+    async def async_load(self, profile_id: str | None = None) -> None:
         try:
             data = await self._store.async_load()
             if not data and self._legacy_store is not None:
@@ -191,10 +191,10 @@ class SmartChargerLearning:
 
         self._invalidate_cache(profile_id)
 
-    def _avg_cache_key(self, profile_id: Optional[str], scope: str) -> str:
+    def _avg_cache_key(self, profile_id: str | None, scope: str) -> str:
         return f"{profile_id or '__global__'}::{scope}"
 
-    def _avg_cache_get(self, profile_id: Optional[str], scope: str) -> Optional[float]:
+    def _avg_cache_get(self, profile_id: str | None, scope: str) -> float | None:
         token = self._avg_cache.get(self._avg_cache_key(profile_id, scope))
         if not token:
             return None
@@ -204,23 +204,21 @@ class SmartChargerLearning:
             return None
         return value
 
-    def _avg_cache_set(
-        self, profile_id: Optional[str], scope: str, value: float
-    ) -> None:
+    def _avg_cache_set(self, profile_id: str | None, scope: str, value: float) -> None:
         self._avg_cache[self._avg_cache_key(profile_id, scope)] = (
             value,
             dt_util.utcnow().timestamp(),
         )
 
     def _entry_speed_value(
-        self, entry: Optional[Dict[str, Any]], now: datetime
-    ) -> Optional[float]:
+        self, entry: dict[str, Any] | None, now: datetime
+    ) -> float | None:
         if not entry:
             return None
         ema = entry.get("ema")
         if ema is None:
             return None
-        age_hours: Optional[float] = None
+        age_hours: float | None = None
         last = entry.get("last_sample")
         if last:
             parsed = dt_util.parse_datetime(last)
@@ -231,16 +229,16 @@ class SmartChargerLearning:
 
     def _profile_bucket_avg(
         self, profile_id: str, bucket_key: str, now: datetime
-    ) -> Optional[float]:
+    ) -> float | None:
         pdata = self._ensure_profile_schema(profile_id)
         bucket_entry = pdata.get("bucket_stats", {}).get(bucket_key)
         return self._entry_speed_value(bucket_entry, now)
 
-    def _profile_overall_avg(self, profile_id: str, now: datetime) -> Optional[float]:
+    def _profile_overall_avg(self, profile_id: str, now: datetime) -> float | None:
         pdata = self._ensure_profile_schema(profile_id)
         return self._entry_speed_value(pdata.get("stats"), now)
 
-    def _global_profile_avg(self, now: datetime) -> Optional[float]:
+    def _global_profile_avg(self, now: datetime) -> float | None:
         values: list[float] = []
         for pid in list(self._profiles.keys()):
             value = self._profile_overall_avg(pid, now)
@@ -250,7 +248,7 @@ class SmartChargerLearning:
             return None
         return round(sum(values) / len(values), 3)
 
-    def _collect_samples(self, profile_id: Optional[str]) -> list[tuple[str, float]]:
+    def _collect_samples(self, profile_id: str | None) -> list[tuple[str, float]]:
         if profile_id and profile_id in self._profiles:
             return list(self._profiles[profile_id].get("samples", []))
         samples: list[tuple[str, float]] = []
@@ -259,8 +257,8 @@ class SmartChargerLearning:
         return samples
 
     def _latest_sample_speed(
-        self, profile_id: Optional[str], now: datetime
-    ) -> Optional[float]:
+        self, profile_id: str | None, now: datetime
+    ) -> float | None:
         samples = self._collect_samples(profile_id)
         if not samples:
             return None
@@ -274,8 +272,8 @@ class SmartChargerLearning:
         return None
 
     def _recent_sample_average(
-        self, profile_id: Optional[str], now: datetime
-    ) -> Optional[float]:
+        self, profile_id: str | None, now: datetime
+    ) -> float | None:
         samples = self._collect_samples(profile_id)
         if not samples:
             return None
@@ -294,7 +292,7 @@ class SmartChargerLearning:
         avg = weighted_sum / total_weight
         return round(self._clamp_speed(avg), 3)
 
-    def avg_speed(self, profile_id: Optional[str] = None) -> float:
+    def avg_speed(self, profile_id: str | None = None) -> float:
         """Compute a weighted average speed that favors recent, time-matched samples."""
         try:
             now = dt_util.now()
@@ -350,7 +348,7 @@ class SmartChargerLearning:
         self._avg_cache.clear()
 
     async def async_start_session(
-        self, profile_id: str, level_now: float, sensor: Optional[str] = None
+        self, profile_id: str, level_now: float, sensor: str | None = None
     ) -> None:
         """Start tracking a new charging session."""
 
@@ -375,7 +373,7 @@ class SmartChargerLearning:
         )
 
     def start_session(
-        self, profile_id: str, level_now: float, sensor: Optional[str] = None
+        self, profile_id: str, level_now: float, sensor: str | None = None
     ) -> None:
         """Compat wrapper scheduling the async session start."""
         self.hass.async_create_task(
@@ -385,8 +383,8 @@ class SmartChargerLearning:
     async def end_session(
         self,
         profile_id: str,
-        level_end: Optional[float] = None,
-        sensor: Optional[str] = None,
+        level_end: float | None = None,
+        sensor: str | None = None,
     ) -> None:
         """Finish tracking the active charging session."""
         profile = self._ensure_profile_schema(profile_id)
@@ -458,7 +456,7 @@ class SmartChargerLearning:
         start_level: float,
         end_level: float,
         reached_target: bool,
-        error: Optional[str],
+        error: str | None,
     ) -> bool:
         """Persist a completed charging cycle and update derived metrics."""
         duration_min = max(0.0, (end_time - start_time).total_seconds() / 60.0)
@@ -534,7 +532,7 @@ class SmartChargerLearning:
             self._invalidate_cache(profile_id)
         return accepted
 
-    def _default_profile(self) -> Dict[str, Any]:
+    def _default_profile(self) -> dict[str, Any]:
         return {
             "version": PROFILE_SCHEMA_VERSION,
             "samples": [],
@@ -543,7 +541,7 @@ class SmartChargerLearning:
             "bucket_stats": {},
         }
 
-    def _ensure_profile_schema(self, profile_id: str) -> Dict[str, Any]:
+    def _ensure_profile_schema(self, profile_id: str) -> dict[str, Any]:
         profiles = self._profiles
         pdata = profiles.get(profile_id)
         if not isinstance(pdata, dict):
@@ -571,7 +569,7 @@ class SmartChargerLearning:
                 pdata.pop("current_session", None)
         return pdata
 
-    def _migrate_profile_to_hourly_speeds(self, profile: Dict[str, Any]) -> None:
+    def _migrate_profile_to_hourly_speeds(self, profile: dict[str, Any]) -> None:
         # Delegate migration steps to smaller helpers to reduce cyclomatic
         # complexity and make each step easier to test.
         self._migrate_profile_samples_to_hourly(profile)
@@ -579,13 +577,13 @@ class SmartChargerLearning:
         self._migrate_profile_stats_to_hourly(profile)
         self._migrate_profile_bucket_stats_to_hourly(profile)
 
-    def _convert_speed_value(self, value: Any) -> Optional[float]:
+    def _convert_speed_value(self, value: Any) -> float | None:
         try:
             return self._clamp_speed(float(value) * 60.0)
         except (TypeError, ValueError):
             return None
 
-    def _migrate_profile_samples_to_hourly(self, profile: Dict[str, Any]) -> None:
+    def _migrate_profile_samples_to_hourly(self, profile: dict[str, Any]) -> None:
         samples = profile.get("samples")
         if not isinstance(samples, list):
             return
@@ -599,7 +597,7 @@ class SmartChargerLearning:
             converted_samples.append(entry)
         profile["samples"] = converted_samples
 
-    def _migrate_profile_cycles_to_hourly(self, profile: Dict[str, Any]) -> None:
+    def _migrate_profile_cycles_to_hourly(self, profile: dict[str, Any]) -> None:
         cycles = profile.get("cycles")
         if not isinstance(cycles, list):
             return
@@ -609,7 +607,7 @@ class SmartChargerLearning:
                 if converted is not None:
                     entry["speed"] = round(converted, 3)
 
-    def _migrate_profile_stats_to_hourly(self, profile: Dict[str, Any]) -> None:
+    def _migrate_profile_stats_to_hourly(self, profile: dict[str, Any]) -> None:
         stats = profile.get("stats")
         if not isinstance(stats, dict):
             return
@@ -617,7 +615,7 @@ class SmartChargerLearning:
         if converted is not None:
             stats["ema"] = converted
 
-    def _migrate_profile_bucket_stats_to_hourly(self, profile: Dict[str, Any]) -> None:
+    def _migrate_profile_bucket_stats_to_hourly(self, profile: dict[str, Any]) -> None:
         bucket_stats = profile.get("bucket_stats")
         if not isinstance(bucket_stats, dict):
             return
@@ -628,7 +626,7 @@ class SmartChargerLearning:
                 if converted is not None:
                     entry["ema"] = converted
 
-    def _invalidate_cache(self, profile_id: Optional[str]) -> None:
+    def _invalidate_cache(self, profile_id: str | None) -> None:
         if not self._avg_cache:
             return
         if profile_id is None:
@@ -647,7 +645,7 @@ class SmartChargerLearning:
     def _clamp_speed(value: float) -> float:
         return max(LEARNING_MIN_SPEED, min(LEARNING_MAX_SPEED, value))
 
-    def _normalize_session(self, session: Any) -> Optional[Dict[str, Any]]:
+    def _normalize_session(self, session: Any) -> dict[str, Any] | None:
         if not session:
             return None
         if isinstance(session, dict):
@@ -667,7 +665,7 @@ class SmartChargerLearning:
             }
         return None
 
-    def _read_battery_sensor(self, sensor: Optional[str]) -> Optional[float]:
+    def _read_battery_sensor(self, sensor: str | None) -> float | None:
         if not sensor:
             return None
         state = self.hass.states.get(sensor)
@@ -681,7 +679,7 @@ class SmartChargerLearning:
 
     def _update_stats(
         self,
-        profile: Dict[str, Any],
+        profile: dict[str, Any],
         speed: float,
         timestamp: str,
         start_time: datetime,
@@ -707,7 +705,7 @@ class SmartChargerLearning:
 
     def _trim_profile(
         self,
-        profile: Dict[str, Any],
+        profile: dict[str, Any],
         max_samples: int = MAX_SAMPLES_DEFAULT,
         max_cycles: int = MAX_CYCLES_DEFAULT,
     ) -> None:
@@ -750,7 +748,7 @@ class SmartChargerLearning:
             self.async_cleanup_old_data(max_samples=max_samples, max_cycles=max_cycles)
         )
 
-    def snapshot(self, profile_id: Optional[str] = None) -> Dict[str, Any]:
+    def snapshot(self, profile_id: str | None = None) -> dict[str, Any]:
         """Return a deep copy of the current learning state for diagnostics."""
         meta_copy = copy.deepcopy(self._meta)
         meta_copy["snapshot_ts"] = dt_util.utcnow().isoformat()
@@ -785,8 +783,8 @@ class SmartChargerLearning:
     def _handle_session_retry(
         self,
         profile_id: str,
-        profile: Dict[str, Any],
-        session: Dict[str, Any],
+        profile: dict[str, Any],
+        session: dict[str, Any],
     ) -> None:
         sensor = session.get("sensor")
         attempt = int(session.get("retries", 0))

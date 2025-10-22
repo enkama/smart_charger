@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, CONF_ADAPTIVE_EWMA_ALPHA, DEFAULT_ADAPTIVE_EWMA_ALPHA
+from .const import CONF_ADAPTIVE_EWMA_ALPHA, DEFAULT_ADAPTIVE_EWMA_ALPHA, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class SmartChargerNextStartSensor(SensorEntity):
         self.state_machine = state_machine
         self._attr_unique_id = f"{DOMAIN}_next_start"
         self._attr_native_value = STATE_UNKNOWN
-        self._attr_extra_state_attributes: Dict[str, Any] = {
+        self._attr_extra_state_attributes: dict[str, Any] = {
             "info": "No profiles available"
         }
 
@@ -81,7 +81,7 @@ class SmartChargerNextStartSensor(SensorEntity):
                 start_times.append(str(start_time))
         self._attr_native_value = min(start_times) if start_times else STATE_UNKNOWN
 
-        device_data: Dict[str, Dict[str, Any]] = {}
+        device_data: dict[str, dict[str, Any]] = {}
         for pid, data in profiles.items():
             device_data[pid] = {
                 "battery": data.get("battery"),
@@ -115,7 +115,7 @@ class SmartChargerNextStartSensor(SensorEntity):
                 if device_data[pid].get(key) is None:
                     device_data[pid].pop(key, None)
 
-        extra: Dict[str, Any] = {
+        extra: dict[str, Any] = {
             "devices": device_data,
             "device_count": len(device_data),
             "smart_start_active_count": sum(
@@ -140,7 +140,7 @@ class SmartChargerLearningSensor(SensorEntity):
         self.learning = learning
         self._attr_unique_id = f"{DOMAIN}_learning_stats"
         self._attr_native_value = 1.0
-        self._attr_extra_state_attributes: Dict[str, Any] = {
+        self._attr_extra_state_attributes: dict[str, Any] = {
             "profile_count": 0,
             "sample_count": 0,
             "profiles": [],
@@ -162,7 +162,7 @@ class SmartChargerLearningSensor(SensorEntity):
         cycle_count = meta.get("cycle_count")
         if cycle_count is None:
             cycle_count = sum(len(p.get("cycles", [])) for p in profiles.values())
-        extra: Dict[str, Any] = {
+        extra: dict[str, Any] = {
             "profile_count": meta.get("profile_count", len(profiles)),
             "sample_count": sample_count,
             "cycle_count": cycle_count,
@@ -195,7 +195,7 @@ class SmartChargerDeviceSensor(SensorEntity):
             configuration_url=("https://my.home-assistant.io/redirect/integrations/"),
         )
         self._attr_native_value = STATE_UNKNOWN
-        self._attr_extra_state_attributes: Dict[str, Any] = {
+        self._attr_extra_state_attributes: dict[str, Any] = {
             "info": "No data available"
         }
         self._attr_icon = "mdi:battery-question"
@@ -251,7 +251,7 @@ class SmartChargerDeviceSensor(SensorEntity):
 
         self._attr_native_value = status
         self._attr_icon = icon_map.get(status, "mdi:battery")
-        extra: Dict[str, Any] = {
+        extra: dict[str, Any] = {
             "battery": data.get("battery"),
             "target": data.get("target"),
             "avg_speed": data.get("avg_speed"),
@@ -308,7 +308,7 @@ class SmartChargerAdaptiveSensor(SensorEntity):
         self.coordinator = coordinator
         self._attr_unique_id = f"{DOMAIN}_adaptive_telemetry"
         self._attr_native_value = 0
-        self._attr_extra_state_attributes: Dict[str, Any] = {
+        self._attr_extra_state_attributes: dict[str, Any] = {
             "flipflop_counts": {},
             "active_overrides": {},
             "last_update": None,
@@ -356,11 +356,18 @@ class SmartChargerAdaptiveSensor(SensorEntity):
         entry_obj = getattr(self.coordinator, "entry", None)
         try:
             if entry_obj and getattr(entry_obj, "options", None) is not None:
-                alpha = float(entry_obj.options.get(CONF_ADAPTIVE_EWMA_ALPHA, DEFAULT_ADAPTIVE_EWMA_ALPHA))
+                alpha = float(
+                    entry_obj.options.get(
+                        CONF_ADAPTIVE_EWMA_ALPHA, DEFAULT_ADAPTIVE_EWMA_ALPHA
+                    )
+                )
             else:
                 alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
         except Exception:
-            _LOGGER.debug("Failed to read EWMA alpha from entry options, using default", exc_info=True)
+            _LOGGER.debug(
+                "Failed to read EWMA alpha from entry options, using default",
+                exc_info=True,
+            )
             alpha = DEFAULT_ADAPTIVE_EWMA_ALPHA
 
         # compute and persist EWMA (events/sec)
@@ -368,14 +375,18 @@ class SmartChargerAdaptiveSensor(SensorEntity):
         try:
             ewma = prev + alpha * (rate_per_sec - prev)
         except Exception:
-            _LOGGER.debug("Failed to compute EWMA, falling back to previous value", exc_info=True)
+            _LOGGER.debug(
+                "Failed to compute EWMA, falling back to previous value", exc_info=True
+            )
             ewma = prev
         self.coordinator._flipflop_ewma = ewma
 
         self._attr_native_value = total_events
         # expose coordinator EWMA metadata when available
         ewma_last_raw = getattr(self.coordinator, "_flipflop_ewma_last_update", None)
-        ewma_exceeded = bool(getattr(self.coordinator, "_flipflop_ewma_exceeded", False))
+        ewma_exceeded = bool(
+            getattr(self.coordinator, "_flipflop_ewma_exceeded", False)
+        )
 
         # Safely convert the stored EWMA timestamp to a float timestamp if possible.
         ewma_last_ts: float | None = None
@@ -383,10 +394,14 @@ class SmartChargerAdaptiveSensor(SensorEntity):
             try:
                 ewma_last_ts = float(ewma_last_raw)
             except (TypeError, ValueError):
-                _LOGGER.debug("Invalid _flipflop_ewma_last_update value: %r", ewma_last_raw)
+                _LOGGER.debug(
+                    "Invalid _flipflop_ewma_last_update value: %r", ewma_last_raw
+                )
         else:
             if ewma_last_raw is not None:
-                _LOGGER.debug("Invalid _flipflop_ewma_last_update value: %r", ewma_last_raw)
+                _LOGGER.debug(
+                    "Invalid _flipflop_ewma_last_update value: %r", ewma_last_raw
+                )
 
         ewma_last_iso = (
             dt_util.as_local(dt_util.utc_from_timestamp(ewma_last_ts)).isoformat()
@@ -403,6 +418,12 @@ class SmartChargerAdaptiveSensor(SensorEntity):
             "flipflop_ewma_exceeded": ewma_exceeded,
             "active_overrides": active,
             "active_override_count": len(active),
+            "post_alarm_corrections": getattr(
+                self.coordinator, "_post_alarm_corrections", []
+            ),
+            "post_alarm_correction_count": len(
+                getattr(self.coordinator, "_post_alarm_corrections", []) or []
+            ),
             "last_update": dt_util.now().isoformat(),
         }
         self.async_write_ha_state()

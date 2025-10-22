@@ -25,6 +25,20 @@ coverage.xml
 pytest.log
 bandit_report.json
 
+# Local linting helpers / hooks
+.githooks/
+.mypy_cache/
+.isort.cfg
+.ruff_cache/
+.pyupgrade_cache/
+.safety/
+.black_cache/
+.codespell_cache
+
+# Local scripts and dev requirements (user requested local-only)
+scripts/
+requirements-dev.txt
+
 # IDE and editor settings
 .vscode/
 .idea/
