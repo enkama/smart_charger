@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 
 import pytest
 from homeassistant.util import dt as dt_util
+from homeassistant.core import HomeAssistant
+from typing import cast
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.smart_charger.const import DOMAIN
@@ -69,7 +71,7 @@ async def test_telemetry_applies_adaptive_override_when_high_flipflop(hass):
 def test_prune_flipflop_events():
     hass = DummyHass()
     entry = DummyEntry()
-    coord = SmartChargerCoordinator(hass, entry)
+    coord = SmartChargerCoordinator(cast(HomeAssistant, hass), entry)
 
     now = dt_util.utcnow()
     now_epoch = float((now - timedelta(seconds=0)).timestamp())
@@ -96,7 +98,7 @@ def test_prune_flipflop_events():
 def test_apply_adaptive_throttle_creates_override():
     hass = DummyHass()
     entry = DummyEntry()
-    coord = SmartChargerCoordinator(hass, entry)
+    coord = SmartChargerCoordinator(cast(HomeAssistant, hass), entry)
 
     now = dt_util.utcnow()
     now_epoch = float(now.timestamp())
@@ -126,7 +128,7 @@ def test_apply_adaptive_throttle_creates_override():
 def test_update_flipflop_ewma_and_mode():
     hass = DummyHassWithConfig()
     entry = DummyEntry()
-    coord = SmartChargerCoordinator(hass, entry)
+    coord = SmartChargerCoordinator(cast(HomeAssistant, hass), entry)
 
     now = dt_util.utcnow()
     now_epoch = float(now.timestamp())
@@ -155,7 +157,7 @@ def test_update_flipflop_ewma_and_mode():
 def test_record_flipflop_event_trims_old():
     hass = DummyHass()
     entry = DummyEntry()
-    coord = SmartChargerCoordinator(hass, entry)
+    coord = SmartChargerCoordinator(cast(HomeAssistant, hass), entry)
 
     now = dt_util.utcnow()
     now_epoch = float(now.timestamp())
