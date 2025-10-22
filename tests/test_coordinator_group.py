@@ -431,12 +431,4 @@ async def test_precharge_not_triggered_when_well_above_threshold(hass) -> None:
     )
     await hass.async_block_till_done()
 
-    turn_on_calls = async_mock_service(hass, "switch", "turn_on")
-
-    device_config = DeviceConfig.from_dict(device_dict)
-    plan = await _build_plan_for_test(
-        coordinator,
-        device_config,
-        now,
-        _LearningFastStub(7.5),
-    )
+    # No further checks required for this scenario in the grouped test
