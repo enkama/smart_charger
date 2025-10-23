@@ -91,6 +91,43 @@ Diagnostics expose both the configured and effective margins so you can confirm 
 - Learning session finalization will retry when the battery sensor is temporarily unavailable, using backoff delays of 30s, 90s, and 300s. Diagnostics show the current retry attempt count together with the active delay schedule.
 - Coordinator diagnostics now surface the active hysteresis release thresholds, making it easier to verify when and why a charger remains running.
 
+## Configurable options
+
+Where to change settings
+- Open the integration entry in Home Assistant and click Configure → Advanced settings for per-device tuning.
+- Many operational defaults are also exposed in the options flow when editing a device.
+
+What can be changed and fine-tuned
+- Precharge thresholds (percent): the low-level at which precharge begins and the release level at which charging is paused.
+- Hysteresis margins (percent): separate "release" and "resume" margins to avoid immediate re-triggering after pause.
+- Precharge cooldown (minutes): the minimum time after a precharge pause before re-allowing precharge; prevents rapid re-activation.
+- Precharge minimum re-activation drop (percent): a minimum drop required in battery percentage before re-allowing precharge (anti-flap protection).
+- Precharge countdown window (percent): the band above the precharge level where a countdown is started to defer release and avoid flip-flop.
+- SmartStart finish margin (percent): additional safety margin to ensure target level is met before stopping.
+- Switch throttle (seconds): the minimum time between issuing commands to the same charger to prevent chatter.
+- Switch confirmation count: number of consecutive coordinator evaluations that must agree before a switch command is issued.
+- Sensor stale time (seconds): how long the coordinator will consider a sensor reading valid before falling back to conservative behaviour.
+- Learning recent sample window (hours): how long recent charge sessions are considered "authoritative" for learned speeds.
+- Adaptive throttle and flip-flop detection settings: various knobs to tune adaptive mitigation behaviour.
+
+Standard/default values
+- precharge_margin_on (release margin): 1.5% (default)
+- precharge_margin_off (resume margin): 0.5% (default)
+- precharge_cooldown_minutes: 0 (disabled by default; set in minutes in options)
+- precharge_min_drop_percent: 0 (disabled by default; set in percent in options)
+- precharge_countdown_window: 5% (default)
+- smart_start_margin: 2% (default)
+- switch_throttle_seconds: 30 (seconds, default)
+- switch_confirmation_count: 2 (default)
+- sensor_stale_seconds: 30 (seconds default)
+- learning_recent_sample_hours: 24 (hours default)
+- adaptive_ewma_alpha: 0.3 (default)
+
+Notes
+- Values configured in the options flow are applied per device. Use conservative defaults initially and tune gradually while observing diagnostics.
+- Precharge cooldown and minimum re-activation drop together provide anti-flap protection: the cooldown enforces a time window, while the drop ensures the battery moved sufficiently lower before re-allowing precharge.
+- If you rely on learned charging speeds, increase the recent-sample window so fewer samples decay; otherwise provide an average speed sensor as fallback.
+
 ## Services
 
 The integration registers the following domain services:

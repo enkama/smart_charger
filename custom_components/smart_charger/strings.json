@@ -49,9 +49,7 @@
           "notify_targets": "Notification targets (comma separated)"
         }
       },
-      "abort": {
-          "finished": "Setup finished successfully"
-        }
+      "abort": {}
     }
   },
   "options": {

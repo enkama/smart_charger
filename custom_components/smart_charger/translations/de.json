@@ -50,9 +50,7 @@
         }
       }
     },
-    "abort": {
-      "finished": "Einrichtung erfolgreich abgeschlossen"
-    }
+    "abort": {}
   },
   "options": {
     "step": {
