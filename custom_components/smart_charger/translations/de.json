@@ -151,10 +151,6 @@
       "review_suggestions": {
         "title": "Vorgeschlagene persistente Änderungen prüfen",
         "description": "Prüfe und akzeptiere oder verwerfe vorgeschlagene persistente Änderungen nach Alarmen. {info}",
-        "lines_suggested": "Vorgeschlagene persistente Änderungen:",
-        "lines_smart_start_bumps": "SmartStart Erhöhungen:",
-        "lines_adaptive_overrides": "Adaptive Modus-Überschreibungen:",
-        "lines_no_suggestions": "(Keine Vorschläge vorhanden)",
         "data": {
           "action": "Aktion",
           "entity": "Entität",

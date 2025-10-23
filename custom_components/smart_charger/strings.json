@@ -152,10 +152,6 @@
       "review_suggestions": {
         "title": "Review suggested persistent changes",
         "description": "Review and accept or revert suggested persistent changes after alarms. {info}",
-        "lines_suggested": "Suggested persisted changes:",
-        "lines_smart_start_bumps": "SmartStart bumps:",
-        "lines_adaptive_overrides": "Adaptive mode overrides:",
-        "lines_no_suggestions": "(No suggestions present)",
         "data": {
           "action": "Action",
           "entity": "Entity",

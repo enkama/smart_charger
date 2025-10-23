@@ -880,7 +880,8 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             if action == "delete_device":
                 return await self.async_step_delete_device()
             if action == "advanced_settings":
-                return await self.async_step_advanced_settings()
+                # Directly open the advanced settings device selection
+                return await self.async_step_advanced_settings_device()
             return self.async_create_entry(title="", data={})
 
         info = self._device_count_message(len(self.devices))
@@ -1084,13 +1085,10 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         )
         return suggested_smart_start, suggested_adaptive
 
-    async def async_step_review_suggestions(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Allow user to review/accept/revert post-alarm suggested persisted changes."""
-        suggested_smart_start, suggested_adaptive = self._get_suggestions()
-
-        # Build description lines summarizing suggestions
+    def _build_review_lines(
+        self, suggested_smart_start: dict[str, Any], suggested_adaptive: dict[str, Any]
+    ) -> list[str]:
+        """Build description lines summarizing suggestions."""
         lines: list[str] = ["Suggested persisted changes:"]
         if suggested_smart_start:
             lines.append("Smart start bumps:")
@@ -1102,16 +1100,14 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 lines.append(f"• {ent}: {mode}")
         if not suggested_smart_start and not suggested_adaptive:
             lines.append("(No suggestions present)")
+        return lines
 
-        # Prepare entity selector options with friendly labels
-        raw_entities = sorted(
-            set(list(suggested_smart_start.keys()) + list(suggested_adaptive.keys()))
-        )
-
-        # Build a list of SelectOptionDict so the UI shows labels not object dumps
+    def _build_entity_selector_options(
+        self, raw_entities: list[str]
+    ) -> list[SelectOptionDict]:
+        """Return a list of SelectOptionDict with friendly labels for entities."""
         options: list[SelectOptionDict] = [{"value": "(none)", "label": "(none)"}]
         try:
-            # Try to prefer entity registry / device registry friendly names
             er = self.hass.helpers.entity_registry.async_get(self.hass)
             dr_reg = self.hass.helpers.device_registry.async_get(self.hass)
         except Exception:
@@ -1124,15 +1120,12 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 if er is not None:
                     ent_reg = er.async_get(ent)
                     if ent_reg and ent_reg.entity_id:
-                        # Prefer entity registry name
                         label = ent_reg.name or label
-                        # If entity is linked to a device, prefer device name
                         if ent_reg.device_id and dr_reg is not None:
                             dev = dr_reg.async_get(ent_reg.device_id)
                             if dev:
                                 label = dev.name_by_user or dev.name or label
                 else:
-                    # Fallback: try to read state name
                     st = self.hass.states.get(ent)
                     if st and st.name:
                         label = st.name
@@ -1146,23 +1139,30 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                         "Ignored exception while building entity labels", exc_info=True
                     )
             options.append({"value": ent, "label": str(label)})
+        return options
 
+    def _build_review_schema(self, options: list[SelectOptionDict]) -> vol.Schema:
+        """Create the voluptuous schema for the review form."""
         selector = SelectSelector(
             SelectSelectorConfig(
                 options=options, multiple=False, mode=SelectSelectorMode.DROPDOWN
             )
         )
-
         schema = vol.Schema(
             {
-                vol.Required(
-                    "action", default="none"
-                ): REVIEW_SUGGESTIONS_ACTION_SELECTOR,
+                vol.Required("action", default="none"): REVIEW_SUGGESTIONS_ACTION_SELECTOR,
                 vol.Optional("entity", default="(none)"): selector,
             }
         )
+        return schema
 
-        # Handle accept/revert actions
+    def _handle_accept_revert_all(
+        self,
+        user_input: dict[str, Any] | None,
+        suggested_smart_start: dict[str, Any],
+        suggested_adaptive: dict[str, Any],
+    ) -> config_entries.ConfigFlowResult | None:
+        """Handle accept_all / revert_all actions; return entry result or None."""
         if user_input and user_input.get("action") in ("accept_all", "revert_all"):
             action = user_input.get("action")
             if action == "accept_all":
@@ -1175,20 +1175,19 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                     "revert_all", suggested_smart_start, suggested_adaptive
                 )
                 return self.async_create_entry(title="", data={})
+        return None
 
-        # Handle per-entity accept/revert
-        if user_input and user_input.get("action") in (
-            "accept_entity",
-            "revert_entity",
-        ):
+    def _handle_per_entity_action(
+        self, user_input: dict[str, Any] | None
+    ) -> tuple[config_entries.ConfigFlowResult | None, str | None]:
+        """Handle accept_entity / revert_entity actions; return (result, error).
+
+        If the entity is invalid, return (None, "invalid_entity").
+        """
+        if user_input and user_input.get("action") in ("accept_entity", "revert_entity"):
             ent = user_input.get("entity")
             if not ent or ent == "(none)":
-                return self.async_show_form(
-                    step_id="review_suggestions",
-                    data_schema=schema,
-                    errors={"entity": "invalid_entity"},
-                    description_placeholders={"info": "\n".join(lines)},
-                )
+                return None, "invalid_entity"
             target_entity = str(ent)
             svc = (
                 "accept_suggested_persistence"
@@ -1199,13 +1198,42 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 self.hass.services.async_call(
                     DOMAIN,
                     svc,
-                    {
-                        "entry_id": self.config_entry.entry_id,
-                        "entity_id": target_entity,
-                    },
+                    {"entry_id": self.config_entry.entry_id, "entity_id": target_entity},
                 )
             )
-            return self.async_create_entry(title="", data={})
+            return self.async_create_entry(title="", data={}), None
+        return None, None
+
+    async def async_step_review_suggestions(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Allow user to review/accept/revert post-alarm suggested persisted changes."""
+        suggested_smart_start, suggested_adaptive = self._get_suggestions()
+
+        # Build description lines and selector options using helpers
+        lines = self._build_review_lines(suggested_smart_start, suggested_adaptive)
+        raw_entities = sorted(
+            set(list(suggested_smart_start.keys()) + list(suggested_adaptive.keys()))
+        )
+        options = self._build_entity_selector_options(raw_entities)
+        schema = self._build_review_schema(options)
+
+        # First try global accept/revert
+        result = self._handle_accept_revert_all(user_input, suggested_smart_start, suggested_adaptive)
+        if result:
+            return result
+
+        # Then handle per-entity actions
+        result, error = self._handle_per_entity_action(user_input)
+        if error == "invalid_entity":
+            return self.async_show_form(
+                step_id="review_suggestions",
+                data_schema=schema,
+                errors={"entity": "invalid_entity"},
+                description_placeholders={"info": "\n".join(lines)},
+            )
+        if result:
+            return result
 
         return self.async_show_form(
             step_id="review_suggestions",
