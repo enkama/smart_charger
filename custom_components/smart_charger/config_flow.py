@@ -1071,10 +1071,8 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             },
         )
 
-    async def async_step_review_suggestions(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Allow user to review/accept/revert post-alarm suggested persisted changes."""
+    def _get_suggestions(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return smart-start and adaptive suggestions for the current entry."""
         entries = self.hass.data.get(DOMAIN, {}).get("entries", {})
         entry_data = entries.get(getattr(self.config_entry, "entry_id", ""), {})
         coord = entry_data.get("coordinator")
@@ -1086,20 +1084,12 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             getattr(self.config_entry, "options", {}).get("adaptive_mode_overrides", {})
             or {}
         )
+        return suggested_smart_start, suggested_adaptive
 
-        if user_input:
-            action = user_input.get("action")
-            if action == "accept_all":
-                self._apply_suggestions_action(
-                    "accept_all", suggested_smart_start, suggested_adaptive
-                )
-                return self.async_create_entry(title="", data={})
-            if action == "revert_all":
-                self._apply_suggestions_action(
-                    "revert_all", suggested_smart_start, suggested_adaptive
-                )
-                return self.async_create_entry(title="", data={})
-
+    def _lines_for_suggestions(
+        self, suggested_smart_start: dict[str, Any], suggested_adaptive: dict[str, Any]
+    ) -> list[str]:
+        """Render a short list of human readable suggestion lines."""
         lines = ["Suggested persisted changes:"]
         if suggested_smart_start:
             lines.append("Smart start bumps:")
@@ -1111,17 +1101,10 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 lines.append(f"• {ent}: {mode}")
         if not suggested_smart_start and not suggested_adaptive:
             lines.append("(No suggestions present)")
+        return lines
 
-        # Build entity list for per-entity actions. Use a SelectSelector so the
-        # UI displays friendly labels while the option value remains the
-        # entity_id which we can use directly when applying actions.
-        entity_ids = sorted(
-            set(list(suggested_smart_start.keys()) + list(suggested_adaptive.keys()))
-        )
-        # Determine localized label for the 'none' placeholder. We try to load
-        # the integration translations (strings.json or translations/<lang>.json)
-        # from the package so the UI shows a localized placeholder where
-        # available. Fall back to the literal '(none)'.
+    def _get_none_label(self) -> str:
+        """Best-effort load of localized '(none)' label from translations."""
         none_label = "(none)"
         try:
             import json
@@ -1131,7 +1114,6 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             lang = (
                 getattr(getattr(self.hass, "config", None), "language", None) or "en"
             ).split("-")[0]
-            # Prefer language-specific translation file when available
             trans_path = os.path.join(package_dir, "translations", f"{lang}.json")
             if not os.path.exists(trans_path):
                 trans_path = os.path.join(package_dir, "strings.json")
@@ -1149,19 +1131,17 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 or none_label
             )
         except Exception:
-            # Best-effort only; don't break the flow if translations cannot be read.
             none_label = "(none)"
+        return none_label
 
+    def _build_entity_options(
+        self, entity_ids: Iterable[str], none_label: str
+    ) -> list[SelectOptionDict]:
+        """Build select option dicts for the provided entity ids using friendly labels."""
         entity_options: list[SelectOptionDict] = [
             {"value": "(none)", "label": none_label},
         ]
-        for ent in entity_ids:
-            # Resolve friendly label using the entity registry -> device
-            # mapping. Priority:
-            # 1) Device entry name (device.name or name_by_user)
-            # 2) Entity registry custom name (entry.name)
-            # 3) State object name (state.name)
-            # 4) Fallback to entity_id string
+        for ent in sorted(set(entity_ids)):
             label: str | None = None
             try:
                 from homeassistant.helpers import device_registry as dr
@@ -1170,22 +1150,18 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 ent_reg = er.async_get(self.hass)
                 entry = ent_reg.async_get(ent)
                 if entry is not None:
-                    # If the entity is tied to a device, try the device name
                     device_id = getattr(entry, "device_id", None)
                     if device_id:
                         dev_reg = dr.async_get(self.hass)
                         device = dev_reg.async_get(device_id)
                         if device is not None:
-                            # Prefer name_by_user if present, then device.name
                             label = getattr(device, "name_by_user", None) or getattr(
                                 device, "name", None
                             )
-                    # If we don't have a device label, prefer the entity's configured name
                     if not label:
                         label = getattr(entry, "name", None) or getattr(
                             entry, "original_name", None
                         )
-                # Finally fall back to state name
                 if not label:
                     st = self.hass.states.get(ent)
                     if st is not None:
@@ -1193,28 +1169,70 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             except Exception:
                 label = None
             entity_options.append({"value": ent, "label": label or ent})
+        return entity_options
 
-        ENTITY_SELECTOR = SelectSelector(
-            SelectSelectorConfig(options=entity_options, multiple=False)
+    def _apply_entity_action(
+        self, action: str, target_entity: str
+    ) -> config_entries.ConfigFlowResult:
+        """Handle accept/revert action for a single entity by calling the service and returning flow result."""
+        if action == "accept_entity":
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    DOMAIN,
+                    "accept_suggested_persistence",
+                    {
+                        "entry_id": self.config_entry.entry_id,
+                        "entity_id": target_entity,
+                    },
+                )
+            )
+            return self.async_create_entry(title="", data={})
+        # revert_entity
+        self.hass.async_create_task(
+            self.hass.services.async_call(
+                DOMAIN,
+                "revert_suggested_persistence",
+                {"entry_id": self.config_entry.entry_id, "entity_id": target_entity},
+            )
         )
+        return self.async_create_entry(title="", data={})
 
-        # Build a simple schema mapping keys to selectors/validators. We use
-        # vol.Schema for the underlying validation, but provide a selector for
-        # the 'action' field so the UI renders localized labels. The entity
-        # field uses a SelectSelector which stores the selected entity_id as
-        # its value.
+    async def async_step_review_suggestions(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Allow user to review/accept/revert post-alarm suggested persisted changes."""
+        suggested_smart_start, suggested_adaptive = self._get_suggestions()
+
+        # Accept/revert all actions handled first
+        if user_input and user_input.get("action") in ("accept_all", "revert_all"):
+            self._apply_suggestions_action(
+                str(user_input.get("action")), suggested_smart_start, suggested_adaptive
+            )
+            return self.async_create_entry(title="", data={})
+
+        # Build display lines and selectable entities for per-entity actions
+        lines = self._lines_for_suggestions(suggested_smart_start, suggested_adaptive)
+        entity_ids = list(suggested_smart_start.keys()) + list(
+            suggested_adaptive.keys()
+        )
+        none_label = self._get_none_label()
+        entity_options = self._build_entity_options(entity_ids, none_label)
+
+        # simple validation schema for per-entity actions (UI will render nicer selectors below)
         schema = vol.Schema(
             {
                 vol.Required("action", default="none"): str,
-                vol.Optional("entity", default="(none)"): ENTITY_SELECTOR,
+                vol.Optional("entity", default="(none)"): SelectSelector(
+                    SelectSelectorConfig(options=entity_options, multiple=False)
+                ),
             }
         )
+
+        # Per-entity actions: validate selection and dispatch services
         if user_input and user_input.get("action") in (
             "accept_entity",
             "revert_entity",
         ):
-            # The entity selector returns the entity_id as the value. Validate
-            # that an actual entity_id was selected (not the '(none)' placeholder).
             selected = user_input.get("entity")
             if not selected or selected == "(none)":
                 return self.async_show_form(
@@ -1223,53 +1241,11 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                     errors={"entity": "invalid_entity"},
                     description_placeholders={"info": "\n".join(lines)},
                 )
-            target_entity = str(selected)
-            if user_input.get("action") == "accept_entity":
-                # Accept single entity: call service to persist
-                self.hass.async_create_task(
-                    self.hass.services.async_call(
-                        DOMAIN,
-                        "accept_suggested_persistence",
-                        {
-                            "entry_id": self.config_entry.entry_id,
-                            "entity_id": target_entity,
-                        },
-                    )
-                )
-                return self.async_create_entry(title="", data={})
-            else:
-                self.hass.async_create_task(
-                    self.hass.services.async_call(
-                        DOMAIN,
-                        "revert_suggested_persistence",
-                        {
-                            "entry_id": self.config_entry.entry_id,
-                            "entity_id": target_entity,
-                        },
-                    )
-                )
-                return self.async_create_entry(title="", data={})
+            return self._apply_entity_action(
+                str(user_input.get("action")), str(selected)
+            )
 
-        if user_input and user_input.get("action") in ("accept_all", "revert_all"):
-            # Use existing code path for accept/revert all
-            action = user_input.get("action")
-            if action == "accept_all":
-                self._apply_suggestions_action(
-                    "accept_all", suggested_smart_start, suggested_adaptive
-                )
-                return self.async_create_entry(title="", data={})
-            if action == "revert_all":
-                self._apply_suggestions_action(
-                    "revert_all", suggested_smart_start, suggested_adaptive
-                )
-                return self.async_create_entry(title="", data={})
-
-        # Render form using selectors mapping for richer UI. Home Assistant's
-        # form API accepts a mapping `data_schema` and `description_placeholders`;
-        # selectors are provided via the `data_schema` by passing in the actual
-        # selector validator object for the UI. We reuse the schema above for
-        # validation but supply REVIEW_SUGGESTIONS_ACTION_SELECTOR to get
-        # localized labels for the action dropdown.
+        # Render the form with a localized dropdown for action choices
         return self.async_show_form(
             step_id="review_suggestions",
             data_schema=vol.Schema(

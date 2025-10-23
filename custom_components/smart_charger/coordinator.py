@@ -569,6 +569,124 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             )
         )
 
+    # --- Precharge helpers (extracted to reduce cyclomatic complexity) ---
+    def _precharge_get_pre_epoch(self) -> float:
+        """Return a robust pre_epoch value for switch calls.
+
+        Uses the coordinator's current eval time when set to keep
+        behavior deterministic during a single update, otherwise falls
+        back to utcnow().
+        """
+        try:
+            return float(
+                dt_util.as_timestamp(
+                    getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                )
+            )
+        except Exception:
+            _ignored_exc()
+            return float(dt_util.as_timestamp(dt_util.utcnow()))
+
+    def _precharge_record_release(
+        self, device: DeviceConfig, release_level: float
+    ) -> None:
+        """Record the last precharge release level and timestamp for a device.
+
+        This is used by the anti-flap logic to avoid immediate re-activation
+        after a recent release.
+        """
+        try:
+            self._precharge_last_release_level[device.name] = float(release_level)
+            self._precharge_last_release_ts[device.name] = float(self._get_now_epoch())
+        except Exception:
+            _ignored_exc()
+
+    def _precharge_is_reactivation_allowed(
+        self, device: DeviceConfig, target_release: float
+    ) -> bool:
+        """Return True when re-activation of precharge is allowed.
+
+        The gate checks two configured safeguards:
+        - a minimum percentage drop since the last release (precharge_min_drop_percent)
+        - a cooldown window (precharge_cooldown_effective_seconds)
+
+        If no prior release is recorded we allow activation.
+        """
+        try:
+            last_level = self._precharge_last_release_level.get(device.name)
+            last_ts = self._precharge_last_release_ts.get(device.name)
+
+            # No prior release recorded -> allow
+            if last_level is None or last_ts is None:
+                return True
+
+            # Delegate checks to smaller helpers to reduce complexity
+            # Determine current battery level from the last coordinator snapshot
+            current_batt: float | None = None
+            try:
+                st = (self._state or {}).get(device.name) or {}
+                if st:
+                    cb = st.get("battery")
+                    if cb is not None:
+                        try:
+                            current_batt = float(cb)
+                        except Exception:
+                            current_batt = None
+            except Exception:
+                _ignored_exc()
+
+            if self._precharge_min_drop_blocked(
+                last_level, target_release, current_batt
+            ):
+                return False
+            if self._precharge_cooldown_blocked(last_ts):
+                return False
+
+            return True
+        except Exception:
+            _ignored_exc()
+            return True
+
+    def _precharge_min_drop_blocked(
+        self, last_level: float, target_release: float, current_batt: float | None
+    ) -> bool:
+        """Return True when the minimum-drop gate blocks re-activation.
+
+        This is separated to keep the parent method small for McCabe.
+        """
+        try:
+            try:
+                min_drop = float(self._precharge_min_drop_percent or 0.0)
+            except Exception:
+                return False
+            if min_drop <= 0.0:
+                return False
+            # If we don't have a current battery reading, don't block
+            if current_batt is None:
+                return False
+            # Block when the battery hasn't dropped at least `min_drop` since last release
+            return float(last_level) - float(current_batt) < float(min_drop)
+        except Exception:
+            _ignored_exc()
+            return False
+
+    def _precharge_cooldown_blocked(self, last_ts: float) -> bool:
+        """Return True when the cooldown gate blocks re-activation."""
+        try:
+            try:
+                cooldown = float(
+                    getattr(self, "_precharge_cooldown_effective_seconds", 0.0) or 0.0
+                )
+            except Exception:
+                return False
+            if cooldown <= 0.0:
+                return False
+            now = float(self._get_now_epoch())
+            return now - float(last_ts) < cooldown
+        except Exception:
+            _ignored_exc()
+            return False
+
     def _get_last_action_state(self, norm: str) -> bool | None:
         """Return the coordinator-recorded last action state, or probe the entity state.
 
@@ -2491,90 +2609,19 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 charger_ent,
             )
             bypass = bool(forecast_holdoff)
-            # If we recently recorded a release level for this device, require
-            # the battery to drop at least `_precharge_min_drop_percent` before
-            # re-activating precharge to avoid rapid re-entry (flapping).
-            try:
-                last_release = self._precharge_last_release_level.get(device.name)
-                if (
-                    last_release is not None
-                    and isinstance(target_release, (int, float))
-                    and hasattr(self, "_precharge_min_drop_percent")
-                ):
-                    # compute required level to allow re-activation
-                    required_drop = float(last_release) - float(
-                        abs(float(self._precharge_min_drop_percent) or 0.0)
-                    )
-                    # Only allow re-activation when battery is below required_drop
-                    try:
-                        # derive current battery level from state snapshot if available
-                        cur_batt = None
-                        sd = self._state.get(device.name)
-                        if sd is not None:
-                            cur_batt = sd.get("battery")
-                        if cur_batt is None:
-                            # fallback: try reading current HA state
-                            st = self.hass.states.get(device.battery_sensor)
-                            if st is not None:
-                                try:
-                                    cur_batt = float(str(getattr(st, "state", "")))
-                                except Exception:
-                                    cur_batt = None
-                    except Exception:
-                        cur_batt = None
-                    if cur_batt is not None and cur_batt >= required_drop:
-                        _LOGGER.debug(
-                            "Precharge re-activation blocked: last_release=%.2f%% required_drop=%.2f%% cur=%.2f%%",
-                            float(last_release),
-                            float(required_drop),
-                            float(cur_batt),
-                        )
-                        return False
-                # Also block re-activation if we're still inside the cooldown
-                # window since the last recorded release. The option is stored
-                # as minutes in the UI; `self._precharge_cooldown_effective_seconds`
-                # contains the converted seconds value used for comparisons.
-                try:
-                    last_ts = self._precharge_last_release_ts.get(device.name)
-                    if (
-                        last_ts is not None
-                        and getattr(self, "_precharge_cooldown_effective_seconds", None)
-                        is not None
-                    ):
-                        now_epoch = float(
-                            dt_util.as_timestamp(
-                                getattr(self, "_current_eval_time", None)
-                                or dt_util.utcnow()
-                            )
-                        )
-                        elapsed = now_epoch - float(last_ts)
-                        if elapsed >= 0 and elapsed < float(
-                            self._precharge_cooldown_effective_seconds
-                        ):
-                            _LOGGER.debug(
-                                "Precharge re-activation blocked by cooldown: last_release_ts=%.3f elapsed=%.3f cooldown=%.3f",
-                                float(last_ts),
-                                float(elapsed),
-                                float(self._precharge_cooldown_effective_seconds),
-                            )
-                            return False
-                except Exception:
-                    _ignored_exc()
-            except Exception:
-                _ignored_exc()
+            # Gate re-activation on configured minimum drop and cooldown.
+            if not self._precharge_is_reactivation_allowed(device, target_release):
+                _LOGGER.debug(
+                    "Precharge re-activation blocked by min-drop or cooldown for %s",
+                    device_name,
+                )
+                return False
             if bypass:
-                try:
-                    pre_ts_local = (
-                        getattr(self, "_current_eval_time", None) or dt_util.utcnow()
-                    )
-                    pre_epoch_local = float(dt_util.as_timestamp(pre_ts_local))
-                except Exception:
-                    pre_epoch_local = float(dt_util.as_timestamp(dt_util.utcnow()))
                 prev_action = self._last_action_state.get(charger_ent)
                 await self._async_switch_call(
                     "turn_on",
                     service_data,
-                    pre_epoch=pre_epoch_local,
+                    pre_epoch=self._precharge_get_pre_epoch(),
                     previous_last_action=prev_action,
                     bypass_throttle=True,
                 )
@@ -2668,27 +2715,9 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     bypass_throttle=bypass,
                 )
                 # Record the release level so we can avoid immediate re-activation
-                try:
-                    if device.name and isinstance(target_release, (int, float)):
-                        self._precharge_last_release_level[device.name] = float(
-                            target_release
-                        )
-                        try:
-                            self._precharge_last_release_ts[device.name] = float(
-                                dt_util.as_timestamp(
-                                    getattr(self, "_current_eval_time", None)
-                                    or dt_util.utcnow()
-                                )
-                            )
-                        except Exception:
-                            try:
-                                self._precharge_last_release_ts[device.name] = float(
-                                    dt_util.as_timestamp(dt_util.utcnow())
-                                )
-                            except Exception:
-                                _ignored_exc()
-                except Exception:
-                    _ignored_exc()
+                # Record the release level so the activation helper can avoid
+                # immediate re-activation (anti-flap).
+                self._precharge_record_release(device, target_release)
                 return False
 
             handled_activate = await self._apply_charger_precharge_activate_if_needed(

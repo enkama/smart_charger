@@ -48,20 +48,20 @@
           "notify_enabled": "Enable notifications",
           "notify_targets": "Notification targets (comma separated)"
         }
+      },
+      "error": {
+        "invalid_level": "Invalid charge level settings",
+        "invalid_margin": "Invalid margin configuration",
+        "name_exists": "A device with this name already exists",
+        "name_empty": "Device name cannot be empty",
+        "alarm_required_single": "Please select a global alarm entity.",
+        "alarm_required_per_day": "Please set at least one weekday alarm entity."
+      },
+      "abort": {
+        "no_devices": "No devices configured yet.",
+        "invalid_device": "Invalid device selection",
+        "finished": "Setup finished successfully"
       }
-    },
-    "error": {
-  "invalid_level": "Invalid charge level settings",
-  "invalid_margin": "Invalid margin configuration",
-  "name_exists": "A device with this name already exists",
-      "name_empty": "Device name cannot be empty",
-      "alarm_required_single": "Please select a global alarm entity.",
-      "alarm_required_per_day": "Please set at least one weekday alarm entity."
-    },
-    "abort": {
-      "no_devices": "No devices configured yet.",
-      "invalid_device": "Invalid device selection",
-      "finished": "Setup finished successfully"
     }
   },
   "options": {
@@ -72,8 +72,8 @@
         "menu_options": {
           "edit_device": "⚙️ Edit existing device",
           "advanced_settings": "🔧 Advanced settings",
-        "delete_device": "🗑️ Delete device",
-        "review_suggestions": "💡 Review suggestions"
+          "delete_device": "🗑️ Delete device",
+          "review_suggestions": "💡 Review suggestions"
         }
       },
       "edit_device": {
@@ -139,13 +139,13 @@
           "smart_start_margin": "SmartStart finish margin (%)",
           "precharge_countdown_window": "Precharge release countdown window (%)",
           "suggestion_threshold": "Suggestion threshold",
-  "precharge_min_drop_percent": "Precharge re-activation minimum drop (%)",
-  "precharge_cooldown_minutes": "Precharge cooldown (minutes)",
-        "sensor_stale_seconds": "Sensor timeout (seconds)",
+          "precharge_min_drop_percent": "Precharge re-activation minimum drop (%)",
+          "precharge_cooldown_minutes": "Precharge cooldown (minutes)",
+          "sensor_stale_seconds": "Sensor timeout (seconds)",
           "learning_recent_sample_hours": "Recent sample window (hours)",
-        "adaptive_ewma_alpha": "Adaptive EWMA alpha",
-        "switch_throttle_seconds": "Switch throttle (seconds)",
-        "switch_confirmation_count": "Switch confirmation count",
+          "adaptive_ewma_alpha": "Adaptive EWMA alpha",
+          "switch_throttle_seconds": "Switch throttle (seconds)",
+          "switch_confirmation_count": "Switch confirmation count",
           "adaptive_throttle_enabled": "Enable adaptive throttle mitigation",
           "adaptive_throttle_multiplier": "Adaptive throttle multiplier",
           "adaptive_throttle_min_seconds": "Adaptive throttle minimum (seconds)",
@@ -158,7 +158,29 @@
           "adaptive_throttle_mode_conservative": "Conservative",
           "adaptive_throttle_mode_normal": "Normal",
           "adaptive_throttle_mode_aggressive": "Aggressive"
-  }
+        }
+      },
+      "review_suggestions": {
+        "title": "Review suggested persisted changes",
+        "description": "Review and accept or revert suggested persisted changes made after alarms. {info}",
+        "data": {
+          "action": "Action",
+          "entity": "Entity",
+          "entity_none": "No entity"
+        },
+        "options": {
+          "none": "No action",
+          "accept_all": "Accept all suggested changes",
+          "revert_all": "Revert all suggested changes",
+          "accept_entity": "Accept suggested change for selected entity",
+          "revert_entity": "Revert suggested change for selected entity"
+        },
+        "errors": {
+          "invalid_entity": "Please select a valid entity"
+        },
+        "help": {
+          "entity": "Choose an entity to accept or revert the suggested persisted change for."
+        }
       }
     }
   },
@@ -167,6 +189,21 @@
       "options": {
         "single": "One alarm for all days",
         "per_day": "Different alarms per weekday"
+      }
+    },
+    "review_suggestions_actions": {
+      "options": {
+        "none": "No action",
+        "accept_all": "Accept all suggested changes",
+        "revert_all": "Revert all suggested changes",
+        "accept_entity": "Accept for selected entity",
+        "revert_entity": "Revert for selected entity"
+      },
+      "help": {
+        "accept_all": "Persist all suggested changes into the integration options (smart-start margins and adaptive-mode overrides).",
+        "revert_all": "Remove any persisted suggestions and restore runtime defaults.",
+        "accept_entity": "Persist the suggested change for the selected entity only.",
+        "revert_entity": "Revert persisted suggestions for the selected entity and restore runtime state."
       }
     }
   },
@@ -222,44 +259,6 @@
         }
       }
     }
-  ,
-    "review_suggestions": {
-      "title": "Review suggested persisted changes",
-      "description": "Review and accept or revert suggested persisted changes made after alarms. {info}",
-      "data": {
-        "action": "Action",
-        "entity": "Entity",
-        "entity_none": "No entity"
-      },
-      "options": {
-        "none": "No action",
-        "accept_all": "Accept all suggested changes",
-        "revert_all": "Revert all suggested changes",
-        "accept_entity": "Accept suggested change for selected entity",
-        "revert_entity": "Revert suggested change for selected entity"
-      },
-      "errors": {
-        "invalid_entity": "Please select a valid entity"
-      },
-      "help": {
-        "entity": "Choose an entity to accept or revert the suggested persisted change for."
-      }
-    }
-  ,
-    "review_suggestions_actions": {
-      "options": {
-        "none": "No action",
-        "accept_all": "Accept all suggested changes",
-        "revert_all": "Revert all suggested changes",
-        "accept_entity": "Accept for selected entity",
-        "revert_entity": "Revert for selected entity"
-      },
-      "help": {
-        "accept_all": "Persist all suggested changes into the integration options (smart-start margins and adaptive-mode overrides).",
-        "revert_all": "Remove any persisted suggestions and restore runtime defaults.",
-        "accept_entity": "Persist the suggested change for the selected entity only.",
-        "revert_entity": "Revert persisted suggestions for the selected entity and restore runtime state."
-      }
-    }
   }
 }
+

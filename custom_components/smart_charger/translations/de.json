@@ -191,7 +191,16 @@
         "entity": "Wähle eine Entität aus, für die die vorgeschlagene persistente Änderung akzeptiert oder verworfen werden soll."
       }
     }
-
+    
+    }
+  },
+  "selector": {
+    "alarm_mode": {
+      "options": {
+        "single": "Ein Wecker für alle Tage",
+        "per_day": "Unterschiedliche Wecker je Wochentag"
+      }
+    }
     ,
     "review_suggestions_actions": {
       "options": {
@@ -206,16 +215,6 @@
         "revert_all": "Entferne alle persistierten Vorschläge und stelle die Laufzeit-Standardeinstellungen wieder her.",
         "accept_entity": "Persistiere die vorgeschlagene Änderung nur für die ausgewählte Entität.",
         "revert_entity": "Verwerfe persistierte Vorschläge für die ausgewählte Entität und stelle die Laufzeit-Einstellungen wieder her."
-      }
-    }
-
-    }
-  },
-  "selector": {
-    "alarm_mode": {
-      "options": {
-        "single": "Ein Wecker für alle Tage",
-        "per_day": "Unterschiedliche Wecker je Wochentag"
       }
     }
   },
