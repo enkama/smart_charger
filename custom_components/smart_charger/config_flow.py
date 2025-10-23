@@ -947,20 +947,18 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
     async def async_step_advanced_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
+        # Skip intermediate submenu - go directly to device selection for
+        # advanced settings. Preserve existing next_step handling if called
+        # programmatically with a next_step_id.
         if user_input and user_input.get("next_step_id"):
             next_step = user_input["next_step_id"]
             handler = getattr(self, f"async_step_{next_step}", None)
             if handler is not None:
                 return await handler()
 
-        info = self._device_count_message(len(self.devices))
-        return self.async_show_menu(
-            step_id="advanced_settings",
-            menu_options=[
-                "advanced_settings_device",
-            ],
-            description_placeholders={"info": info},
-        )
+        # Forward user to the device-selection step directly when the user
+        # chooses "advanced settings from the main options menu.
+        return await self.async_step_advanced_settings_device()
 
     async def async_step_advanced_settings_device(
         self, user_input: dict[str, Any] | None = None
@@ -1053,6 +1051,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             or {}
         )
 
+<<<<<<< Updated upstream
         if user_input:
             action = user_input.get("action")
             if action == "accept_all":
@@ -1067,16 +1066,65 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 return self.async_create_entry(title="", data={})
 
         lines = ["Suggested persisted changes:"]
+=======
+    def _lines_for_suggestions(
+        self, suggested_smart_start: dict[str, Any], suggested_adaptive: dict[str, Any]
+    ) -> list[str]:
+        """Render a short list of human readable suggestion lines."""
+        # Load localized strings with fallbacks to values from strings.json
+        translations = getattr(self.hass, "translations", None)
+        lang = (
+            getattr(getattr(self.hass, "config", None), "language", None) or "en"
+        ).split("-")[0]
+        def _t(path: list[str], default: str) -> str:
+            # path example: ["options", "step", "review_suggestions", "lines_suggested"]
+            try:
+                # translations may be nested as translations[lang][...]
+                if translations and lang in translations:
+                    node = translations[lang]
+                    for p in path:
+                        node = node.get(p, None)
+                        if node is None:
+                            break
+                    if isinstance(node, str):
+                        return node
+            except Exception:
+                pass
+            # fallback to loading from local strings.json
+            try:
+                import json, os
+
+                package_dir = os.path.dirname(__file__)
+                with open(os.path.join(package_dir, "strings.json"), encoding="utf-8") as fh:
+                    data = json.load(fh)
+                node = data
+                for p in path:
+                    node = node.get(p, None)
+                    if node is None:
+                        break
+                if isinstance(node, str):
+                    return node
+            except Exception:
+                pass
+            return default
+
+        lines = [_t(["options", "step", "review_suggestions", "lines_suggested"], "Suggested persisted changes:")]
+>>>>>>> Stashed changes
         if suggested_smart_start:
-            lines.append("Smart start bumps:")
+            lines.append(_t(["options", "step", "review_suggestions", "lines_smart_start_bumps"], "Smart start bumps:"))
             for ent, m in suggested_smart_start.items():
                 lines.append(f"• {ent}: +{float(m)}%")
         if suggested_adaptive:
-            lines.append("Adaptive mode overrides:")
+            lines.append(_t(["options", "step", "review_suggestions", "lines_adaptive_overrides"], "Adaptive mode overrides:"))
             for ent, mode in suggested_adaptive.items():
                 lines.append(f"• {ent}: {mode}")
         if not suggested_smart_start and not suggested_adaptive:
+<<<<<<< Updated upstream
             lines.append("(No suggestions present)")
+=======
+            lines.append(_t(["options", "step", "review_suggestions", "lines_no_suggestions"], "(No suggestions present)"))
+        return lines
+>>>>>>> Stashed changes
 
         # Build entity list for per-entity actions
         entity_options = ["(none)"] + [
@@ -1159,7 +1207,22 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
 
         return self.async_show_form(
             step_id="review_suggestions",
+<<<<<<< Updated upstream
             data_schema=schema,
+=======
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "action", default="none"
+                    ): REVIEW_SUGGESTIONS_ACTION_SELECTOR,
+                    vol.Optional(
+                        "entity", default="(none)"
+                    ): SelectSelector(
+                        SelectSelectorConfig(options=entity_options, multiple=False)
+                    ),
+                }
+            ),
+>>>>>>> Stashed changes
             description_placeholders={"info": "\n".join(lines)},
         )
 

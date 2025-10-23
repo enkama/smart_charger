@@ -2,117 +2,140 @@
 
   <img alt="Smart Charger logo" src="https://raw.githubusercontent.com/enkama/smart_charger/master/logo/icon.png">
 
-Smart Charger is a custom integration for Home Assistant that orchestrates predictive charging for battery powered devices. It monitors battery levels, presence, alarms, and historical charge performance to trigger just-in-time charging cycles. The integration exposes rich diagnostics, helper sensors, and a set of services that can be automated from Home Assistant automations and scripts.
+Smart Charger is a small Home Assistant custom integration that helps schedule and control charging for battery-powered devices. It combines live sensor data, alarm times, presence and learned charging performance to start and stop chargers just-in-time so devices reach a target battery level when needed.
 
-## Features
+This README is a concise guide for installation, configuration, and development.
 
-- Track one or more devices with dedicated battery and charger entities
-- Predict required charging windows based on alarm schedules and presence signals
-- Automatically start, stop, or suggest charging via services or notifications
-- Maintain historical charging performance for smarter future suggestions
-- React to fresh charge sessions instantly while decaying older data over time
-- Provide diagnostics data and runtime insights through the Home Assistant UI
+## Quick start
+
+- Install via HACS (recommended) or copy the `custom_components/smart_charger` folder to `config/custom_components` and restart Home Assistant.
+- Install via HACS (recommended):
+
+  1. In HACS open the three-dot menu (top-right) and choose "Custom repositories".
+  2. Add repository URL: `https://github.com/enkama/smart_charger` and set type to `Integration`.
+  3. Click "ADD", then find and install "Smart Charger" in HACS → Integrations.
+  4. Restart Home Assistant after installation.
+
+  After installing via HACS (or manually), add the integration via Settings → Integrations → Add Integration → Smart Charger. Create one entry per device you want to manage.
+
+## Highlights
+
+- Predictive charging based on alarm schedules and learned charge speed
+- Per-device precharge thresholds, hysteresis and countdown windows to avoid toggling
+- Adaptive throttles and flip-flop detection to suppress rapid on/off cycles
+- Diagnostics surfaced in the UI for tracing decisions and tuning
+- Services to control or refresh the coordinator
 
 ## Installation
 
 ### HACS (recommended)
+1. In HACS go to: "Integrations" → three-dot menu → "Custom repositories".
+2. Add repository URL: `https://github.com/enkama/smart_charger` and select type `Integration`.
+3. Install the integration and restart Home Assistant.
 
-This integration can be added to HACS as a custom repository.
-
-HACS Menu
-
-1. Click on the 3 dots in the top right corner.
-2. Select "Custom repositories".
-3. Add `https://github.com/enkama/smart_charger` as the repository URL.
-4. Select the `Integrations` type.
-5. Click the "ADD" button.
-6. Install **Smart Charger** from the custom repositories list and restart Home Assistant.
-
-### Manual installation
-
-If you do not use HACS you can install the integration by copying the folder manually:
-
-1. Download the latest release archive (or use the GitHub *Raw* view when saving individual files).
-2. Copy the entire `custom_components/smart_charger` directory from the archive into your Home Assistant `config/custom_components` directory. Create the folder structure if it does not exist yet.
-3. Ensure all files and subfolders are present, including the translation resources:
-
-```
-config
-  custom_components
-    smart_charger
-      translations
-        *.json
-      __init__.py
-      config_flow.py
-      const.py
-      coordinator.py
-      diagnostics.py
-      learning.py
-      manifest.json
-      sensor.py
-      services.py
-      services.yaml
-```
-
-4. Restart Home Assistant to load the integration.
-
-Repeat these steps whenever a new release is published.
+### Manual
+1. Copy the `custom_components/smart_charger` directory into your Home Assistant `config/custom_components` folder.
+2. Ensure `translations` and all python files are present.
+3. Restart Home Assistant.
 
 ## Configuration
 
-The integration provides a config flow. Each device entry supports the following options:
+Smart Charger uses a config flow. Add one entry per device you want the integration to manage.
 
-- Battery level sensor (percentage)
-- Charger switch entity to toggle charging
-- Optional charging state, presence, and average speed sensors (speed should report percentage gained per hour)
-- Predictive mode with target, minimum, and precharge levels
-- Tune precharge hysteresis (release/resume margins) and SmartStart finish buffers
-- Configure a precharge release countdown window to avoid charger flapping
-- Configure a per-device switch throttle (seconds) and confirmation count to avoid rapid toggles:
-  - `switch_throttle_seconds` (default 30s): minimum seconds between issuing switch commands for the same charger entity.
-  - `switch_confirmation_count` (default 2): number of consecutive coordinator evaluations that must request the same desired state before the integration will send the switch command. This helps prevent toggles caused by short-lived sensor noise.
-- Alarm entities that define desired ready times per weekday
-- Notification targets and thresholds for charging suggestions
+Per-device settings typically include:
 
-> **Tip:** Provide either a learning source or an average speed sensor so the coordinator can estimate how long charging takes. Newly finished charge sessions from the last four hours are treated as ground-truth speeds, while older samples decay with a ~12 hour half-life. If neither source is available the integration falls back to a conservative 24 hour charging window.
+- `battery_sensor` — sensor reporting battery percentage
+- `charger_switch` — entity to toggle charging (switch)
+- Optional: `charging_sensor`, `presence_sensor`, `avg_speed_sensor`
+- `target_level`, `min_level`, `precharge_level` and associated margins
+- Per-device `switch_throttle_seconds` and `switch_confirmation_count` to avoid rapid toggles
+- Optional alarm entities (single or per-weekday) for scheduled readiness
 
-You can adjust how long those "recent" samples remain authoritative from the options menu under **Advanced settings**. Increasing the window helps when you charge infrequently, while reducing it favors more immediate behaviour at the cost of relying on fallback statistics sooner.
+Most settings are editable via the entry's *Configure* → *Advanced settings* UI.
 
-You can build the average speed sensor with Home Assistant helpers if your device does not expose one directly. For example, create a [Template Sensor](https://www.home-assistant.io/integrations/template/) that measures the delta of your battery percentage over time, then wrap it with the [Statistics Sensor](https://www.home-assistant.io/integrations/statistics/) using a mean of the last few charge sessions. Aim to express the result in `%/h`, which Smart Charger interprets as the fallback rate whenever no learned data is available.
+### Anti-flap protections
 
-You can revisit the options via the entry's *Configure* button to edit or remove devices at any time.
+To avoid rapid precharge toggles the integration supports two complementary protections:
 
-Diagnostics expose both the configured and effective margins so you can confirm what the coordinator currently applies.
+- `precharge_cooldown_minutes` — minimum minutes after a precharge pause before re-allowing precharge
+- `precharge_min_drop_percent` — require the battery to drop by this percent after release before re-activating precharge
 
-### Precharge hysteresis & retry behavior
+Both protections can be used together; sensible defaults are conservative but adjustable in the options flow.
 
-- The coordinator keeps chargers running using a hysteresis window: by default it releases after reaching the precharge level plus `1.5%` and resumes if the level falls `0.5%` below the target. Both margins, as well as the SmartStart finish buffer (`2%`), can be adjusted in the options flow per device.
-- A configurable release countdown window (default `5%` above the precharge level) prevents rapid toggling: once the battery enters that band the charger continues for 10 minutes before pausing, unless the level drops below the band again.
-- Learning session finalization will retry when the battery sensor is temporarily unavailable, using backoff delays of 30s, 90s, and 300s. Diagnostics show the current retry attempt count together with the active delay schedule.
-- Coordinator diagnostics now surface the active hysteresis release thresholds, making it easier to verify when and why a charger remains running.
+### Configuration example
 
+<<<<<<< Updated upstream
+=======
+Quick UI steps to add a device entry:
+
+1. Settings → Integrations → Add Integration → Smart Charger
+2. Fill `name`, choose `battery_sensor` (percentage sensor) and `charger_switch` (switch)
+3. Optionally add `charging_sensor` / `presence_sensor` and adjust targets/margins
+
+Minimal `data` shape (for reference only — use the UI to create entries):
+
+```json
+{
+  "devices": [
+    {
+      "name": "My Device",
+      "battery_sensor": "sensor.my_device_battery",
+      "charger_switch": "switch.my_device_charger",
+      "target_level": 95.0,
+      "min_level": 30.0,
+      "precharge_level": 50.0
+    }
+  ]
+}
+```
+
+The UI will expose many more optional fields (precharge margins, cooldown, throttles). Use the Advanced settings for per-device tuning.
+
+>>>>>>> Stashed changes
 ## Services
 
-The integration registers the following domain services:
+The integration registers the following services in the `smart_charger` domain:
 
-- `smart_charger.force_refresh` – trigger an immediate update of the coordinator
-- `smart_charger.start_charging` – force a device into the charging state
-- `smart_charger.stop_charging` – stop active charging
-- `smart_charger.auto_manage` – run the predictive scheduling logic manually
-- `smart_charger.load_model` – reload the learned charging characteristics from storage
+- `force_refresh` — request an immediate update
+- `start_charging` — force a device into charging state
+- `stop_charging` — stop charging for a device
+- `auto_manage` — run the coordinator decision logic once (can be used in automations)
+- `load_model` — reload learned charge-speed data from storage
 
-See `custom_components/smart_charger/services.yaml` for the exact service schemas.
+See `custom_components/smart_charger/services.yaml` for exact schemas and optional parameters.
+
+## Diagnostics & tuning
+
+Open the integration entry in the UI to view diagnostics. The diagnostics show effective thresholds and the coordinator's recent decisions so you can fine-tune margins, throttles and adaptive settings.
+
+Recommended starting values (tweak as needed):
+
+- `precharge_margin_on` (release margin): 1.5%
+- `precharge_margin_off` (resume margin): 0.5%
+- `precharge_countdown_window`: 5%
+- `precharge_min_drop_percent`: 1.0% (prevents immediate re-activation)
+- `precharge_cooldown_minutes`: 10 (minutes)
+- `switch_throttle_seconds`: 30
+- `switch_confirmation_count`: 2
+
+## Troubleshooting tips
+
+- If the entity dropdowns show `[object Object]` in the UI, update to the branch `fix/review-suggestions-friendly-entities` — recent fixes change the options to use structured SelectSelectors so labels render correctly.
+- If chargers toggle too frequently, increase `switch_throttle_seconds` and/or `switch_confirmation_count` and review `precharge_*` margins.
+- Use the diagnostics page on the integration entry to inspect the coordinator's recent decisions.
 
 ## Development
 
-- Validate metadata with `Home Assistant hassfest` and the HACS GitHub action workflow (included in `.github/workflows/validate.yaml`).
-- Run integration tests inside a Home Assistant development container if you extend the module.
-- Follow the [Home Assistant developer documentation](https://developers.home-assistant.io/) when modifying config flows, coordinators, or entities.
+- Run tests with `pytest` in the repository root (project includes unit tests for coordinator helpers).
+- Keep `black`, `flake8`, and `mypy` happy; the project includes lint scripts in `scripts/`.
+- Use the Home Assistant developer docs for guidance when modifying config flows or registries.
 
-For developer notes and tips, see `CONTRIBUTING.md`.
+If you add new options or translations, update `strings.json` and the `translations/` files.
+
+## Contributing
+
+Contributions are welcome via pull requests. Please include tests for behavior changes and keep changes small and focused.
 
 ## License
 
-Smart Charger is distributed under the [MIT License](LICENSE) by enkama.
-
-This project is licensed under the MIT License. See `LICENSE` for details.
+Smart Charger is licensed under the MIT License. See `LICENSE` for details.

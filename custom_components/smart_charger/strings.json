@@ -152,7 +152,24 @@
           "adaptive_throttle_mode_conservative": "Conservative",
           "adaptive_throttle_mode_normal": "Normal",
           "adaptive_throttle_mode_aggressive": "Aggressive"
+<<<<<<< Updated upstream
   }
+=======
+        }
+      },
+      "review_suggestions": {
+        "title": "Review suggested persisted changes",
+        "description": "Review and accept or revert suggested persisted changes made after alarms. {info}",
+        "lines_suggested": "Suggested persisted changes:",
+        "lines_smart_start_bumps": "Smart start bumps:",
+        "lines_adaptive_overrides": "Adaptive mode overrides:",
+        "lines_no_suggestions": "(No suggestions present)",
+        "data": {
+          "action": "Action",
+          "entity": "Entity",
+          "entity_none": "No entity"
+        }
+>>>>>>> Stashed changes
       }
     }
   },
