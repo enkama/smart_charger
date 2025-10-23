@@ -703,7 +703,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _trigger_initial_auto_manage(hass, entry_data)
 
-    _LOGGER.info("Smart Charger initialized with entry_id=%s", entry.entry_id)
+    _LOGGER.debug("Smart Charger initialized with entry_id=%s", entry.entry_id)
     return True
 
 

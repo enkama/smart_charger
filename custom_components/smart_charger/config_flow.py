@@ -141,6 +141,24 @@ ADAPTIVE_MODE_SELECTOR = SelectSelector(
 )
 
 
+# Selector for review_suggestions action choices. Use translation_key so option
+# labels are localized via strings.json -> selector.review_suggestions_actions.options
+REVIEW_SUGGESTIONS_ACTION_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=[
+            "none",
+            "accept_all",
+            "revert_all",
+            "accept_entity",
+            "revert_entity",
+        ],
+        translation_key="review_suggestions_actions",
+        multiple=False,
+        mode=SelectSelectorMode.DROPDOWN,
+    )
+)
+
+
 # Weekday-alarm field names (mirrors coordinator) used by the flow handlers.
 WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
     CONF_ALARM_MONDAY,
@@ -275,6 +293,22 @@ ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
             NumberSelectorConfig(min=0, max=20, step=0.5, unit_of_measurement="%")
         ),
         default=DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
+    ),
+    SchemaField(
+        "precharge_min_drop_percent",
+        selector=NumberSelector(
+            NumberSelectorConfig(min=0.0, max=100.0, step=0.1, unit_of_measurement="%")
+        ),
+        default=10.0,
+    ),
+    SchemaField(
+        "precharge_cooldown_minutes",
+        selector=NumberSelector(
+            # Present cooldown in minutes in the UI. Coordinator converts
+            # minutes -> seconds internally for epoch comparisons.
+            NumberSelectorConfig(min=0, max=1440, step=1, unit_of_measurement="min")
+        ),
+        default=60,
     ),
     SchemaField(
         CONF_SUGGESTION_THRESHOLD,
@@ -1037,10 +1071,8 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             },
         )
 
-    async def async_step_review_suggestions(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Allow user to review/accept/revert post-alarm suggested persisted changes."""
+    def _get_suggestions(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return smart-start and adaptive suggestions for the current entry."""
         entries = self.hass.data.get(DOMAIN, {}).get("entries", {})
         entry_data = entries.get(getattr(self.config_entry, "entry_id", ""), {})
         coord = entry_data.get("coordinator")
@@ -1052,20 +1084,12 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             getattr(self.config_entry, "options", {}).get("adaptive_mode_overrides", {})
             or {}
         )
+        return suggested_smart_start, suggested_adaptive
 
-        if user_input:
-            action = user_input.get("action")
-            if action == "accept_all":
-                self._apply_suggestions_action(
-                    "accept_all", suggested_smart_start, suggested_adaptive
-                )
-                return self.async_create_entry(title="", data={})
-            if action == "revert_all":
-                self._apply_suggestions_action(
-                    "revert_all", suggested_smart_start, suggested_adaptive
-                )
-                return self.async_create_entry(title="", data={})
-
+    def _lines_for_suggestions(
+        self, suggested_smart_start: dict[str, Any], suggested_adaptive: dict[str, Any]
+    ) -> list[str]:
+        """Render a short list of human readable suggestion lines."""
         lines = ["Suggested persisted changes:"]
         if suggested_smart_start:
             lines.append("Smart start bumps:")
@@ -1077,89 +1101,161 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 lines.append(f"• {ent}: {mode}")
         if not suggested_smart_start and not suggested_adaptive:
             lines.append("(No suggestions present)")
+        return lines
 
-        # Build entity list for per-entity actions
-        entity_options = ["(none)"] + [
-            str(e)
-            for e in sorted(
-                set(
-                    list(suggested_smart_start.keys()) + list(suggested_adaptive.keys())
+    def _get_none_label(self) -> str:
+        """Best-effort load of localized '(none)' label from translations."""
+        none_label = "(none)"
+        try:
+            import json
+            import os
+
+            package_dir = os.path.dirname(__file__)
+            lang = (
+                getattr(getattr(self.hass, "config", None), "language", None) or "en"
+            ).split("-")[0]
+            trans_path = os.path.join(package_dir, "translations", f"{lang}.json")
+            if not os.path.exists(trans_path):
+                trans_path = os.path.join(package_dir, "strings.json")
+            with open(trans_path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            none_label = (
+                data.get("entity", {})
+                .get("review_suggestions", {})
+                .get("options", {})
+                .get("none")
+                or data.get("entity", {})
+                .get("review_suggestions", {})
+                .get("data", {})
+                .get("entity")
+                or none_label
+            )
+        except Exception:
+            none_label = "(none)"
+        return none_label
+
+    def _build_entity_options(
+        self, entity_ids: Iterable[str], none_label: str
+    ) -> list[SelectOptionDict]:
+        """Build select option dicts for the provided entity ids using friendly labels."""
+        entity_options: list[SelectOptionDict] = [
+            {"value": "(none)", "label": none_label},
+        ]
+        for ent in sorted(set(entity_ids)):
+            label: str | None = None
+            try:
+                from homeassistant.helpers import device_registry as dr
+                from homeassistant.helpers import entity_registry as er
+
+                ent_reg = er.async_get(self.hass)
+                entry = ent_reg.async_get(ent)
+                if entry is not None:
+                    device_id = getattr(entry, "device_id", None)
+                    if device_id:
+                        dev_reg = dr.async_get(self.hass)
+                        device = dev_reg.async_get(device_id)
+                        if device is not None:
+                            label = getattr(device, "name_by_user", None) or getattr(
+                                device, "name", None
+                            )
+                    if not label:
+                        label = getattr(entry, "name", None) or getattr(
+                            entry, "original_name", None
+                        )
+                if not label:
+                    st = self.hass.states.get(ent)
+                    if st is not None:
+                        label = st.name
+            except Exception:
+                label = None
+            entity_options.append({"value": ent, "label": label or ent})
+        return entity_options
+
+    def _apply_entity_action(
+        self, action: str, target_entity: str
+    ) -> config_entries.ConfigFlowResult:
+        """Handle accept/revert action for a single entity by calling the service and returning flow result."""
+        if action == "accept_entity":
+            self.hass.async_create_task(
+                self.hass.services.async_call(
+                    DOMAIN,
+                    "accept_suggested_persistence",
+                    {
+                        "entry_id": self.config_entry.entry_id,
+                        "entity_id": target_entity,
+                    },
                 )
             )
-        ]
+            return self.async_create_entry(title="", data={})
+        # revert_entity
+        self.hass.async_create_task(
+            self.hass.services.async_call(
+                DOMAIN,
+                "revert_suggested_persistence",
+                {"entry_id": self.config_entry.entry_id, "entity_id": target_entity},
+            )
+        )
+        return self.async_create_entry(title="", data={})
 
+    async def async_step_review_suggestions(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Allow user to review/accept/revert post-alarm suggested persisted changes."""
+        suggested_smart_start, suggested_adaptive = self._get_suggestions()
+
+        # Accept/revert all actions handled first
+        if user_input and user_input.get("action") in ("accept_all", "revert_all"):
+            self._apply_suggestions_action(
+                str(user_input.get("action")), suggested_smart_start, suggested_adaptive
+            )
+            return self.async_create_entry(title="", data={})
+
+        # Build display lines and selectable entities for per-entity actions
+        lines = self._lines_for_suggestions(suggested_smart_start, suggested_adaptive)
+        entity_ids = list(suggested_smart_start.keys()) + list(
+            suggested_adaptive.keys()
+        )
+        none_label = self._get_none_label()
+        entity_options = self._build_entity_options(entity_ids, none_label)
+
+        # simple validation schema for per-entity actions (UI will render nicer selectors below)
         schema = vol.Schema(
             {
-                vol.Required("action", default="none"): vol.In(
-                    {
-                        "none": "No action",
-                        "accept_all": "Accept all",
-                        "revert_all": "Revert all",
-                        "accept_entity": "Accept selected entity",
-                        "revert_entity": "Revert selected entity",
-                    }
+                vol.Required("action", default="none"): str,
+                vol.Optional("entity", default="(none)"): SelectSelector(
+                    SelectSelectorConfig(options=entity_options, multiple=False)
                 ),
-                vol.Optional("entity", default="(none)"): vol.In(entity_options),
             }
         )
 
+        # Per-entity actions: validate selection and dispatch services
         if user_input and user_input.get("action") in (
             "accept_entity",
             "revert_entity",
         ):
-            ent = user_input.get("entity")
-            if not ent or ent == "(none)":
+            selected = user_input.get("entity")
+            if not selected or selected == "(none)":
                 return self.async_show_form(
                     step_id="review_suggestions",
                     data_schema=schema,
                     errors={"entity": "invalid_entity"},
                     description_placeholders={"info": "\n".join(lines)},
                 )
-            # map display string back to entity id
-            target_entity = str(ent)
-            if user_input.get("action") == "accept_entity":
-                # Accept single entity: call service to persist
-                self.hass.async_create_task(
-                    self.hass.services.async_call(
-                        DOMAIN,
-                        "accept_suggested_persistence",
-                        {
-                            "entry_id": self.config_entry.entry_id,
-                            "entity_id": target_entity,
-                        },
-                    )
-                )
-                return self.async_create_entry(title="", data={})
-            else:
-                self.hass.async_create_task(
-                    self.hass.services.async_call(
-                        DOMAIN,
-                        "revert_suggested_persistence",
-                        {
-                            "entry_id": self.config_entry.entry_id,
-                            "entity_id": target_entity,
-                        },
-                    )
-                )
-                return self.async_create_entry(title="", data={})
+            return self._apply_entity_action(
+                str(user_input.get("action")), str(selected)
+            )
 
-        if user_input and user_input.get("action") in ("accept_all", "revert_all"):
-            # Use existing code path for accept/revert all
-            action = user_input.get("action")
-            if action == "accept_all":
-                self._apply_suggestions_action(
-                    "accept_all", suggested_smart_start, suggested_adaptive
-                )
-                return self.async_create_entry(title="", data={})
-            if action == "revert_all":
-                self._apply_suggestions_action(
-                    "revert_all", suggested_smart_start, suggested_adaptive
-                )
-                return self.async_create_entry(title="", data={})
-
+        # Render the form with a localized dropdown for action choices
         return self.async_show_form(
             step_id="review_suggestions",
-            data_schema=schema,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "action", default="none"
+                    ): REVIEW_SUGGESTIONS_ACTION_SELECTOR,
+                    vol.Optional("entity", default="(none)"): vol.In(entity_options),
+                }
+            ),
             description_placeholders={"info": "\n".join(lines)},
         )
 

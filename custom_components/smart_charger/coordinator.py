@@ -41,10 +41,12 @@ from .const import (
     CONF_CHARGING_SENSOR,
     CONF_LEARNING_RECENT_SAMPLE_HOURS,
     CONF_MIN_LEVEL,
+    CONF_PRECHARGE_COOLDOWN_MINUTES,
     CONF_PRECHARGE_COUNTDOWN_WINDOW,
     CONF_PRECHARGE_LEVEL,
     CONF_PRECHARGE_MARGIN_OFF,
     CONF_PRECHARGE_MARGIN_ON,
+    CONF_PRECHARGE_MIN_DROP_PERCENT,
     CONF_PRESENCE_SENSOR,
     CONF_SMART_START_MARGIN,
     CONF_SWITCH_CONFIRMATION_COUNT,
@@ -63,9 +65,11 @@ from .const import (
     DEFAULT_ADAPTIVE_THROTTLE_MULTIPLIER,
     DEFAULT_FALLBACK_MINUTES_PER_PERCENT,
     DEFAULT_LEARNING_RECENT_SAMPLE_HOURS,
+    DEFAULT_PRECHARGE_COOLDOWN_MINUTES,
     DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
     DEFAULT_PRECHARGE_MARGIN_OFF,
     DEFAULT_PRECHARGE_MARGIN_ON,
+    DEFAULT_PRECHARGE_MIN_DROP_PERCENT,
     DEFAULT_SMART_START_MARGIN,
     DEFAULT_SWITCH_CONFIRMATION_COUNT,
     DEFAULT_SWITCH_THROTTLE_SECONDS,
@@ -435,6 +439,11 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # precharge_release_ready stores a datetime when the release will clear, or None
         self._precharge_release_ready: dict[str, datetime | None] = {}
         self._precharge_release_cleared_by_presence: dict[str, bool] = {}
+        # Track last release battery level per device to avoid immediate re-activation
+        # Structure: device.name -> float (battery level at release)
+        self._precharge_last_release_level: dict[str, float] = {}
+        # Track last release timestamp per device (epoch seconds)
+        self._precharge_last_release_ts: dict[str, float] = {}
         # Tracks precharge latches cleared because thresholds/predictions
         # indicate the precharge is no longer required. This allows the
         # coordinator to act immediately (pause charger) in the same
@@ -559,6 +568,124 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 getattr(self, "_current_eval_time", None) or dt_util.utcnow()
             )
         )
+
+    # --- Precharge helpers (extracted to reduce cyclomatic complexity) ---
+    def _precharge_get_pre_epoch(self) -> float:
+        """Return a robust pre_epoch value for switch calls.
+
+        Uses the coordinator's current eval time when set to keep
+        behavior deterministic during a single update, otherwise falls
+        back to utcnow().
+        """
+        try:
+            return float(
+                dt_util.as_timestamp(
+                    getattr(self, "_current_eval_time", None) or dt_util.utcnow()
+                )
+            )
+        except Exception:
+            _ignored_exc()
+            return float(dt_util.as_timestamp(dt_util.utcnow()))
+
+    def _precharge_record_release(
+        self, device: DeviceConfig, release_level: float
+    ) -> None:
+        """Record the last precharge release level and timestamp for a device.
+
+        This is used by the anti-flap logic to avoid immediate re-activation
+        after a recent release.
+        """
+        try:
+            self._precharge_last_release_level[device.name] = float(release_level)
+            self._precharge_last_release_ts[device.name] = float(self._get_now_epoch())
+        except Exception:
+            _ignored_exc()
+
+    def _precharge_is_reactivation_allowed(
+        self, device: DeviceConfig, target_release: float
+    ) -> bool:
+        """Return True when re-activation of precharge is allowed.
+
+        The gate checks two configured safeguards:
+        - a minimum percentage drop since the last release (precharge_min_drop_percent)
+        - a cooldown window (precharge_cooldown_effective_seconds)
+
+        If no prior release is recorded we allow activation.
+        """
+        try:
+            last_level = self._precharge_last_release_level.get(device.name)
+            last_ts = self._precharge_last_release_ts.get(device.name)
+
+            # No prior release recorded -> allow
+            if last_level is None or last_ts is None:
+                return True
+
+            # Delegate checks to smaller helpers to reduce complexity
+            # Determine current battery level from the last coordinator snapshot
+            current_batt: float | None = None
+            try:
+                st = (self._state or {}).get(device.name) or {}
+                if st:
+                    cb = st.get("battery")
+                    if cb is not None:
+                        try:
+                            current_batt = float(cb)
+                        except Exception:
+                            current_batt = None
+            except Exception:
+                _ignored_exc()
+
+            if self._precharge_min_drop_blocked(
+                last_level, target_release, current_batt
+            ):
+                return False
+            if self._precharge_cooldown_blocked(last_ts):
+                return False
+
+            return True
+        except Exception:
+            _ignored_exc()
+            return True
+
+    def _precharge_min_drop_blocked(
+        self, last_level: float, target_release: float, current_batt: float | None
+    ) -> bool:
+        """Return True when the minimum-drop gate blocks re-activation.
+
+        This is separated to keep the parent method small for McCabe.
+        """
+        try:
+            try:
+                min_drop = float(self._precharge_min_drop_percent or 0.0)
+            except Exception:
+                return False
+            if min_drop <= 0.0:
+                return False
+            # If we don't have a current battery reading, don't block
+            if current_batt is None:
+                return False
+            # Block when the battery hasn't dropped at least `min_drop` since last release
+            return float(last_level) - float(current_batt) < float(min_drop)
+        except Exception:
+            _ignored_exc()
+            return False
+
+    def _precharge_cooldown_blocked(self, last_ts: float) -> bool:
+        """Return True when the cooldown gate blocks re-activation."""
+        try:
+            try:
+                cooldown = float(
+                    getattr(self, "_precharge_cooldown_effective_seconds", 0.0) or 0.0
+                )
+            except Exception:
+                return False
+            if cooldown <= 0.0:
+                return False
+            now = float(self._get_now_epoch())
+            return now - float(last_ts) < cooldown
+        except Exception:
+            _ignored_exc()
+            return False
 
     def _get_last_action_state(self, norm: str) -> bool | None:
         """Return the coordinator-recorded last action state, or probe the entity state.
@@ -1611,6 +1738,32 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._precharge_countdown_window = self._option_float(
             CONF_PRECHARGE_COUNTDOWN_WINDOW, DEFAULT_PRECHARGE_COUNTDOWN_WINDOW
         )
+        # Minimum percent drop required after a precharge release before re-activating
+        try:
+            self._precharge_min_drop_percent = self._option_float(
+                CONF_PRECHARGE_MIN_DROP_PERCENT, DEFAULT_PRECHARGE_MIN_DROP_PERCENT
+            )
+        except Exception:
+            _ignored_exc()
+            self._precharge_min_drop_percent = float(DEFAULT_PRECHARGE_MIN_DROP_PERCENT)
+        try:
+            # Read minutes directly from the options key (UI stores minutes)
+            self._precharge_cooldown_minutes = self._option_float(
+                CONF_PRECHARGE_COOLDOWN_MINUTES, DEFAULT_PRECHARGE_COOLDOWN_MINUTES
+            )
+        except Exception:
+            _ignored_exc()
+            self._precharge_cooldown_minutes = float(DEFAULT_PRECHARGE_COOLDOWN_MINUTES)
+
+        # Convert minutes -> seconds for internal epoch/timestamp comparisons
+        try:
+            minutes = float(self._precharge_cooldown_minutes or 0.0)
+            self._precharge_cooldown_effective_seconds = max(0.0, minutes * 60.0)
+        except Exception:
+            _ignored_exc()
+            self._precharge_cooldown_effective_seconds = float(
+                DEFAULT_PRECHARGE_COOLDOWN_MINUTES * 60.0
+            )
 
         # Adaptive throttle options (coordinator-level defaults; per-device overrides still apply)
         try:
@@ -2444,31 +2597,31 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             self._log_action(
                 device_name,
-                logging.INFO,
+                logging.DEBUG,
                 "[Precharge] %s requires precharge -> activating charger %s until %.1f%%",
                 device_name,
                 charger_ent,
                 target_release,
             )
-            _LOGGER.info(
+            _LOGGER.debug(
                 "About to call _maybe_switch turn_on for %s (entity=%s)",
                 device_name,
                 charger_ent,
             )
             bypass = bool(forecast_holdoff)
+            # Gate re-activation on configured minimum drop and cooldown.
+            if not self._precharge_is_reactivation_allowed(device, target_release):
+                _LOGGER.debug(
+                    "Precharge re-activation blocked by min-drop or cooldown for %s",
+                    device_name,
+                )
+                return False
             if bypass:
-                try:
-                    pre_ts_local = (
-                        getattr(self, "_current_eval_time", None) or dt_util.utcnow()
-                    )
-                    pre_epoch_local = float(dt_util.as_timestamp(pre_ts_local))
-                except Exception:
-                    pre_epoch_local = float(dt_util.as_timestamp(dt_util.utcnow()))
                 prev_action = self._last_action_state.get(charger_ent)
                 await self._async_switch_call(
                     "turn_on",
                     service_data,
-                    pre_epoch=pre_epoch_local,
+                    pre_epoch=self._precharge_get_pre_epoch(),
                     previous_last_action=prev_action,
                     bypass_throttle=True,
                 )
@@ -2561,6 +2714,10 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     previous_last_action=True,
                     bypass_throttle=bypass,
                 )
+                # Record the release level so we can avoid immediate re-activation
+                # Record the release level so the activation helper can avoid
+                # immediate re-activation (anti-flap).
+                self._precharge_record_release(device, target_release)
                 return False
 
             handled_activate = await self._apply_charger_precharge_activate_if_needed(
