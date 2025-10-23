@@ -5,39 +5,39 @@
         "title": "Smart Charger Geräteverwaltung",
         "description": "Konfigurierte Smart Charger Geräte:\n{devices}\n\nWähle eine Aktion:",
         "menu_options": {
-          "add_device": "➕ Neues Gerät hinzufügen",
+          "add_device": "➕ Gerät hinzufügen",
           "edit_device": "⚙️ Gerät bearbeiten",
           "delete_device": "🗑️ Gerät löschen"
         }
       },
       "add_device": {
         "title": "Neues Smart Charger Gerät hinzufügen",
-        "description": "Basisinformationen für dein neues Smart Charger Gerät konfigurieren.",
+        "description": "Grundinformationen für dein neues Smart Charger Gerät konfigurieren.",
         "data": {
           "name": "Gerätename",
           "battery_sensor": "Batteriestand-Sensor (%)",
-          "charger_switch": "Ladeschalter",
-          "charging_sensor": "Ladezustands-Sensor (optional)",
-          "presence_sensor": "Präsenzsensor (optional)"
+          "charger_switch": "Ladegerät-Schalter",
+          "charging_sensor": "Ladestatus-Sensor (optional)",
+          "presence_sensor": "Anwesenheitssensor (optional)"
         }
       },
       "add_device_page_2": {
-        "title": "Ladeziele & Predictive-Einstellungen",
-        "description": "Zielwerte, Sicherheitsgrenzen und Vorhersagemodus festlegen. Detaillierte Vorhersagemargen und Benachrichtigungsgrenzen kannst du später unter den erweiterten Einstellungen anpassen.",
+        "title": "Ladeziele und Vorhersageeinstellungen",
+        "description": "Zielwerte, Sicherheitslimits und Vorhersagemodus einstellen. Vorhersagemargen und Alarm-Tuning können später unter Erweitert angepasst werden.",
         "data": {
           "target_level": "Ziel-Ladelevel (%)",
-          "min_level": "Mindestladestand für Sicherheitsladung (%)",
-          "precharge_level": "Vorladestand-Schwelle (bei Unterschreitung früh starten)",
-          "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (% pro Stunde, wenn keine Lernwerte vorliegen)",
-          "use_predictive_mode": "Vorhersageladen aktivieren"
+          "min_level": "Minimales Reservelevel vor Laden (%)",
+          "precharge_level": "Precharge-Schwelle (früher starten, wenn darunter)",
+          "avg_speed_sensor": "Durchschnittliche Ladegeschwindigkeit Sensor (%/h, verwendet wenn Lernen nicht verfügbar)",
+          "use_predictive_mode": "Vorhersagebasiertes Laden aktivieren"
         }
       },
       "add_device_page_3": {
-        "title": "Wecker & Benachrichtigungen",
-        "description": "Weckzeiten und Benachrichtigungsoptionen konfigurieren.",
+        "title": "Wecker und Benachrichtigungen",
+        "description": "Weckerzeiten und Benachrichtigungsoptionen konfigurieren.",
         "data": {
           "alarm_mode": "Weckermodus",
-          "alarm_entity": "Globaler Wecker / Aufwach-Entität",
+          "alarm_entity": "Globaler Wecker / Weck-Entität",
           "alarm_entity_monday": "Wecker am Montag",
           "alarm_entity_tuesday": "Wecker am Dienstag",
           "alarm_entity_wednesday": "Wecker am Mittwoch",
@@ -46,23 +46,11 @@
           "alarm_entity_saturday": "Wecker am Samstag",
           "alarm_entity_sunday": "Wecker am Sonntag",
           "notify_enabled": "Benachrichtigungen aktivieren",
-          "notify_targets": "Benachrichtigungsziele (durch Komma getrennt)"
+          "notify_targets": "Benachrichtigungsziele (kommagetrennt)"
         }
       }
     },
-    "error": {
-      "invalid_level": "Ungültige Ladelevel-Einstellungen",
-      "invalid_margin": "Ungültige Margen-Konfiguration",
-      "name_exists": "Ein Gerät mit diesem Namen existiert bereits",
-      "name_empty": "Gerätename darf nicht leer sein",
-      "alarm_required_single": "Bitte wähle eine globale Wecker-Entität aus.",
-      "alarm_required_per_day": "Bitte setze mindestens eine Wecker-Entität für einen Wochentag."
-    },
-    "abort": {
-      "no_devices": "Noch keine Geräte konfiguriert.",
-      "invalid_device": "Ungültige Geräteauswahl",
-      "finished": "Einrichtung erfolgreich abgeschlossen"
-    }
+    "abort": {}
   },
   "options": {
     "step": {
@@ -70,27 +58,28 @@
         "title": "Smart Charger Optionen",
         "description": "{info}\n\nWähle eine Aktion:",
         "menu_options": {
-          "edit_device": "⚙️ Gerät bearbeiten",
+          "edit_device": "⚙️ Bestehendes Gerät bearbeiten",
           "advanced_settings": "🔧 Erweiterte Einstellungen",
-          "delete_device": "🗑️ Gerät löschen"
+          "delete_device": "🗑️ Gerät löschen",
+          "review_suggestions": "💡 Vorschläge prüfen"
         }
       },
       "edit_device": {
         "title": "Smart Charger Gerät bearbeiten",
-        "description": "Wähle ein Gerät aus, um es zu bearbeiten.",
+        "description": "Ladeziele oder Vorhersageeinstellungen für ein Gerät ändern.",
         "data": {
-          "idx": "Gerät zum Bearbeiten auswählen"
+          "idx": "Wähle Gerät zum Bearbeiten"
         }
       },
       "edit_device_details": {
         "title": "Smart Charger Gerät bearbeiten",
-        "description": "Sensoren, Ladegrenzen und Benachrichtigungen für {device_name} anpassen. Erweiterte Vorhersagemargen findest du unter den erweiterten Einstellungen.",
+        "description": "Sensoren, Ladegrenzen und Benachrichtigungen für {device_name} ändern. Erweiterte Vorhersagemargen unter Erweitert.",
         "data": {
           "name": "Gerätename",
           "battery_sensor": "Batteriestand-Sensor (%)",
-          "charging_sensor": "Ladezustands-Sensor (optional)",
-          "charger_switch": "Ladeschalter",
-          "alarm_entity": "Globaler Wecker / Aufwach-Entität",
+          "charging_sensor": "Ladestatus-Sensor (optional)",
+          "charger_switch": "Ladegerät-Schalter",
+          "alarm_entity": "Globaler Alarm / Weck-Entität",
           "alarm_entity_monday": "Wecker am Montag",
           "alarm_entity_tuesday": "Wecker am Dienstag",
           "alarm_entity_wednesday": "Wecker am Mittwoch",
@@ -99,59 +88,61 @@
           "alarm_entity_saturday": "Wecker am Samstag",
           "alarm_entity_sunday": "Wecker am Sonntag",
           "target_level": "Ziel-Ladelevel (%)",
-          "min_level": "Mindestladestand für Sicherheitsladung (%)",
-          "precharge_level": "Vorladestand-Schwelle (%)",
-          "avg_speed_sensor": "Sensor für durchschnittliche Ladegeschwindigkeit (wird genutzt, wenn keine Lernwerte verfügbar sind)",
-          "presence_sensor": "Präsenzsensor",
-          "use_predictive_mode": "Vorhersageladen aktivieren",
+          "min_level": "Minimales Reservelevel (%)",
+          "precharge_level": "Precharge-Schwelle (%)",
+          "avg_speed_sensor": "Durchschnittliche Ladegeschwindigkeit Sensor (wird verwendet, wenn Lernen nicht verfügbar)",
+          "presence_sensor": "Anwesenheitssensor",
+          "use_predictive_mode": "Vorhersagebasiertes Laden aktivieren",
           "notify_enabled": "Benachrichtigungen aktivieren",
           "notify_targets": "Benachrichtigungsziele"
         }
       },
       "delete_device": {
         "title": "Smart Charger Gerät löschen",
-        "description": "Wähle ein Gerät zum Entfernen aus.",
+        "description": "Wähle ein Smart Charger Gerät zum Entfernen.",
         "data": {
-          "idx": "Gerät zum Löschen auswählen"
+          "idx": "Wähle Gerät zum Löschen"
         }
       },
       "advanced_settings": {
         "title": "Erweiterte Smart Charger Einstellungen",
         "description": "{info}\n\nWähle, was du anpassen möchtest:",
         "menu_options": {
-          "advanced_settings_device": "⚙️ Gerätespezifische Vorhersagemargen"
+          "advanced_settings_device": "⚙️ Geräte-Vorhersagemargen"
         }
       },
       "advanced_settings_device": {
         "title": "Erweiterte Smart Charger Einstellungen",
-        "description": "Wähle ein Smart Charger Gerät aus, um dessen Vorhersagemargen zu justieren.",
+        "description": "Wähle ein Gerät, um seine Vorhersagemargen zu optimieren.",
         "data": {
-          "idx": "Gerät zum Feinjustieren auswählen"
+          "idx": "Wähle Gerät zum Abstimmen"
         }
       },
       "advanced_settings_device_details": {
         "title": "Erweiterte Smart Charger Einstellungen",
-        "description": "Vorhersagemargen und Warnschwellen für {device_name} anpassen.",
+        "description": "Vorhersagemargen und Alarm-Tuning für {device_name} anpassen.",
         "data": {
-          "precharge_margin_on": "Abschalt-Marge für Frühstart (%)",
-          "precharge_margin_off": "Wiederanlauf-Marge für Frühstart (%)",
-          "smart_start_margin": "SmartStart-Abschlussmarge (%)",
-          "precharge_countdown_window": "Countdown-Fenster für Frühstart-Freigabe (%)",
-          "suggestion_threshold": "Vorschlags-Schwellenwert",
-          "sensor_stale_seconds": "Sensor-Zeitüberschreitung (Sekunden)",
-          "learning_recent_sample_hours": "Fenster für aktuelle Ladesamples (Stunden)"
-          ,
-          "adaptive_throttle_enabled": "Adaptive Drosselung aktivieren",
+          "precharge_margin_on": "Precharge Freigabemarge (%)",
+          "precharge_margin_off": "Precharge Wiederaufnahme-Marge (%)",
+          "smart_start_margin": "SmartStart Abschlussmarge (%)",
+          "precharge_countdown_window": "Precharge Freigabe Countdownfenster (%)",
+          "suggestion_threshold": "Vorschlags-Schwelle",
+          "precharge_min_drop_percent": "Precharge Reaktivierungs Mindestabfall (%)",
+          "precharge_cooldown_minutes": "Precharge Abklingzeit (Minuten)",
+          "sensor_stale_seconds": "Sensor Timeout (Sekunden)",
+          "learning_recent_sample_hours": "Recent sample window (Stunden)",
+          "adaptive_ewma_alpha": "Adaptive EWMA alpha",
+          "switch_throttle_seconds": "Schalter Drosselung (Sekunden)",
+          "switch_confirmation_count": "Schalter Bestätigungsanzahl",
+          "adaptive_throttle_enabled": "Adaptive Drosselungs-Minderung aktivieren",
           "adaptive_throttle_multiplier": "Adaptive Drosselungs-Multiplikator",
-          "adaptive_throttle_min_seconds": "Minimale Adaptive Drosselung (Sekunden)",
-          "adaptive_throttle_duration_seconds": "Dauer der adaptiven Drosselung (Sekunden)",
-          "adaptive_flipflop_window_seconds": "Erkennungsfenster für Flip-Flops (Sekunden)",
-          "adaptive_flipflop_warn_threshold": "Warnschwelle für Flip-Flops"
-          ,
-          "adaptive_throttle_backoff_step": "Adaptive Drosselungs-Backoff-Stufe",
-          "adaptive_throttle_max_multiplier": "Maximaler adaptiver Multiplikator"
-          ,
-          "adaptive_throttle_mode": "Adaptive Drosselungs-Modus",
+          "adaptive_throttle_min_seconds": "Adaptive Drosselung Minimum (Sekunden)",
+          "adaptive_throttle_duration_seconds": "Adaptive Drosselung Dauer (Sekunden)",
+          "adaptive_flipflop_window_seconds": "Flip-Flop Erkennungsfenster (Sekunden)",
+          "adaptive_flipflop_warn_threshold": "Flip-Flop Warnschwelle",
+          "adaptive_throttle_backoff_step": "Adaptive Drosselungs Backoff Schritt",
+          "adaptive_throttle_max_multiplier": "Adaptive Drosselungs Max Multiplikator",
+          "adaptive_throttle_mode": "Adaptive Drosselungsmodus",
           "adaptive_throttle_mode_conservative": "Konservativ",
           "adaptive_throttle_mode_normal": "Normal",
           "adaptive_throttle_mode_aggressive": "Aggressiv"
@@ -183,35 +174,31 @@
   "selector": {
     "alarm_mode": {
       "options": {
-        "single": "Ein Wecker für alle Tage",
-        "per_day": "Unterschiedliche Wecker je Wochentag"
+        "single": "Ein Alarm für alle Tage",
+        "per_day": "Unterschiedliche Alarme pro Wochentag"
+      }
+    },
+    "review_suggestions_actions": {
+      "options": {
+        "none": "Keine Aktion",
+        "accept_all": "Alle vorgeschlagenen Änderungen akzeptieren",
+        "revert_all": "Alle vorgeschlagenen Änderungen verwerfen",
+        "accept_entity": "Ausgewählte Entität akzeptieren",
+        "revert_entity": "Ausgewählte Entität verwerfen"
       }
     }
   },
   "entity": {
     "sensor": {
-      "next_start": {
-        "name": "Smart Charger Nächster Start"
-      },
-      "learning_stats": {
-        "name": "Smart Charger Lernstatistiken"
-      },
-      "adaptive_telemetry": {
-        "name": "Smart Charger Adaptive Telemetrie"
-      },
-      "adaptive_telemetry_help": {
-        "name": "Adaptive Telemetrie Hilfe",
-        "description": "Dieser Sensor gibt Laufzeitmetriken zur adaptiven Flip‑Flop‑Abmilderung aus: pro Entität die Anzahl kürzlicher Flip‑Flops, abgeleitete Raten (Ereignisse/Sekunde und Ereignisse/Minute), einen EWMA‑Gleitende Mittelwert der Ereignisrate sowie aktive adaptive Drosselungsüberschreibungen (angewendete Sekunden und Ablaufzeit). Verwende diesen Sensor, um das adaptive Verhalten zu überwachen und zu justieren."
-      },
-      "adaptive_telemetry_post_alarm": {
-        "name": "Post-Alarm Korrekturen",
-        "description": "Auflistung der jüngsten Korrekturen oder Vorschläge nachdem eine Weckzeit vergangen ist und das Ladeziel nicht erreicht wurde. Jede Korrektur enthält Ursache (z.B. Flip‑Flops, zu später Start, Fehleinschätzung der Entladung) und zusätzliche Details."
-      },
+      "next_start": { "name": "Smart Charger Nächster Start" },
+      "learning_stats": { "name": "Smart Charger Lernstatistiken" },
+      "adaptive_telemetry": { "name": "Smart Charger Adaptive Telemetrie" },
+      "adaptive_telemetry_help": { "name": "Adaptive Telemetrie Hilfe" },
       "device_status": {
-        "name": "Smart Charger Gerätestatus",
+        "name": "Smart Charger Geräte-Status",
         "state": {
           "waiting": "Warten",
-          "precharging": "Vorladung",
+          "precharging": "Vorladen",
           "charging": "Laden",
           "full": "Voll",
           "scheduled": "Geplant",
@@ -219,27 +206,27 @@
           "unknown": "Unbekannt"
         },
         "state_attributes": {
-          "battery": { "name": "Batteriestand" },
-          "target": { "name": "Zielwert" },
+          "battery": { "name": "Batterielevel" },
+          "target": { "name": "Ziel-Ladelevel" },
           "avg_speed": { "name": "Durchschnittsgeschwindigkeit" },
-          "duration_min": { "name": "Aktuelle Phase (Minuten)" },
-          "charge_duration_min": { "name": "Hauptladezeit (Minuten)" },
-          "total_duration_min": { "name": "Gesamtdauer (Minuten)" },
-          "precharge_duration_min": { "name": "Vorladedauer (Minuten)" },
+          "duration_min": { "name": "Aktuelle Stagedauer (Min)" },
+          "charge_duration_min": { "name": "Hauptladedauer (Min)" },
+          "total_duration_min": { "name": "Gesamtdauer (Min)" },
+          "precharge_duration_min": { "name": "Precharge Dauer (Min)" },
           "alarm_time": { "name": "Alarmzeit" },
           "start_time": { "name": "Startzeit" },
-          "predicted_drain": { "name": "Prognostizierter Verbrauch" },
-          "predicted_level_at_alarm": { "name": "Prognostizierter Ladestand zum Alarm" },
-          "drain_rate": { "name": "Entladerate" },
-          "drain_confidence": { "name": "Vertrauen in Entladung" },
-          "drain_basis": { "name": "Datenbasis für Entladung" },
+          "predicted_drain": { "name": "Vorhergesagter Verbrauch" },
+          "predicted_level_at_alarm": { "name": "Vorhergesagter Stand beim Alarm" },
+          "drain_rate": { "name": "Verbrauchsrate" },
+          "drain_confidence": { "name": "Verbrauchsvertrauen" },
+          "drain_basis": { "name": "Verbrauchsdatenquellen" },
           "smart_start_active": { "name": "SmartStart aktiv" },
-          "precharge_level": { "name": "Vorladestand" },
-          "precharge_release_level": { "name": "Vorladefreigabe" },
-          "precharge_active": { "name": "Vorladung aktiv" },
+          "precharge_level": { "name": "Precharge Level" },
+          "precharge_release_level": { "name": "Precharge Freigabe Level" },
+          "precharge_active": { "name": "Precharge aktiv" },
           "charging_state": { "name": "Ladezustand" },
-          "presence_state": { "name": "Präsenzstatus" },
-          "skipped": { "name": "Übersprungen" },
+          "presence_state": { "name": "Anwesenheitszustand" },
+          "skipped": { "name": "Plan übersprungen" },
           "last_update": { "name": "Letzte Aktualisierung" },
           "info": { "name": "Information" }
         }

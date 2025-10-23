@@ -141,6 +141,24 @@ ADAPTIVE_MODE_SELECTOR = SelectSelector(
 )
 
 
+# Selector for review_suggestions action choices. Use translation_key so option
+# labels are localized via strings.json -> selector.review_suggestions_actions.options
+REVIEW_SUGGESTIONS_ACTION_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=[
+            "none",
+            "accept_all",
+            "revert_all",
+            "accept_entity",
+            "revert_entity",
+        ],
+        translation_key="review_suggestions_actions",
+        multiple=False,
+        mode=SelectSelectorMode.DROPDOWN,
+    )
+)
+
+
 # Weekday-alarm field names (mirrors coordinator) used by the flow handlers.
 WEEKDAY_ALARM_FIELDS: tuple[str, ...] = (
     CONF_ALARM_MONDAY,
@@ -275,6 +293,22 @@ ADVANCED_DEVICE_FIELDS: tuple[SchemaField, ...] = (
             NumberSelectorConfig(min=0, max=20, step=0.5, unit_of_measurement="%")
         ),
         default=DEFAULT_PRECHARGE_COUNTDOWN_WINDOW,
+    ),
+    SchemaField(
+        "precharge_min_drop_percent",
+        selector=NumberSelector(
+            NumberSelectorConfig(min=0.0, max=100.0, step=0.1, unit_of_measurement="%")
+        ),
+        default=10.0,
+    ),
+    SchemaField(
+        "precharge_cooldown_minutes",
+        selector=NumberSelector(
+            # Present cooldown in minutes in the UI. Coordinator converts
+            # minutes -> seconds internally for epoch comparisons.
+            NumberSelectorConfig(min=0, max=1440, step=1, unit_of_measurement="min")
+        ),
+        default=60,
     ),
     SchemaField(
         CONF_SUGGESTION_THRESHOLD,
@@ -1035,10 +1069,8 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             },
         )
 
-    async def async_step_review_suggestions(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Allow user to review/accept/revert post-alarm suggested persisted changes."""
+    def _get_suggestions(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Return smart-start and adaptive suggestions for the current entry."""
         entries = self.hass.data.get(DOMAIN, {}).get("entries", {})
         entry_data = entries.get(getattr(self.config_entry, "entry_id", ""), {})
         coord = entry_data.get("coordinator")
@@ -1121,10 +1153,6 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         if not suggested_smart_start and not suggested_adaptive:
 <<<<<<< Updated upstream
             lines.append("(No suggestions present)")
-=======
-            lines.append(_t(["options", "step", "review_suggestions", "lines_no_suggestions"], "(No suggestions present)"))
-        return lines
->>>>>>> Stashed changes
 
         # Build entity list for per-entity actions
         entity_options = ["(none)"] + [
@@ -1191,6 +1219,13 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 )
                 return self.async_create_entry(title="", data={})
 
+    async def async_step_review_suggestions(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Allow user to review/accept/revert post-alarm suggested persisted changes."""
+        suggested_smart_start, suggested_adaptive = self._get_suggestions()
+
+        # Accept/revert all actions handled first
         if user_input and user_input.get("action") in ("accept_all", "revert_all"):
             # Use existing code path for accept/revert all
             action = user_input.get("action")
@@ -1207,22 +1242,7 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
 
         return self.async_show_form(
             step_id="review_suggestions",
-<<<<<<< Updated upstream
             data_schema=schema,
-=======
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        "action", default="none"
-                    ): REVIEW_SUGGESTIONS_ACTION_SELECTOR,
-                    vol.Optional(
-                        "entity", default="(none)"
-                    ): SelectSelector(
-                        SelectSelectorConfig(options=entity_options, multiple=False)
-                    ),
-                }
-            ),
->>>>>>> Stashed changes
             description_placeholders={"info": "\n".join(lines)},
         )
 
