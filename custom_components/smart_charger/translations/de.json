@@ -146,13 +146,6 @@
           "adaptive_throttle_mode_conservative": "Konservativ",
           "adaptive_throttle_mode_normal": "Normal",
           "adaptive_throttle_mode_aggressive": "Aggressiv"
-<<<<<<< Updated upstream
-        },
-        "help": {
-          "adaptive_throttle_mode": "Wähle, wie aggressiv der Coordinator temporäre Schalter-Drosselung erhöhen soll, wenn wiederholte Flip‑Flop-Ereignisse erkannt werden. 'Konservativ' erhöht den Multiplikator langsam, 'Normal' verwendet den konfigurierten Backoff-Schritt, 'Aggressiv' erhöht schneller.",
-          "adaptive_throttle_backoff_step": "Erhöht den Multiplikator um diesen Betrag pro Flip‑Flop-Ereignis, das über der Warnschwelle liegt. Höhere Werte verstärken die Drosselung pro Ereignis.",
-          "adaptive_throttle_max_multiplier": "Maximaler Multiplikator, der auf die konfigurierte Schalter-Drosselung angewendet wird. Drosselstärke wird dadurch begrenzt."
-=======
         }
       },
       "review_suggestions": {
@@ -166,7 +159,6 @@
           "action": "Aktion",
           "entity": "Entität",
           "entity_none": "Keine Entität"
->>>>>>> Stashed changes
         }
       }
     }
