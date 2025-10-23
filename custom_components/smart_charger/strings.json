@@ -49,19 +49,9 @@
           "notify_targets": "Notification targets (comma separated)"
         }
       },
-      "error": {
-        "invalid_level": "Invalid charge level settings",
-        "invalid_margin": "Invalid margin configuration",
-        "name_exists": "A device with this name already exists",
-        "name_empty": "Device name cannot be empty",
-        "alarm_required_single": "Please select a global alarm entity.",
-        "alarm_required_per_day": "Please set at least one weekday alarm entity."
-      },
       "abort": {
-        "no_devices": "No devices configured yet.",
-        "invalid_device": "Invalid device selection",
-        "finished": "Setup finished successfully"
-      }
+          "finished": "Setup finished successfully"
+        }
     }
   },
   "options": {
@@ -167,19 +157,6 @@
           "action": "Action",
           "entity": "Entity",
           "entity_none": "No entity"
-        },
-        "options": {
-          "none": "No action",
-          "accept_all": "Accept all suggested changes",
-          "revert_all": "Revert all suggested changes",
-          "accept_entity": "Accept suggested change for selected entity",
-          "revert_entity": "Revert suggested change for selected entity"
-        },
-        "errors": {
-          "invalid_entity": "Please select a valid entity"
-        },
-        "help": {
-          "entity": "Choose an entity to accept or revert the suggested persisted change for."
         }
       }
     }
@@ -198,12 +175,6 @@
         "revert_all": "Revert all suggested changes",
         "accept_entity": "Accept for selected entity",
         "revert_entity": "Revert for selected entity"
-      },
-      "help": {
-        "accept_all": "Persist all suggested changes into the integration options (smart-start margins and adaptive-mode overrides).",
-        "revert_all": "Remove any persisted suggestions and restore runtime defaults.",
-        "accept_entity": "Persist the suggested change for the selected entity only.",
-        "revert_entity": "Revert persisted suggestions for the selected entity and restore runtime state."
       }
     }
   },

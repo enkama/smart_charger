@@ -50,17 +50,7 @@
         }
       }
     },
-    "error": {
-      "invalid_level": "Ungültige Ladelevel-Einstellungen",
-      "invalid_margin": "Ungültige Margin-Konfiguration",
-      "name_exists": "Ein Gerät mit diesem Namen existiert bereits",
-      "name_empty": "Gerätename darf nicht leer sein",
-      "alarm_required_single": "Bitte wähle eine globale Wecker-Entität aus.",
-      "alarm_required_per_day": "Bitte setze mindestens eine Wecker-Entität für einen Wochentag."
-    },
     "abort": {
-      "no_devices": "Noch keine Geräte konfiguriert.",
-      "invalid_device": "Ungültige Gerätauswahl",
       "finished": "Einrichtung erfolgreich abgeschlossen"
     }
   },
