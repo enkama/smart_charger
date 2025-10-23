@@ -502,6 +502,93 @@ def _make_service_adapter(
     return _adapter
 
 
+def _apply_persisted_adaptive_overrides_to_runtime(
+    coordinator: SmartChargerCoordinator, entry: ConfigEntry
+) -> None:
+    """Apply persisted `adaptive_mode_overrides` from entry.options into runtime throttles.
+
+    This was extracted from `async_setup_entry` to keep that function small.
+    """
+    persisted = (
+        dict(getattr(entry, "options", {}) or {}).get("adaptive_mode_overrides") or {}
+    )
+    if not (isinstance(persisted, dict) and persisted):
+        return
+    now_epoch = float(dt_util.as_timestamp(dt_util.utcnow()))
+    overrides = getattr(coordinator, "_adaptive_throttle_overrides", {}) or {}
+    for ent_id, mode_raw in persisted.items():
+        try:
+            mode = str(mode_raw).strip().lower()
+            # Determine factor mapping consistent with coordinator mode factors
+            if mode == "conservative":
+                mode_factor = 0.7
+            elif mode == "aggressive":
+                mode_factor = 1.4
+            else:
+                mode_factor = 1.0
+
+            current = float(
+                coordinator._device_switch_throttle.get(
+                    ent_id, coordinator._default_switch_throttle_seconds
+                )
+                or coordinator._default_switch_throttle_seconds
+            )
+            var_multiplier = float(
+                getattr(coordinator, "_adaptive_throttle_multiplier", 1.0)
+            ) * float(mode_factor)
+            desired = max(
+                current * var_multiplier,
+                float(getattr(coordinator, "_adaptive_throttle_min_seconds", 0.0)),
+            )
+            expires = float(
+                now_epoch
+                + float(
+                    getattr(coordinator, "_adaptive_throttle_duration_seconds", 600.0)
+                )
+            )
+            overrides[ent_id] = {
+                "original": float(current),
+                "applied": float(desired),
+                "expires": float(expires),
+            }
+            coordinator._device_switch_throttle[ent_id] = float(desired)
+        except Exception:
+            _LOGGER.debug("Ignoring malformed persisted entity override for %s", ent_id)
+    coordinator._adaptive_throttle_overrides = overrides
+
+
+def _register_entry_update_listeners(
+    entry: ConfigEntry, entries: dict[str, dict[str, Any]]
+):
+    """Register both the reload listener and a lightweight options update listener.
+
+    Returns a tuple (reload_unsub, options_unsub) where each may be a callable
+    or None. This extraction keeps `async_setup_entry` concise.
+    """
+    reload_unsub = entry.add_update_listener(_async_reload_entry)
+
+    async def _on_entry_update(hass: HomeAssistant, updated_entry: ConfigEntry) -> None:
+        data = entries.get(updated_entry.entry_id) or {}
+        coord = data.get("coordinator")
+        if coord and hasattr(coord, "async_update_options_from_entry"):
+            try:
+                res = coord.async_update_options_from_entry(updated_entry)
+                if inspect.isawaitable(res):
+                    await res
+            except Exception:
+                _LOGGER.debug(
+                    "Failed to refresh coordinator options on entry update",
+                    exc_info=True,
+                )
+
+    try:
+        options_unsub = entry.add_update_listener(_on_entry_update)
+    except Exception:
+        _LOGGER.debug("Failed to register coordinator options update listener")
+        options_unsub = None
+    return reload_unsub, options_unsub
+
+
 def _register_services(hass: HomeAssistant) -> None:
     domain_data = _get_domain_data(hass)
 
@@ -588,68 +675,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = SmartChargerCoordinator(hass, entry)
     entry_data["coordinator"] = coordinator
     await coordinator.async_config_entry_first_refresh()
-    # After the coordinator has loaded its options, translate any persisted
-    # per-entity mode overrides into numeric throttle overrides so they
-    # immediately affect runtime behavior.
+    # After the coordinator has loaded its options, apply persisted per-entity
+    # adaptive overrides into runtime throttle overrides (delegated helper).
     try:
-        persisted = (
-            dict(getattr(entry, "options", {}) or {}).get("adaptive_mode_overrides")
-            or {}
-        )
-        if isinstance(persisted, dict) and persisted:
-            now_epoch = float(dt_util.as_timestamp(dt_util.utcnow()))
-            overrides = getattr(coordinator, "_adaptive_throttle_overrides", {}) or {}
-            for ent_id, mode_raw in persisted.items():
-                try:
-                    mode = str(mode_raw).strip().lower()
-                    # Determine factor mapping consistent with coordinator mode factors
-                    if mode == "conservative":
-                        mode_factor = 0.7
-                    elif mode == "aggressive":
-                        mode_factor = 1.4
-                    else:
-                        mode_factor = 1.0
-
-                    # Current configured throttle for entity (seconds)
-                    current = float(
-                        coordinator._device_switch_throttle.get(
-                            ent_id, coordinator._default_switch_throttle_seconds
-                        )
-                        or coordinator._default_switch_throttle_seconds
-                    )
-                    # Compute a starting multiplier using coordinator defaults/backoff base
-                    var_multiplier = float(
-                        getattr(coordinator, "_adaptive_throttle_multiplier", 1.0)
-                    ) * float(mode_factor)
-                    # Clamp and compute desired applied throttle
-                    desired = max(
-                        current * var_multiplier,
-                        float(
-                            getattr(coordinator, "_adaptive_throttle_min_seconds", 0.0)
-                        ),
-                    )
-                    expires = float(
-                        now_epoch
-                        + float(
-                            getattr(
-                                coordinator,
-                                "_adaptive_throttle_duration_seconds",
-                                600.0,
-                            )
-                        )
-                    )
-                    overrides[ent_id] = {
-                        "original": float(current),
-                        "applied": float(desired),
-                        "expires": float(expires),
-                    }
-                    # Apply to runtime throttle map so coordinator uses it immediately
-                    coordinator._device_switch_throttle[ent_id] = float(desired)
-                except Exception:
-                    _LOGGER.debug(
-                        "Ignoring malformed persisted entity override for %s", ent_id
-                    )
-            coordinator._adaptive_throttle_overrides = overrides
+        _apply_persisted_adaptive_overrides_to_runtime(coordinator, entry)
     except Exception:
         _LOGGER.debug(
             "Failed to load persisted per-entity overrides from entry.options"
@@ -699,7 +728,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         presence_callback,
     )
 
-    entry_data["update_listener_unsub"] = entry.add_update_listener(_async_reload_entry)
+    # Register entry update listeners (delegated helper)
+    entry_data["update_listener_unsub"], entry_data["options_update_unsub"] = (
+        _register_entry_update_listeners(entry, entries)
+    )
 
     _trigger_initial_auto_manage(hass, entry_data)
 
@@ -714,6 +746,29 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         data = entries.pop(entry.entry_id, {})
+        _cleanup_entry_services_and_data(hass, domain_data, entries)
+        _call_and_unsubscribe_polling_and_listeners(entry, data)
+        _logger_and_cancel_debouncer(entry, data)
+        _LOGGER.info("Smart Charger unloaded: %s", entry.entry_id)
+    device_registry = dr.async_get(hass)
+    devices = entry.data.get("devices", [])
+
+    for dev in devices:
+        name = dev.get("name")
+        if not name:
+            continue
+        identifier = (DOMAIN, name.lower().replace(" ", "_"))
+        if device_entry := device_registry.async_get_device({identifier}):
+            _LOGGER.info("Removing Smart Charger device: %s", name)
+            device_registry.async_remove_device(device_entry.id)
+    return unload_ok
+
+
+def _cleanup_entry_services_and_data(
+    hass: HomeAssistant, domain_data: dict[str, Any], entries: dict[str, dict[str, Any]]
+) -> None:
+    """Remove services and domain data when no entries remain."""
+    try:
         if not entries:
             for svc in (
                 SERVICE_FORCE_REFRESH,
@@ -725,16 +780,78 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass.services.async_remove(DOMAIN, svc)
             domain_data["services_registered"] = False
             hass.data.pop(DOMAIN, None)
+    except Exception:
+        _LOGGER.debug("Failed while cleaning up services/data on unload", exc_info=True)
+
+
+def _call_and_unsubscribe_polling_and_listeners(
+    entry: ConfigEntry, data: dict[str, Any]
+) -> None:
+    """Call polling unsubscribe and update listeners from entry data."""
+    _unsubscribe_polling(entry, data)
+    _unsubscribe_update_listeners(data)
+    _unsubscribe_unsub_listeners(data)
+
+
+def _unsubscribe_polling(entry: ConfigEntry, data: dict[str, Any]) -> None:
+    """Unsubscribe coordinator polling (best-effort)."""
+    try:
         polling_unsub = data.get("coordinator_polling_unsub")
         if callable(polling_unsub):
             polling_unsub()
+    except Exception:
+        _LOGGER.debug("Failed to unsubscribe coordinator polling", exc_info=True)
+
+
+def _unsubscribe_update_listeners(data: dict[str, Any]) -> None:
+    """Unsubscribe update and options update listeners (delegates to tiny helpers)."""
+    _unsubscribe_update_listener(data)
+    _unsubscribe_options_update_listener(data)
+
+
+def _unsubscribe_update_listener(data: dict[str, Any]) -> None:
+    """Unsubscribe the reload/update listener, best-effort."""
+    try:
         if update_unsub := data.get("update_listener_unsub"):
-            update_unsub()
+            try:
+                update_unsub()
+            except Exception:
+                _LOGGER.debug(
+                    "Failed to unsubscribe update_listener_unsub", exc_info=True
+                )
+    except Exception:
+        _LOGGER.debug("Failed to access update_listener_unsub", exc_info=True)
+
+
+def _unsubscribe_options_update_listener(data: dict[str, Any]) -> None:
+    """Unsubscribe the lightweight options update listener, best-effort."""
+    try:
+        if opts_unsub := data.get("options_update_unsub"):
+            try:
+                opts_unsub()
+            except Exception:
+                _LOGGER.debug(
+                    "Failed to unsubscribe options_update_unsub listener", exc_info=True
+                )
+    except Exception:
+        _LOGGER.debug("Failed to access options_update_unsub", exc_info=True)
+
+
+def _unsubscribe_unsub_listeners(data: dict[str, Any]) -> None:
+    """Call any stored unsub listener callables (best-effort)."""
+    try:
         for unsub in data.get("unsub_listeners", []):
             try:
                 unsub()
             except Exception as err:
                 _LOGGER.warning("Error while unsubscribing listener: %s", err)
+    except Exception:
+        _LOGGER.debug("Failed while unsubscribing listeners", exc_info=True)
+
+
+def _logger_and_cancel_debouncer(entry: ConfigEntry, data: dict[str, Any]) -> None:
+    """Log unload and cancel any auto_manage debouncer (best-effort)."""
+    try:
         if debouncer := data.get("auto_manage_debouncer"):
             try:
                 debouncer.async_cancel()
@@ -744,17 +861,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     entry.entry_id,
                     err,
                 )
-        _LOGGER.info("Smart Charger unloaded: %s", entry.entry_id)
-    device_registry = dr.async_get(hass)
-    devices = entry.data.get("devices", [])
-
-    for dev in devices:
-        name = dev.get("name")
-        if not name:
-            continue
-        identifier = (DOMAIN, name.lower().replace(" ", "_"))
-
-        if device_entry := device_registry.async_get_device({identifier}):
-            _LOGGER.info("Removing Smart Charger device: %s", name)
-            device_registry.async_remove_device(device_entry.id)
-    return unload_ok
+    except Exception:
+        _LOGGER.debug("Failed while cancelling debouncer", exc_info=True)

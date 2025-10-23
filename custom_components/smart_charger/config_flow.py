@@ -1150,7 +1150,9 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         )
         schema = vol.Schema(
             {
-                vol.Required("action", default="none"): REVIEW_SUGGESTIONS_ACTION_SELECTOR,
+                vol.Required(
+                    "action", default="none"
+                ): REVIEW_SUGGESTIONS_ACTION_SELECTOR,
                 vol.Optional("entity", default="(none)"): selector,
             }
         )
@@ -1184,7 +1186,10 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
 
         If the entity is invalid, return (None, "invalid_entity").
         """
-        if user_input and user_input.get("action") in ("accept_entity", "revert_entity"):
+        if user_input and user_input.get("action") in (
+            "accept_entity",
+            "revert_entity",
+        ):
             ent = user_input.get("entity")
             if not ent or ent == "(none)":
                 return None, "invalid_entity"
@@ -1198,7 +1203,10 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 self.hass.services.async_call(
                     DOMAIN,
                     svc,
-                    {"entry_id": self.config_entry.entry_id, "entity_id": target_entity},
+                    {
+                        "entry_id": self.config_entry.entry_id,
+                        "entity_id": target_entity,
+                    },
                 )
             )
             return self.async_create_entry(title="", data={}), None
@@ -1219,7 +1227,9 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         schema = self._build_review_schema(options)
 
         # First try global accept/revert
-        result = self._handle_accept_revert_all(user_input, suggested_smart_start, suggested_adaptive)
+        result = self._handle_accept_revert_all(
+            user_input, suggested_smart_start, suggested_adaptive
+        )
         if result:
             return result
 

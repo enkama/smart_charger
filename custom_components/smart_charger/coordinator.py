@@ -376,6 +376,33 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         self._precharge_margin_off = DEFAULT_PRECHARGE_MARGIN_OFF
         self._smart_start_margin = DEFAULT_SMART_START_MARGIN
         self._precharge_countdown_window = DEFAULT_PRECHARGE_COUNTDOWN_WINDOW
+        # Anti-flap settings: ensure coordinator attributes reflect configured options
+        try:
+            opts = dict(getattr(self.entry, "options", {}) or {})
+            self._precharge_min_drop_percent = float(
+                opts.get(
+                    CONF_PRECHARGE_MIN_DROP_PERCENT, DEFAULT_PRECHARGE_MIN_DROP_PERCENT
+                )
+                or DEFAULT_PRECHARGE_MIN_DROP_PERCENT
+            )
+        except Exception:
+            _ignored_exc()
+            self._precharge_min_drop_percent = float(DEFAULT_PRECHARGE_MIN_DROP_PERCENT)
+        try:
+            cooldown_min = float(
+                dict(getattr(self.entry, "options", {}) or {}).get(
+                    CONF_PRECHARGE_COOLDOWN_MINUTES, DEFAULT_PRECHARGE_COOLDOWN_MINUTES
+                )
+                or DEFAULT_PRECHARGE_COOLDOWN_MINUTES
+            )
+            self._precharge_cooldown_effective_seconds = (
+                float(max(0.0, cooldown_min)) * 60.0
+            )
+        except Exception:
+            _ignored_exc()
+            self._precharge_cooldown_effective_seconds = (
+                float(DEFAULT_PRECHARGE_COOLDOWN_MINUTES) * 60.0
+            )
         self._default_learning_recent_sample_hours = (
             DEFAULT_LEARNING_RECENT_SAMPLE_HOURS
         )
@@ -490,6 +517,14 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         # can monkeypatch ``self._build_plan`` with a replacement callable.
         # The real implementation lives in ``_build_plan_impl``.
         self._build_plan = self._build_plan_impl
+        # Attempt a best-effort migration of any precharge records keyed by
+        # device.name (older behaviour) to the new stable entity_id-based
+        # keys. This preserves runtime history across restarts when the
+        # coordinator is upgraded in-place.
+        try:
+            self._migrate_precharge_name_keys()
+        except Exception:
+            _ignored_exc()
 
     def _normalize_entity_id(self, raw_entity: Any) -> str | None:
         """Normalize an entity identifier used as dict keys.
@@ -511,6 +546,150 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         except Exception:
             _ignored_exc()
             return None
+
+    def _precharge_release_key_for_device(self, device: DeviceConfig) -> str:
+        """Return a stable key for precharge records for a device.
+
+        Prefer the configured charger_switch entity id (normalized). Fall back to
+        the device.name to preserve backward compatibility.
+        """
+        try:
+            if device and getattr(device, "charger_switch", None):
+                val = str(device.charger_switch)
+                return val
+        except Exception:
+            _ignored_exc()
+        # Fallback
+        try:
+            return str(device.name)
+        except Exception:
+            _ignored_exc()
+            return ""
+
+    def _migrate_precharge_name_keys(self) -> None:
+        """Migrate precharge dictionaries keyed by device.name to entity_id keys.
+
+        This is a thin coordinator-level orchestrator that delegates to
+        smaller helpers so the overall cyclomatic complexity stays low.
+        """
+        try:
+            if (
+                not self._precharge_last_release_level
+                and not self._precharge_last_release_ts
+            ):
+                return
+            mapping = self._build_name_to_entity_mapping()
+            name_keys = list(
+                set(
+                    list(self._precharge_last_release_level.keys())
+                    + list(self._precharge_last_release_ts.keys())
+                )
+            )
+            for name_key in name_keys:
+                try:
+                    new_key = mapping.get(name_key)
+                    if new_key:
+                        self._move_precharge_entry(name_key, new_key)
+                        _LOGGER.debug(
+                            "Migrated precharge history for %s -> %s", name_key, new_key
+                        )
+                    else:
+                        # Heuristic: if value looks like an entity_id, keep it
+                        if "." in name_key and not name_key.startswith("entity"):
+                            continue
+                        # Otherwise leave under name_key (avoid data loss)
+                except Exception:
+                    _ignored_exc()
+                    continue
+        except Exception:
+            _ignored_exc()
+
+    def _build_name_to_entity_mapping(self) -> dict[str, str]:
+        """Return a mapping device.name -> charger_switch entity id using _state."""
+        mapping: dict[str, str] = {}
+        try:
+            for dev_name, data in (self._state or {}).items():
+                try:
+                    cs = data.get("charger_switch")
+                    if cs:
+                        mapping[str(dev_name)] = str(cs)
+                except Exception:
+                    _ignored_exc()
+                    continue
+        except Exception:
+            _ignored_exc()
+        return mapping
+
+    def _move_precharge_entry(self, old_name: str, new_key: str) -> None:
+        """Move precharge entries from old_name to new_key when target absent."""
+        try:
+            if (
+                old_name in self._precharge_last_release_level
+                and new_key not in self._precharge_last_release_level
+            ):
+                self._precharge_last_release_level[new_key] = (
+                    self._precharge_last_release_level.pop(old_name)
+                )
+        except Exception:
+            _ignored_exc()
+        try:
+            if (
+                old_name in self._precharge_last_release_ts
+                and new_key not in self._precharge_last_release_ts
+            ):
+                self._precharge_last_release_ts[new_key] = (
+                    self._precharge_last_release_ts.pop(old_name)
+                )
+        except Exception:
+            _ignored_exc()
+
+    async def async_update_options_from_entry(self, entry) -> None:
+        """Refresh option-derived attributes from the supplied config entry.
+
+        This method can be called when the config entry is updated so the
+        coordinator picks up runtime option changes without recreating the
+        coordinator instance.
+        """
+        try:
+            opts = dict(getattr(entry, "options", {}) or {})
+            # min drop percent
+            try:
+                self._precharge_min_drop_percent = float(
+                    opts.get(
+                        CONF_PRECHARGE_MIN_DROP_PERCENT,
+                        DEFAULT_PRECHARGE_MIN_DROP_PERCENT,
+                    )
+                    or DEFAULT_PRECHARGE_MIN_DROP_PERCENT
+                )
+            except Exception:
+                _ignored_exc()
+                self._precharge_min_drop_percent = float(
+                    DEFAULT_PRECHARGE_MIN_DROP_PERCENT
+                )
+            # cooldown minutes -> seconds
+            try:
+                cooldown_min = float(
+                    opts.get(
+                        CONF_PRECHARGE_COOLDOWN_MINUTES,
+                        DEFAULT_PRECHARGE_COOLDOWN_MINUTES,
+                    )
+                    or DEFAULT_PRECHARGE_COOLDOWN_MINUTES
+                )
+                self._precharge_cooldown_effective_seconds = (
+                    float(max(0.0, cooldown_min)) * 60.0
+                )
+            except Exception:
+                _ignored_exc()
+                self._precharge_cooldown_effective_seconds = (
+                    float(DEFAULT_PRECHARGE_COOLDOWN_MINUTES) * 60.0
+                )
+            _LOGGER.debug(
+                "Updated coordinator options: precharge_min_drop=%.2f precharge_cooldown_secs=%.1f",
+                float(getattr(self, "_precharge_min_drop_percent", 0.0)),
+                float(getattr(self, "_precharge_cooldown_effective_seconds", 0.0)),
+            )
+        except Exception:
+            _ignored_exc()
 
     def _device_name_for_entity(self, entity_id: str) -> str | None:
         """Try to resolve a configured device name for the given entity_id.
@@ -596,8 +775,16 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         after a recent release.
         """
         try:
-            self._precharge_last_release_level[device.name] = float(release_level)
-            self._precharge_last_release_ts[device.name] = float(self._get_now_epoch())
+            key = self._precharge_release_key_for_device(device)
+            self._precharge_last_release_level[key] = float(release_level)
+            self._precharge_last_release_ts[key] = float(self._get_now_epoch())
+            _LOGGER.debug(
+                "Recorded precharge release: device=%s key=%s level=%.1f ts=%.3f",
+                device.name,
+                key,
+                float(release_level),
+                float(self._precharge_last_release_ts[key]),
+            )
         except Exception:
             _ignored_exc()
 
@@ -613,8 +800,23 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         If no prior release is recorded we allow activation.
         """
         try:
-            last_level = self._precharge_last_release_level.get(device.name)
-            last_ts = self._precharge_last_release_ts.get(device.name)
+            key = self._precharge_release_key_for_device(device)
+            # Prefer entity_id-keyed records but fall back to legacy device.name keys
+            last_level = self._precharge_last_release_level.get(key)
+            if last_level is None:
+                # legacy support: device.name keyed entries
+                try:
+                    last_level = self._precharge_last_release_level.get(device.name)
+                except Exception:
+                    _ignored_exc()
+                    last_level = None
+            last_ts = self._precharge_last_release_ts.get(key)
+            if last_ts is None:
+                try:
+                    last_ts = self._precharge_last_release_ts.get(device.name)
+                except Exception:
+                    _ignored_exc()
+                    last_ts = None
 
             # No prior release recorded -> allow
             if last_level is None or last_ts is None:
@@ -638,8 +840,24 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             if self._precharge_min_drop_blocked(
                 last_level, target_release, current_batt
             ):
+                _LOGGER.debug(
+                    "Precharge reactivation blocked by min_drop: device=%s key=%s last_level=%s current=%s min_drop=%s",
+                    device.name,
+                    key,
+                    last_level,
+                    current_batt,
+                    getattr(self, "_precharge_min_drop_percent", None),
+                )
                 return False
             if self._precharge_cooldown_blocked(last_ts):
+                _LOGGER.debug(
+                    "Precharge reactivation blocked by cooldown: device=%s key=%s last_ts=%.3f cooldown_secs=%s now=%.3f",
+                    device.name,
+                    key,
+                    float(last_ts or 0.0),
+                    getattr(self, "_precharge_cooldown_effective_seconds", None),
+                    float(self._get_now_epoch()),
+                )
                 return False
 
             return True
