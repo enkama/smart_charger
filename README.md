@@ -64,8 +64,6 @@ Both protections can be used together; sensible defaults are conservative but ad
 
 ### Configuration example
 
-<<<<<<< Updated upstream
-=======
 Quick UI steps to add a device entry:
 
 1. Settings → Integrations → Add Integration → Smart Charger
@@ -91,7 +89,6 @@ Minimal `data` shape (for reference only — use the UI to create entries):
 
 The UI will expose many more optional fields (precharge margins, cooldown, throttles). Use the Advanced settings for per-device tuning.
 
->>>>>>> Stashed changes
 ## Services
 
 The integration registers the following services in the `smart_charger` domain:
