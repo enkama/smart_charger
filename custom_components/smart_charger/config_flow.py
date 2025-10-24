@@ -19,6 +19,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
 )
+from homeassistant.helpers import translation as translation_helper
 
 from .const import (
     ALARM_MODE_PER_DAY,
@@ -1103,42 +1104,53 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         return lines
 
     def _build_entity_selector_options(
-        self, raw_entities: list[str]
+        self, raw_entities: list[str], none_label: str = "(none)"
     ) -> list[SelectOptionDict]:
-        """Return a list of SelectOptionDict with friendly labels for entities."""
-        options: list[SelectOptionDict] = [{"value": "(none)", "label": "(none)"}]
+        """Return a list of SelectOptionDict with friendly labels for entities.
+
+        Ensures both value and label are plain strings to avoid frontend
+        rendering issues when objects are accidentally passed.
+        """
+        # Ensure options only contain primitive values (strings)
+        options: list[SelectOptionDict] = [{"value": "(none)", "label": str(none_label)}]
+
+        # Try to obtain registries; if unavailable, continue and use state
+        # information as a best-effort fallback.
         try:
             er = self.hass.helpers.entity_registry.async_get(self.hass)
-            dr_reg = self.hass.helpers.device_registry.async_get(self.hass)
         except Exception:
             er = None
+        try:
+            dr_reg = self.hass.helpers.device_registry.async_get(self.hass)
+        except Exception:
             dr_reg = None
 
         for ent in raw_entities:
-            label = ent
+            label: str = str(ent)
             try:
+                # Prefer state name when available
+                st = self.hass.states.get(ent)
+                if st and st.name:
+                    label = str(st.name)
+
+                # Prefer registry names (entity -> device) when available
                 if er is not None:
                     ent_reg = er.async_get(ent)
-                    if ent_reg and ent_reg.entity_id:
-                        label = ent_reg.name or label
+                    if ent_reg:
+                        # Device name (user-set) is the most friendly
                         if ent_reg.device_id and dr_reg is not None:
                             dev = dr_reg.async_get(ent_reg.device_id)
                             if dev:
-                                label = dev.name_by_user or dev.name or label
-                else:
-                    st = self.hass.states.get(ent)
-                    if st and st.name:
-                        label = st.name
+                                label = str(dev.name_by_user or dev.name or label)
+                        # Entity custom name is next
+                        label = str(ent_reg.name or label)
             except Exception:
-                try:
-                    from .coordinator import _ignored_exc
+                # Record at debug level but continue; do not propagate
+                # exceptions from registries into the flow UI.
+                _LOGGER.debug("Ignored exception while building entity labels", exc_info=True)
 
-                    _ignored_exc()
-                except Exception:
-                    _LOGGER.debug(
-                        "Ignored exception while building entity labels", exc_info=True
-                    )
-            options.append({"value": ent, "label": str(label)})
+            options.append({"value": str(ent), "label": label})
+
         return options
 
     def _build_review_schema(self, options: list[SelectOptionDict]) -> vol.Schema:
@@ -1223,7 +1235,28 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         raw_entities = sorted(
             set(list(suggested_smart_start.keys()) + list(suggested_adaptive.keys()))
         )
-        options = self._build_entity_selector_options(raw_entities)
+
+        # Obtain a localized "none" label from translations when possible.
+        none_label = "(none)"
+        try:
+            language = getattr(getattr(self.hass, "config", None), "language", None) or ""
+            translations = await translation_helper.async_get_translations(
+                self.hass, language, "options", integrations=[DOMAIN], config_flow=True
+            )
+            # Safely traverse the nested translation dict for the options step
+            domain_trans = cast(dict, translations.get(DOMAIN, {}) or {})
+            none_label = (
+                domain_trans.get("options", {})
+                .get("step", {})
+                .get("review_suggestions", {})
+                .get("data", {})
+                .get("entity_none")
+                or none_label
+            )
+        except Exception:
+            _LOGGER.debug("Could not load translations for review_suggestions none label", exc_info=True)
+
+        options = self._build_entity_selector_options(raw_entities, none_label=none_label)
         schema = self._build_review_schema(options)
 
         # First try global accept/revert

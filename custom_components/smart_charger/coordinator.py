@@ -822,6 +822,26 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             if last_level is None or last_ts is None:
                 return True
 
+            # If the plan's start_time has already arrived (or is in the past),
+            # we must allow activation so the device can reach its target on time.
+            try:
+                st = (self._state or {}).get(device.name) or {}
+                plan_start_raw = st.get("start_time")
+                if plan_start_raw:
+                    plan_start_epoch = self._parse_epoch(plan_start_raw)
+                    if plan_start_epoch is not None:
+                        now_epoch = float(self._get_now_epoch())
+                        if float(plan_start_epoch) <= float(now_epoch):
+                            _LOGGER.debug(
+                                "Precharge reactivation allowed because start_time has arrived: device=%s start_time=%s now=%.3f",
+                                device.name,
+                                plan_start_raw,
+                                now_epoch,
+                            )
+                            return True
+            except Exception:
+                _ignored_exc()
+
             # Delegate checks to smaller helpers to reduce complexity
             # Determine current battery level from the last coordinator snapshot
             current_batt: float | None = None
@@ -873,17 +893,42 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         This is separated to keep the parent method small for McCabe.
         """
         try:
+            # Interpret configured value as a percentage of the last release
+            # level (e.g. 5 means 5% of the release level). Fall back to
+            # a permissive behavior on any parsing errors.
             try:
-                min_drop = float(self._precharge_min_drop_percent or 0.0)
+                min_drop_pct = float(self._precharge_min_drop_percent or 0.0)
             except Exception:
+                _ignored_exc()
                 return False
-            if min_drop <= 0.0:
+            if min_drop_pct <= 0.0:
                 return False
             # If we don't have a current battery reading, don't block
             if current_batt is None:
                 return False
-            # Block when the battery hasn't dropped at least `min_drop` since last release
-            return float(last_level) - float(current_batt) < float(min_drop)
+            try:
+                last = float(last_level)
+                curr = float(current_batt)
+            except Exception:
+                _ignored_exc()
+                return False
+
+            # Required absolute drop in percentage points based on the last
+            # observed release level.
+            required_drop = max(0.0, last * (min_drop_pct / 100.0))
+            actual_drop = last - curr
+
+            blocked = actual_drop < required_drop
+            _LOGGER.debug(
+                "Precharge min_drop check: last=%.3f current=%.3f min_drop_pct=%.3f required_drop=%.3f actual_drop=%.3f blocked=%s",
+                last,
+                curr,
+                min_drop_pct,
+                required_drop,
+                actual_drop,
+                blocked,
+            )
+            return bool(blocked)
         except Exception:
             _ignored_exc()
             return False
@@ -2932,10 +2977,21 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                     previous_last_action=True,
                     bypass_throttle=bypass,
                 )
-                # Record the release level so we can avoid immediate re-activation
-                # Record the release level so the activation helper can avoid
-                # immediate re-activation (anti-flap).
-                self._precharge_record_release(device, target_release)
+                # Record the actual battery level at the time of release so
+                # the activation helper can avoid immediate re-activation
+                # (anti-flap). Use the measured battery value rather than the
+                # configured threshold to make the re-activation gate more
+                # robust to small sensor fluctuations.
+                try:
+                    self._precharge_record_release(device, float(battery))
+                except Exception:
+                    # Defensive: fall back to recording the threshold if the
+                    # battery reading cannot be converted for any reason.
+                    _ignored_exc()
+                    try:
+                        self._precharge_record_release(device, float(target_release))
+                    except Exception:
+                        _ignored_exc()
                 return False
 
             handled_activate = await self._apply_charger_precharge_activate_if_needed(
