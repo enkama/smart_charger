@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import translation as translation_helper
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
@@ -19,7 +20,6 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
 )
-from homeassistant.helpers import translation as translation_helper
 
 from .const import (
     ALARM_MODE_PER_DAY,
@@ -1112,7 +1112,9 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         rendering issues when objects are accidentally passed.
         """
         # Ensure options only contain primitive values (strings)
-        options: list[SelectOptionDict] = [{"value": "(none)", "label": str(none_label)}]
+        options: list[SelectOptionDict] = [
+            {"value": "(none)", "label": str(none_label)}
+        ]
 
         # Try to obtain registries; if unavailable, continue and use state
         # information as a best-effort fallback.
@@ -1147,7 +1149,9 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
             except Exception:
                 # Record at debug level but continue; do not propagate
                 # exceptions from registries into the flow UI.
-                _LOGGER.debug("Ignored exception while building entity labels", exc_info=True)
+                _LOGGER.debug(
+                    "Ignored exception while building entity labels", exc_info=True
+                )
 
             options.append({"value": str(ent), "label": label})
 
@@ -1239,7 +1243,9 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
         # Obtain a localized "none" label from translations when possible.
         none_label = "(none)"
         try:
-            language = getattr(getattr(self.hass, "config", None), "language", None) or ""
+            language = (
+                getattr(getattr(self.hass, "config", None), "language", None) or ""
+            )
             translations = await translation_helper.async_get_translations(
                 self.hass, language, "options", integrations=[DOMAIN], config_flow=True
             )
@@ -1254,9 +1260,14 @@ class SmartChargerOptionsFlowHandler(SmartChargerFlowMixin, config_entries.Optio
                 or none_label
             )
         except Exception:
-            _LOGGER.debug("Could not load translations for review_suggestions none label", exc_info=True)
+            _LOGGER.debug(
+                "Could not load translations for review_suggestions none label",
+                exc_info=True,
+            )
 
-        options = self._build_entity_selector_options(raw_entities, none_label=none_label)
+        options = self._build_entity_selector_options(
+            raw_entities, none_label=none_label
+        )
         schema = self._build_review_schema(options)
 
         # First try global accept/revert

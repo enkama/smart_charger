@@ -788,23 +788,17 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         except Exception:
             _ignored_exc()
 
-    def _precharge_is_reactivation_allowed(
-        self, device: DeviceConfig, target_release: float
-    ) -> bool:
-        """Return True when re-activation of precharge is allowed.
+    def _get_precharge_last_level_and_ts(
+        self, device: DeviceConfig
+    ) -> tuple[float | None, float | None]:
+        """Return (last_level, last_ts) for the device, with legacy fallbacks.
 
-        The gate checks two configured safeguards:
-        - a minimum percentage drop since the last release (precharge_min_drop_percent)
-        - a cooldown window (precharge_cooldown_effective_seconds)
-
-        If no prior release is recorded we allow activation.
+        Errors are suppressed and (None, None) returned on failure.
         """
         try:
             key = self._precharge_release_key_for_device(device)
-            # Prefer entity_id-keyed records but fall back to legacy device.name keys
             last_level = self._precharge_last_release_level.get(key)
             if last_level is None:
-                # legacy support: device.name keyed entries
                 try:
                     last_level = self._precharge_last_release_level.get(device.name)
                 except Exception:
@@ -817,63 +811,96 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 except Exception:
                     _ignored_exc()
                     last_ts = None
+            return last_level, last_ts
+        except Exception:
+            _ignored_exc()
+            return None, None
+
+    def _plan_start_has_arrived(self, device: DeviceConfig) -> bool:
+        """Return True when the plan start_time for device is in the past or present.
+
+        Suppresses exceptions and returns False on error.
+        """
+        try:
+            st = (self._state or {}).get(device.name) or {}
+            plan_start_raw = st.get("start_time")
+            if not plan_start_raw:
+                return False
+            plan_start_epoch = self._parse_epoch(plan_start_raw)
+            if plan_start_epoch is None:
+                return False
+            now_epoch = float(self._get_now_epoch())
+            return float(plan_start_epoch) <= float(now_epoch)
+        except Exception:
+            _ignored_exc()
+            return False
+
+    def _get_current_battery_for_device(self, device: DeviceConfig) -> float | None:
+        """Return the current battery level for the device from the coordinator snapshot.
+
+        Returns None when unavailable or on error.
+        """
+        try:
+            st = (self._state or {}).get(device.name) or {}
+            if not st:
+                return None
+            cb = st.get("battery")
+            if cb is None:
+                return None
+            try:
+                return float(cb)
+            except Exception:
+                _ignored_exc()
+                return None
+        except Exception:
+            _ignored_exc()
+            return None
+
+    def _precharge_is_reactivation_allowed(
+        self, device: DeviceConfig, target_release: float
+    ) -> bool:
+        """Return True when re-activation of precharge is allowed.
+
+        The gate checks two configured safeguards:
+        - a minimum percentage drop since the last release (precharge_min_drop_percent)
+        - a cooldown window (precharge_cooldown_effective_seconds)
+
+        If no prior release is recorded we allow activation.
+        """
+        try:
+            last_level, last_ts = self._get_precharge_last_level_and_ts(device)
 
             # No prior release recorded -> allow
             if last_level is None or last_ts is None:
                 return True
 
-            # If the plan's start_time has already arrived (or is in the past),
-            # we must allow activation so the device can reach its target on time.
-            try:
-                st = (self._state or {}).get(device.name) or {}
-                plan_start_raw = st.get("start_time")
-                if plan_start_raw:
-                    plan_start_epoch = self._parse_epoch(plan_start_raw)
-                    if plan_start_epoch is not None:
-                        now_epoch = float(self._get_now_epoch())
-                        if float(plan_start_epoch) <= float(now_epoch):
-                            _LOGGER.debug(
-                                "Precharge reactivation allowed because start_time has arrived: device=%s start_time=%s now=%.3f",
-                                device.name,
-                                plan_start_raw,
-                                now_epoch,
-                            )
-                            return True
-            except Exception:
-                _ignored_exc()
+            # If the plan start_time has arrived, allow activation so target is met
+            if self._plan_start_has_arrived(device):
+                _LOGGER.debug(
+                    "Precharge reactivation allowed because start_time has arrived: device=%s",
+                    device.name,
+                )
+                return True
 
-            # Delegate checks to smaller helpers to reduce complexity
             # Determine current battery level from the last coordinator snapshot
-            current_batt: float | None = None
-            try:
-                st = (self._state or {}).get(device.name) or {}
-                if st:
-                    cb = st.get("battery")
-                    if cb is not None:
-                        try:
-                            current_batt = float(cb)
-                        except Exception:
-                            current_batt = None
-            except Exception:
-                _ignored_exc()
+            current_batt = self._get_current_battery_for_device(device)
 
             if self._precharge_min_drop_blocked(
                 last_level, target_release, current_batt
             ):
                 _LOGGER.debug(
-                    "Precharge reactivation blocked by min_drop: device=%s key=%s last_level=%s current=%s min_drop=%s",
+                    "Precharge reactivation blocked by min_drop: device=%s last_level=%s current=%s min_drop=%s",
                     device.name,
-                    key,
                     last_level,
                     current_batt,
                     getattr(self, "_precharge_min_drop_percent", None),
                 )
                 return False
+
             if self._precharge_cooldown_blocked(last_ts):
                 _LOGGER.debug(
-                    "Precharge reactivation blocked by cooldown: device=%s key=%s last_ts=%.3f cooldown_secs=%s now=%.3f",
+                    "Precharge reactivation blocked by cooldown: device=%s last_ts=%.3f cooldown_secs=%s now=%.3f",
                     device.name,
-                    key,
                     float(last_ts or 0.0),
                     getattr(self, "_precharge_cooldown_effective_seconds", None),
                     float(self._get_now_epoch()),
