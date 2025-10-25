@@ -22,6 +22,7 @@ This README is a concise guide for installation, configuration, and development.
 
 - Predictive charging based on alarm schedules and learned charge speed
 - Per-device precharge thresholds, hysteresis and countdown windows to avoid toggling
+ - Per-device automatic-control toggle: a switch entity is created for each configured device so you can enable/disable the automatic management per device (visible on the Integration -> Devices page)
 - Adaptive throttles and flip-flop detection to suppress rapid on/off cycles
 - Diagnostics surfaced in the UI for tracing decisions and tuning
 - Services to control or refresh the coordinator
@@ -52,6 +53,13 @@ Per-device settings typically include:
 - Optional alarm entities (single or per-weekday) for scheduled readiness
 
 Most settings are editable via the entry's *Configure* → *Advanced settings* UI.
+
+### Per-device automatic control toggle
+
+When you add a device entry the integration now creates a per-device toggle entity named
+"Smart Charger <Device Name> Auto Control". This toggle is persisted in the integration entry
+options and is visible on the Integration -> Devices page (select the Smart Charger device)
+so you can enable or disable automated control for each device independently.
 
 ### Anti-flap protections
 

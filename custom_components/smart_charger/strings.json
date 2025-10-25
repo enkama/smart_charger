@@ -229,6 +229,12 @@
         }
       }
     }
+    ,
+    "switch": {
+      "auto_control": {
+        "name": "Smart Charger Auto Control"
+      }
+    }
   }
 }
 

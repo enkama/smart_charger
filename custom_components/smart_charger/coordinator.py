@@ -691,7 +691,7 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         except Exception:
             _ignored_exc()
 
-    def _device_name_for_entity(self, entity_id: str) -> str | None:
+    def _device_name_for_entity(self, entity_id: str | None) -> str | None:
         """Try to resolve a configured device name for the given entity_id.
 
         This searches the coordinator's current `_state` snapshot (which is
@@ -4656,6 +4656,27 @@ class SmartChargerCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         stored_val, device_thr = self._gather_async_call_debug_info(
             entity_id, pre_epoch, bypass_throttle, force, previous_last_action, action
         )
+
+        # Honor per-device auto-control option: if a device has the auto
+        # control disabled in the config entry options, the coordinator
+        # should not perform automated switch service calls for that
+        # device. The option is stored as a mapping under
+        # `device_auto_control_enabled` with device_name -> bool and
+        # defaults to True (enabled) when absent.
+        try:
+            dev_name = self._device_name_for_entity(entity_id)
+            if dev_name:
+                opts = dict(getattr(self.entry, "options", {}) or {})
+                mapping = opts.get("device_auto_control_enabled") or {}
+                if not bool(mapping.get(dev_name, True)):
+                    _LOGGER.debug(
+                        "Per-device auto-control disabled for %s — skipping switch.%s",
+                        dev_name,
+                        action,
+                    )
+                    return False
+        except Exception:
+            _ignored_exc()
         # Minimal internal bypass check: some coordinator-driven events
         # should be allowed to bypass the configured throttle in
         # well-defined, 'intelligent' situations (for example a
